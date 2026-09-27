@@ -1,0 +1,3 @@
+[env]
+# ts-rs escribe los tipos del read model aquí al ejecutar `cargo test -p awr-application`.
+TS_RS_EXPORT_DIR = { value = "src/domain/generated", relative = true }

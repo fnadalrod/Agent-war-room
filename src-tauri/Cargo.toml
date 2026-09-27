@@ -1,0 +1,30 @@
+[package]
+name = "agent-war-room"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Agent War Room"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "agent-war-room"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+awr-domain.workspace = true
+awr-application.workspace = true
+awr-infrastructure.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-notification = "2"
+tauri-plugin-single-instance = "2"
+dirs = "6"

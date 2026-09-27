@@ -1,0 +1,253 @@
+use crate::{Attention, EndReason, Session, SessionEvent, SessionEventKind, SessionId};
+use std::collections::HashMap;
+
+/// Todas las sesiones conocidas. Raíz del agregado: los eventos entran aquí.
+#[derive(Debug, Default, Clone)]
+pub struct WarRoom {
+    sessions: HashMap<SessionId, Session>,
+}
+
+/// Cambio de atención provocado por un evento, para decidir avisos.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AttentionChange {
+    pub session: SessionId,
+    pub from: Option<Attention>,
+    pub to: Attention,
+    /// La sesión está vigilada (ni archivada ni silenciada) tras el evento.
+    pub on_watch: bool,
+}
+
+impl AttentionChange {
+    pub fn deserves_notice(&self) -> bool {
+        self.on_watch && self.to.is_alerting() && self.from != Some(self.to)
+    }
+}
+
+impl WarRoom {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Aplica un evento. Devuelve `None` si el evento se ignora (intención sobre una sesión
+    /// desconocida, o señal sin contexto de una sesión que no hemos visto nacer).
+    pub fn apply(&mut self, event: SessionEvent) -> Option<AttentionChange> {
+        let SessionEvent { session: id, at, context, kind } = event;
+
+        let from = match self.sessions.get_mut(&id) {
+            Some(session) => {
+                let from = session.attention();
+                session.apply(context, &kind, at);
+                Some(from)
+            }
+            None => {
+                let context = context?;
+                let mut session = Session::open(id.clone(), context, at);
+                session.apply(None, &kind, at);
+                self.sessions.insert(id.clone(), session);
+                None
+            }
+        };
+
+        let session = &self.sessions[&id];
+        Some(AttentionChange {
+            session: id,
+            from,
+            to: session.attention(),
+            on_watch: session.is_on_watch(),
+        })
+    }
+
+    pub fn get(&self, id: &SessionId) -> Option<&Session> {
+        self.sessions.get(id)
+    }
+
+    pub fn sessions(&self) -> impl Iterator<Item = &Session> {
+        self.sessions.values()
+    }
+
+    /// Color de la sala: la atención más urgente entre las sesiones vigiladas.
+    pub fn aggregate_attention(&self) -> Attention {
+        self.sessions
+            .values()
+            .filter(|s| s.is_on_watch())
+            .map(Session::attention)
+            .max()
+            .unwrap_or(Attention::Offline)
+    }
+
+    /// Sesiones vivas cuyo proceso ya no existe, según `is_alive`. Devuelve los eventos a aplicar;
+    /// quien llame decide persistirlos.
+    pub fn detect_lost(
+        &self,
+        is_alive: impl Fn(u32) -> bool,
+        at: crate::Timestamp,
+    ) -> Vec<SessionEvent> {
+        self.sessions
+            .values()
+            .filter(|s| s.is_alive())
+            .filter(|s| s.host.agent_pid.is_some_and(|pid| !is_alive(pid)))
+            .map(|s| SessionEvent {
+                session: s.id.clone(),
+                at,
+                context: None,
+                kind: SessionEventKind::Ended { reason: EndReason::ProcessLost },
+            })
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::*;
+
+    fn ctx(pid: Option<u32>) -> SessionContext {
+        SessionContext {
+            provider: ProviderKind::Claude,
+            workspace: Workspace {
+                repo: RepoId("/repo/.git".into()),
+                repo_name: "repo".into(),
+                worktree_path: "/repo".into(),
+                branch: Some("main".into()),
+                is_linked_worktree: false,
+            },
+            host: TerminalHost { agent_pid: pid, ..Default::default() },
+            transcript_path: None,
+        }
+    }
+
+    fn signal(id: &str, t: i64, kind: SessionEventKind) -> SessionEvent {
+        SessionEvent { session: SessionId(id.into()), at: Timestamp(t), context: Some(ctx(Some(42))), kind }
+    }
+
+    fn intent(id: &str, t: i64, kind: SessionEventKind) -> SessionEvent {
+        SessionEvent { session: SessionId(id.into()), at: Timestamp(t), context: None, kind }
+    }
+
+    fn attention(room: &WarRoom, id: &str) -> Attention {
+        room.get(&SessionId(id.into())).unwrap().attention()
+    }
+
+    #[test]
+    fn a_turn_goes_idle_working_finished_and_back_to_idle_when_seen() {
+        let mut room = WarRoom::new();
+        room.apply(signal("s", 1, SessionEventKind::Started));
+        assert_eq!(attention(&room, "s"), Attention::Idle);
+
+        room.apply(signal("s", 2, SessionEventKind::PromptSubmitted));
+        room.apply(signal("s", 3, SessionEventKind::ToolStarted { tool: "Bash".into() }));
+        assert_eq!(attention(&room, "s"), Attention::Working);
+
+        let change = room.apply(signal("s", 4, SessionEventKind::TurnEnded)).unwrap();
+        assert_eq!(change.to, Attention::Finished);
+        assert!(change.deserves_notice());
+
+        room.apply(intent("s", 5, SessionEventKind::Seen));
+        assert_eq!(attention(&room, "s"), Attention::Idle);
+    }
+
+    #[test]
+    fn permission_and_questions_need_you() {
+        let mut room = WarRoom::new();
+        room.apply(signal("s", 1, SessionEventKind::PromptSubmitted));
+        let change = room
+            .apply(signal(
+                "s",
+                2,
+                SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: Some("Bash".into()) },
+            ))
+            .unwrap();
+        assert_eq!(change.to, Attention::NeedsYou);
+        assert_eq!(room.aggregate_attention(), Attention::NeedsYou);
+
+        room.apply(signal("s", 3, SessionEventKind::ToolStarted { tool: "Bash".into() }));
+        assert_eq!(attention(&room, "s"), Attention::Working);
+    }
+
+    #[test]
+    fn archived_session_stays_alive_but_leaves_the_watch_until_you_write_again() {
+        let mut room = WarRoom::new();
+        room.apply(signal("s", 1, SessionEventKind::PromptSubmitted));
+        room.apply(intent("s", 2, SessionEventKind::Archived));
+
+        let change = room.apply(signal("s", 3, SessionEventKind::TurnEnded)).unwrap();
+        assert!(!change.deserves_notice(), "una sesión despedida no avisa");
+        assert_eq!(room.aggregate_attention(), Attention::Offline);
+
+        room.apply(signal("s", 4, SessionEventKind::PromptSubmitted));
+        let s = room.get(&SessionId("s".into())).unwrap();
+        assert!(!s.archived, "escribirle la desarchiva");
+        assert_eq!(room.aggregate_attention(), Attention::Working);
+    }
+
+    #[test]
+    fn muted_session_is_visible_but_silent() {
+        let mut room = WarRoom::new();
+        room.apply(signal("s", 1, SessionEventKind::PromptSubmitted));
+        room.apply(intent("s", 2, SessionEventKind::Muted));
+        let change = room.apply(signal("s", 3, SessionEventKind::TurnEnded)).unwrap();
+        assert_eq!(change.to, Attention::Finished);
+        assert!(!change.deserves_notice());
+    }
+
+    #[test]
+    fn idle_prompt_only_fills_a_missed_turn_end() {
+        let mut room = WarRoom::new();
+        room.apply(signal("s", 1, SessionEventKind::PromptSubmitted));
+        room.apply(signal("s", 2, SessionEventKind::TurnEnded));
+        room.apply(intent("s", 3, SessionEventKind::Seen));
+        room.apply(signal("s", 4, SessionEventKind::IdlePrompt));
+        assert_eq!(attention(&room, "s"), Attention::Idle, "no reabre lo ya visto");
+
+        room.apply(signal("t", 1, SessionEventKind::PromptSubmitted));
+        room.apply(signal("t", 9, SessionEventKind::IdlePrompt));
+        assert_eq!(attention(&room, "t"), Attention::Finished);
+    }
+
+    #[test]
+    fn auto_compaction_resumes_working() {
+        let mut room = WarRoom::new();
+        room.apply(signal("s", 1, SessionEventKind::PromptSubmitted));
+        room.apply(signal("s", 2, SessionEventKind::CompactionStarted));
+        room.apply(signal("s", 3, SessionEventKind::Started));
+        assert_eq!(attention(&room, "s"), Attention::Working);
+    }
+
+    #[test]
+    fn intents_for_unknown_sessions_are_ignored() {
+        let mut room = WarRoom::new();
+        assert!(room.apply(intent("ghost", 1, SessionEventKind::Archived)).is_none());
+        assert_eq!(room.sessions().count(), 0);
+    }
+
+    #[test]
+    fn lost_processes_are_detected_once() {
+        let mut room = WarRoom::new();
+        room.apply(signal("s", 1, SessionEventKind::PromptSubmitted));
+        let lost = room.detect_lost(|_| false, Timestamp(10));
+        assert_eq!(lost.len(), 1);
+        for e in lost {
+            room.apply(e);
+        }
+        assert_eq!(attention(&room, "s"), Attention::Offline);
+        assert!(room.detect_lost(|_| false, Timestamp(11)).is_empty());
+    }
+
+    #[test]
+    fn subagents_are_tracked_and_cleared_on_end() {
+        let mut room = WarRoom::new();
+        room.apply(signal("s", 1, SessionEventKind::SubagentStarted { id: "a1".into(), kind: Some("Explore".into()) }));
+        room.apply(signal("s", 2, SessionEventKind::SubagentStarted { id: "a2".into(), kind: None }));
+        room.apply(signal("s", 3, SessionEventKind::SubagentStopped { id: "a1".into() }));
+        assert_eq!(room.get(&SessionId("s".into())).unwrap().subagents.len(), 1);
+        room.apply(signal("s", 4, SessionEventKind::Ended { reason: EndReason::Exited("other".into()) }));
+        assert!(room.get(&SessionId("s".into())).unwrap().subagents.is_empty());
+    }
+
+    #[test]
+    fn events_roundtrip_through_json() {
+        let e = signal("s", 1, SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: None });
+        let json = serde_json::to_string(&e).unwrap();
+        assert_eq!(serde_json::from_str::<SessionEvent>(&json).unwrap(), e);
+    }
+}

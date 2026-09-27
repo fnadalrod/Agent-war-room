@@ -1,0 +1,18 @@
+[package]
+name = "awr-infrastructure"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+awr-domain.workspace = true
+awr-application.workspace = true
+awr-wire.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
+tokio.workspace = true
+rusqlite = { version = "0.37", features = ["bundled"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
