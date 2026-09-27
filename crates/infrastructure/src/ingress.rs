@@ -84,6 +84,7 @@ fn to_signal(envelope: HookEnvelope, reply: Option<Arc<dyn ApprovalResponder>>) 
         received_at: Some(Timestamp(envelope.received_at_ms)),
         host: TerminalHost {
             agent_pid: envelope.agent_pid,
+            agent_command: envelope.agent_command,
             ancestry: envelope
                 .ancestry
                 .into_iter()
@@ -174,6 +175,7 @@ mod tests {
             received_at_ms: 42,
             agent_pid: Some(7),
             ancestry: vec![WireProcess { pid: 7, name: "claude".into() }],
+            agent_command: Some("claude --resume abc".into()),
             env: EnvHints { tmux_pane: Some("%3".into()), tmux: Some("/tmp/tmux-1000/default,99,0".into()), ..Default::default() },
             payload: serde_json::json!({ "hook_event_name": "Stop" }),
             expects_reply,

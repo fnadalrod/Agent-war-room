@@ -1,30 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { WarRoomStore } from "../../application/warRoomStore";
 import type { SessionView, WarRoomView } from "../../domain/attention";
-import { SessionScreen } from "../SessionScreen";
 import { hitTest, layoutScene, pixelScale } from "./layout";
 import { paintScene } from "./paint";
 
-type Props = { view: WarRoomView; store: WarRoomStore; now: number; showArchived: boolean };
+type Props = { view: WarRoomView; store: WarRoomStore; showArchived: boolean; selectedId: string | null };
 
 const FPS = 8;
 
-/** La sala en pixel art. Clic: inspeccionar; doble clic: ir a la sesión. */
-export function WarRoomScene({ view, store, now, showArchived }: Props) {
+/** La sala en pixel art. Clic: vista previa; doble clic: ir a la sesión. */
+export function WarRoomScene({ view, store, showArchived, selectedId }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [cssWidth, setCssWidth] = useState(1200);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hovered, setHovered] = useState<SessionView | null>(null);
 
   const scale = pixelScale(cssWidth);
   const scene = useMemo(
     () => layoutScene(view, Math.floor(cssWidth / scale), showArchived),
     [view, cssWidth, scale, showArchived],
-  );
-  const selected = useMemo(
-    () => view.rooms.flatMap((r) => r.sessions).find((s) => s.id === selectedId) ?? null,
-    [view, selectedId],
   );
 
   // Estado vivo para el bucle de pintado sin reiniciarlo en cada render.
@@ -67,14 +61,18 @@ export function WarRoomScene({ view, store, now, showArchived }: Props) {
   };
 
   return (
-    <div className="pixel-room" data-inspecting={selected != null}>
+    <div className="pixel-room">
       <div className="pixel-stage" ref={box}>
         <canvas
           ref={canvas}
           style={{ width: scene.width * scale, height: scene.height * scale }}
           onMouseMove={(e) => setHovered(at(e))}
           onMouseLeave={() => setHovered(null)}
-          onClick={(e) => setSelectedId(at(e)?.id ?? null)}
+          onClick={(e) => {
+            const s = at(e);
+            if (s) store.openDetail(s.id);
+            else store.closeDetail();
+          }}
           onDoubleClick={(e) => {
             const s = at(e);
             if (s?.alive) store.goTo(s);
@@ -82,21 +80,13 @@ export function WarRoomScene({ view, store, now, showArchived }: Props) {
           role="img"
           aria-label="Sala de control: un puesto por sesión, coloreado por su estado"
         />
-        {hovered && !selected && (
+        {hovered && (
           <div className="pixel-tip">
             <strong>{hovered.title ?? hovered.worktree_path}</strong> · {hovered.status_label}
           </div>
         )}
         {scene.bays.length === 0 && <p className="empty">Sala vacía: los puestos aparecerán cuando un agente arranque.</p>}
       </div>
-      {selected && (
-        <aside className="inspector">
-          <button className="close" onClick={() => setSelectedId(null)} aria-label="Cerrar inspector">
-            ×
-          </button>
-          <SessionScreen session={selected} store={store} now={now} />
-        </aside>
-      )}
     </div>
   );
 }

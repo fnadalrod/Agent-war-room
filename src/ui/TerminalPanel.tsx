@@ -17,7 +17,7 @@ export function TerminalPanel({ terminal, store }: Props) {
     setExited(false);
     const term = new Terminal({
       cursorBlink: true,
-      fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, monospace',
+      fontFamily: '"JetBrains Mono", ui-monospace, monospace',
       fontSize: 13,
       theme: { background: "#050912", foreground: "#e2e8f0", cursor: "#38bdf8" },
       scrollback: 10_000,
@@ -79,7 +79,7 @@ export function TerminalPanel({ terminal, store }: Props) {
   return (
     <aside className="terminal-panel" aria-label={`Terminal: ${terminal.label}`}>
       <header>
-        <span className="lamp small" data-attention={exited ? "offline" : "working"} />
+        <span className="dot" data-attention={exited ? "offline" : "working"} />
         <strong>{terminal.label}</strong>
         {exited && <span className="muted">proceso terminado</span>}
         <span className="spacer" />

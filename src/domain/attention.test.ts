@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { aRoom, aSession } from "../test/fixtures";
-import { activity, contextLabel, isWritable, modelName, roomHome } from "./attention";
+import { activity, contextLabel, extraActivity, isWritable, modelName, plainText, roomHome, toolDigest } from "./attention";
 
 describe("reglas de presentación", () => {
   it("resume modelo y contexto", () => {
@@ -14,6 +14,21 @@ describe("reglas de presentación", () => {
     const s = aSession({ attention: "working", status_label: "Bash", last_action: "Bash · cargo test" });
     expect(activity(s)).toBe("Bash · cargo test");
     expect(activity({ ...s, attention: "finished", status_label: "Terminado" })).toBe("Terminado");
+  });
+
+  it("no repite el estado que ya dice el chip", () => {
+    expect(extraActivity(aSession({ attention: "finished", status_label: "Terminado" }))).toBeNull();
+    expect(extraActivity(aSession({ attention: "needs_you", status_label: "Pide permiso: Bash" }))).toBe("Pide permiso: Bash");
+  });
+
+  it("resume Markdown en texto plano sin pegar el título a la frase", () => {
+    expect(plainText("## Hecho\n\nHe **arreglado** el `login`:\n\n- uno\n- [dos](http://x)")).toBe(
+      "Hecho — He arreglado el login: uno dos",
+    );
+  });
+
+  it("agrupa herramientas seguidas por nombre", () => {
+    expect(toolDigest(["Read · a.rs", "Read · b.rs", "Bash · ls"])).toBe("Read ×2 · Bash");
   });
 
   it("solo se escribe en sesiones vivas de terminal propio o tmux", () => {

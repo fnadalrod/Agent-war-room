@@ -57,6 +57,10 @@ pub struct SessionView {
     pub status_label: String,
     /// Título que genera el agente; `null` hasta que lo escribe.
     pub title: Option<String>,
+    /// El encargo con el que empezó la sesión.
+    pub first_prompt: Option<String>,
+    /// Cómo se lanzó el agente (`claude --resume …`).
+    pub command: Option<String>,
     pub last_prompt: Option<String>,
     pub last_reply: Option<String>,
     pub last_action: Option<String>,
@@ -94,6 +98,48 @@ pub struct SubagentView {
     pub kind: Option<String>,
     pub description: Option<String>,
     pub last_tool: Option<String>,
+}
+
+/// Vista previa de una sesión: su tarjeta y la conversación reciente.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[ts(export)]
+pub struct SessionDetail {
+    pub session: SessionView,
+    pub timeline: Vec<TimelineEntryView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct TimelineEntryView {
+    /// "prompt" (tú), "reply" (el agente, Markdown) o "tool" (resumen de una herramienta).
+    pub kind: TimelineKindView,
+    pub text: String,
+    #[ts(type = "number | null")]
+    pub at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum TimelineKindView {
+    Prompt,
+    Reply,
+    Tool,
+}
+
+impl From<crate::ports::TimelineItem> for TimelineEntryView {
+    fn from(item: crate::ports::TimelineItem) -> Self {
+        use crate::ports::TimelineKind;
+        Self {
+            kind: match item.kind {
+                TimelineKind::Prompt => TimelineKindView::Prompt,
+                TimelineKind::Reply => TimelineKindView::Reply,
+                TimelineKind::Tool => TimelineKindView::Tool,
+            },
+            text: item.text,
+            at: item.at,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -146,7 +192,7 @@ pub fn project(
     WarRoomView { aggregate: room.aggregate_attention().into(), rooms }
 }
 
-fn session_view(s: &Session, summary: Option<&TranscriptSummary>, can_approve: bool) -> SessionView {
+pub(crate) fn session_view(s: &Session, summary: Option<&TranscriptSummary>, can_approve: bool) -> SessionView {
     let summary = summary.cloned().unwrap_or_default();
     let detail = |id: &str| summary.subagents.iter().find(|d| d.id == id).cloned().unwrap_or_default();
     SessionView {
@@ -155,6 +201,8 @@ fn session_view(s: &Session, summary: Option<&TranscriptSummary>, can_approve: b
         attention: s.attention().into(),
         status_label: status_label(s),
         title: summary.title.clone(),
+        first_prompt: summary.first_prompt.clone(),
+        command: s.host.agent_command.clone(),
         last_prompt: summary.last_prompt.clone(),
         last_reply: summary.last_reply.clone(),
         last_action: summary.last_action.clone(),

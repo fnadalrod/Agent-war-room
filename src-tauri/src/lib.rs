@@ -28,6 +28,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             commands::get_view,
+            commands::session_detail,
+            commands::open_external,
             commands::mark_seen,
             commands::mark_all_seen,
             commands::focus,

@@ -19,6 +19,9 @@ pub struct HookEnvelope {
     pub agent_pid: Option<u32>,
     /// Cadena de procesos desde el padre del hook hacia arriba.
     pub ancestry: Vec<WireProcess>,
+    /// Línea de comandos con la que se lanzó el agente (`claude --resume …`).
+    #[serde(default)]
+    pub agent_command: Option<String>,
     pub env: EnvHints,
     /// JSON del hook tal cual lo entregó el agente.
     pub payload: serde_json::Value,

@@ -1,4 +1,4 @@
-import type { IntegrationStatus, WarRoomView } from "../domain/attention";
+import type { IntegrationStatus, SessionDetail, WarRoomView } from "../domain/attention";
 
 export type Unsubscribe = () => void;
 
@@ -24,6 +24,10 @@ export interface WarRoomGateway {
   sendInput(id: string, text: string): Promise<void>;
   launch(cwd: string, target: LaunchTarget): Promise<Launched>;
   resume(id: string, target: LaunchTarget): Promise<Launched>;
+  /** Vista previa: tarjeta + conversación reciente. */
+  detail(id: string): Promise<SessionDetail>;
+  /** Abre un enlace en el navegador del sistema. */
+  openExternal(url: string): Promise<void>;
 }
 
 export type TerminalInfo = { id: string; label: string; cwd: string; alive: boolean };

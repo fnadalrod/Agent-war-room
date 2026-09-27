@@ -44,6 +44,7 @@ fn run() -> Option<String> {
         v: PROTOCOL_VERSION,
         provider: std::env::var("WARROOM_PROVIDER").unwrap_or_else(|_| "claude".into()),
         received_at_ms: now_ms(),
+        agent_command: agent_pid.and_then(command_line),
         agent_pid,
         ancestry,
         env: EnvHints {
@@ -115,6 +116,20 @@ fn read_stat(pid: u32) -> Option<(String, u32)> {
     Some((name, ppid))
 }
 
+/// `/proc/<pid>/cmdline` legible: argumentos separados por espacios, entrecomillados si hace falta.
+fn command_line(pid: u32) -> Option<String> {
+    let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+    let args: Vec<String> = raw
+        .split(|&b| b == 0)
+        .filter(|a| !a.is_empty())
+        .map(|a| {
+            let arg = String::from_utf8_lossy(a).into_owned();
+            if arg.contains(char::is_whitespace) { format!("'{}'", arg.replace('\'', "'\\''")) } else { arg }
+        })
+        .collect();
+    (!args.is_empty()).then(|| args.join(" "))
+}
+
 fn append_dump(path: &str, line: &[u8]) {
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = f.write_all(line);
@@ -137,6 +152,12 @@ mod tests {
         let (name, ppid) = read_stat(std::process::id()).unwrap();
         assert!(!name.is_empty());
         assert_eq!(ppid, std::os::unix::process::parent_id());
+    }
+
+    #[test]
+    fn reads_the_command_line_of_a_process() {
+        let own = command_line(std::process::id()).unwrap();
+        assert!(own.contains("warroom_hook"), "{own}");
     }
 
     #[test]

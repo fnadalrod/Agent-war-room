@@ -8,6 +8,8 @@ export function aSession(p: Partial<SessionView> = {}): SessionView {
     attention: "idle",
     status_label: "En espera",
     title: null,
+    first_prompt: null,
+    command: null,
     last_prompt: null,
     last_reply: null,
     last_action: null,

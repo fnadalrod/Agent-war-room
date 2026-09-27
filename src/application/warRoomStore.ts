@@ -1,13 +1,17 @@
-import type { IntegrationStatus, SessionView, WarRoomView } from "../domain/attention";
+import type { IntegrationStatus, SessionDetail, SessionView, WarRoomView } from "../domain/attention";
 import type { IntegrationGateway, Launched, LaunchTarget, TerminalGateway, WarRoomGateway } from "./ports";
 
 export type Toast = { text: string; tone: "ok" | "warn" };
+
+/** Vista previa abierta: `data` es null mientras carga. */
+export type OpenDetail = { id: string; data: SessionDetail | null };
 
 /** Terminal de la app abierto en el panel. */
 export type OpenTerminal = { id: string; label: string };
 
 export type WarRoomState = {
   view: WarRoomView | null;
+  detail: OpenDetail | null;
   terminal: OpenTerminal | null;
   integration: IntegrationStatus | null;
   error: string | null;
@@ -19,7 +23,7 @@ const TOAST_MS = 3500;
 
 /** Store sin framework: la UI se suscribe con `useSyncExternalStore`. */
 export class WarRoomStore {
-  private state: WarRoomState = { view: null, terminal: null, integration: null, error: null, toast: null, busy: false };
+  private state: WarRoomState = { view: null, detail: null, terminal: null, integration: null, error: null, toast: null, busy: false };
   private readonly listeners = new Set<() => void>();
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly rooms: WarRoomGateway;
@@ -33,7 +37,10 @@ export class WarRoomStore {
   }
 
   async start(): Promise<() => void> {
-    const unsubscribe = await this.rooms.onChange((view) => this.set({ view }));
+    const unsubscribe = await this.rooms.onChange((view) => {
+      this.set({ view });
+      this.refreshDetailIfChanged(view);
+    });
     await this.run(async () => {
       const [view, integration] = await Promise.all([this.rooms.load(), this.integration.status()]);
       this.set({ view, integration });
@@ -87,6 +94,50 @@ export class WarRoomStore {
       (launched) => this.afterLaunch(launched, s.title ?? s.worktree_path),
       (e) => this.notify({ text: String(e), tone: "warn" }),
     );
+  }
+
+  /** Abre la vista previa de una sesión (o la cambia a otra). */
+  openDetail(id: string) {
+    this.set({ detail: { id, data: this.state.detail?.id === id ? this.state.detail.data : null } });
+    void this.loadDetail(id);
+  }
+
+  closeDetail() {
+    this.set({ detail: null });
+  }
+
+  openExternal(url: string) {
+    void this.rooms.openExternal(url).catch((e) => this.notify({ text: String(e), tone: "warn" }));
+  }
+
+  private async loadDetail(id: string) {
+    try {
+      const data = await this.rooms.detail(id);
+      // Puede haberse cerrado o cambiado a otra mientras cargaba.
+      if (this.state.detail?.id === id) this.set({ detail: { id, data } });
+    } catch (e) {
+      if (this.state.detail?.id === id) this.set({ detail: null });
+      this.notify({ text: String(e), tone: "warn" });
+    }
+  }
+
+  /** La vista previa sigue viva: se recarga cuando su sesión tiene actividad nueva. */
+  private refreshDetailIfChanged(view: WarRoomView) {
+    const open = this.state.detail;
+    if (!open?.data) return;
+    const fresh = view.rooms.flatMap((r) => r.sessions).find((s) => s.id === open.id);
+    if (!fresh) return;
+    const shown = open.data.session;
+    if (
+      fresh.last_activity_at !== shown.last_activity_at ||
+      fresh.attention !== shown.attention ||
+      fresh.can_approve !== shown.can_approve ||
+      fresh.title !== shown.title
+    ) {
+      // Pinta ya la tarjeta nueva y trae la conversación detrás.
+      this.set({ detail: { id: open.id, data: { ...open.data, session: fresh } } });
+      void this.loadDetail(open.id);
+    }
   }
 
   openTerminal(id: string, label: string) {

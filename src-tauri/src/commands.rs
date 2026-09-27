@@ -3,7 +3,7 @@
 use awr_application::WarRoomService;
 use awr_application::ports::{FocusOutcome, IntegrationInstaller, LaunchOutcome, LaunchTarget, PortResult};
 use awr_infrastructure::pty::{PtyInfo, PtyManager};
-use awr_application::view::{IntegrationStatus, WarRoomView};
+use awr_application::view::{IntegrationStatus, SessionDetail, WarRoomView};
 use awr_domain::SessionId;
 use std::sync::Arc;
 use tauri::State;
@@ -161,4 +161,24 @@ pub fn pty_resize(ptys: Ptys, id: String, cols: u16, rows: u16) -> Result<(), St
 #[tauri::command]
 pub fn pty_close(ptys: Ptys, id: String) -> Result<(), String> {
     ptys.close(&id)
+}
+
+/// Vista previa de una sesión con sus últimas entradas de conversación.
+#[tauri::command]
+pub async fn session_detail(
+    service: State<'_, Arc<WarRoomService>>,
+    id: String,
+    limit: Option<usize>,
+) -> Result<SessionDetail, String> {
+    blocking(&service, move |s| s.session_detail(SessionId(id), limit.unwrap_or(60))).await
+}
+
+/// Abre un enlace (del Markdown de un agente) en el navegador del sistema. Solo http(s).
+#[tauri::command]
+pub fn open_external(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("solo se abren enlaces http(s)".into());
+    }
+    awr_infrastructure::desktop::open_url(&url);
+    Ok(())
 }

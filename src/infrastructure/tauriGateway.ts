@@ -7,7 +7,7 @@ import type {
   TerminalInfo,
   WarRoomGateway,
 } from "../application/ports";
-import type { IntegrationStatus, WarRoomView } from "../domain/attention";
+import type { IntegrationStatus, SessionDetail, WarRoomView } from "../domain/attention";
 
 /** Deben coincidir con `adapters.rs` en src-tauri. */
 const VIEW_EVENT = "warroom://view";
@@ -29,6 +29,8 @@ export const tauriWarRoomGateway: WarRoomGateway = {
   sendInput: (id, text) => invoke("send_input", { id, text }),
   launch: (cwd, target) => invoke<Launched>("launch", { cwd, target }),
   resume: (id, target) => invoke<Launched>("resume", { id, target }),
+  detail: (id) => invoke<SessionDetail>("session_detail", { id, limit: 80 }),
+  openExternal: (url) => invoke("open_external", { url }),
 };
 
 function fromBase64(data: string): Uint8Array {

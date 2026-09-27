@@ -4,7 +4,7 @@ use crate::ports::{
     PortResult, ProcessProbe, RepoResolver, TranscriptReader, TranscriptSummary, ViewPublisher,
     WindowNavigator,
 };
-use crate::view::{self, WarRoomView};
+use crate::view::{self, SessionDetail, WarRoomView};
 use awr_domain::{
     Attention, AttentionChange, SessionContext, SessionEvent, SessionEventKind, SessionId,
     SessionStatus, TerminalHost, Timestamp, WarRoom,
@@ -160,6 +160,23 @@ impl WarRoomService {
         } else {
             Err(PortError::Failed("ya se había respondido en la terminal".into()))
         }
+    }
+
+    /// Vista previa: la tarjeta de la sesión y sus últimas `limit` entradas de conversación.
+    pub fn session_detail(&self, id: SessionId, limit: usize) -> PortResult<SessionDetail> {
+        let (session, transcript) = {
+            let room = self.room();
+            let session = room
+                .get(&id)
+                .ok_or_else(|| PortError::Failed(format!("sesión desconocida: {id}")))?;
+            let can_approve = self.approvals().contains_key(&id);
+            let view = view::session_view(session, self.summaries().get(&id), can_approve);
+            (view, session.transcript_path.clone())
+        };
+        let timeline = transcript
+            .map(|path| self.ports.transcripts.recent(&path, limit).into_iter().map(Into::into).collect())
+            .unwrap_or_default();
+        Ok(SessionDetail { session, timeline })
     }
 
     /// Abre un agente nuevo en una carpeta (normalmente el worktree de una sala).
@@ -441,6 +458,14 @@ mod tests {
         fn read(&self, _: &str, _: &[String]) -> Option<TranscriptSummary> {
             Some(self.0.lock().unwrap().clone())
         }
+        fn recent(&self, path: &str, limit: usize) -> Vec<crate::ports::TimelineItem> {
+            use crate::ports::{TimelineItem, TimelineKind};
+            let all = vec![
+                TimelineItem { kind: TimelineKind::Prompt, text: format!("prompt de {path}"), at: Some(1) },
+                TimelineItem { kind: TimelineKind::Reply, text: "**hecho**".into(), at: Some(2) },
+            ];
+            all.into_iter().rev().take(limit).rev().collect()
+        }
     }
 
     #[derive(Default)]
@@ -701,6 +726,18 @@ mod tests {
 
         h.svc.tick().unwrap();
         assert!(h.svc.send_input(id("a"), "hola").is_err());
+    }
+
+    #[test]
+    fn the_preview_brings_the_card_and_the_recent_conversation() {
+        let h = harness();
+        h.transcript.0.lock().unwrap().first_prompt = Some("Migra el login".into());
+        h.svc.ingest(signal("a", "prompt")).unwrap();
+        let detail = h.svc.session_detail(id("a"), 1).unwrap();
+        assert_eq!(detail.session.first_prompt.as_deref(), Some("Migra el login"));
+        assert_eq!(detail.timeline.len(), 1);
+        assert_eq!(detail.timeline[0].text, "**hecho**");
+        assert!(h.svc.session_detail(id("ghost"), 5).is_err());
     }
 
     #[test]

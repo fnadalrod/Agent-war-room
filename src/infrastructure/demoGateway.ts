@@ -7,14 +7,55 @@ import type {
   Unsubscribe,
   WarRoomGateway,
 } from "../application/ports";
-import type { AttentionView, IntegrationStatus, RoomView, SessionView, WarRoomView } from "../domain/attention";
+import type {
+  AttentionView,
+  IntegrationStatus,
+  RoomView,
+  SessionDetail,
+  SessionView,
+  TimelineEntryView,
+  WarRoomView,
+} from "../domain/attention";
 
 const minutes = (m: number) => Date.now() - m * 60_000;
+
+const DEMO_REPLY = `## Hecho
+
+He actualizado \`docs/tareas/banco.md\` con el relevo del **bloque V**:
+
+- Los rojos del último pase **no eran válidos**: el runner arrancó sin la base de datos de fixtures.
+- Hay que repetirlo con \`make banco BLOQUE=V\`.
+
+| Bloque | Estado |
+| --- | --- |
+| IV | ✅ verde |
+| V | ⚠️ repetir |
+
+> Siguiente paso: lanzar el bloque V cuando esté libre la máquina de CI.
+
+Más contexto en [la guía del banco](https://example.com/banco).`;
+
+function demoTimeline(s: SessionView): TimelineEntryView[] {
+  const at = (m: number) => minutes(m);
+  return [
+    { kind: "prompt", text: s.first_prompt ?? "¿Puedes revisar esto?", at: at(40) },
+    { kind: "tool", text: "Read · banco.md", at: at(39) },
+    { kind: "tool", text: "Grep · bloque V", at: at(39) },
+    { kind: "tool", text: "Read · runner.ts", at: at(38) },
+    { kind: "reply", text: "Veo que el runner no espera a la base de datos. Lo compruebo con el log del último pase.", at: at(37) },
+    { kind: "tool", text: "Bash · npm run banco -- --dry-run", at: at(30) },
+    { kind: "prompt", text: "Vale, documenta el relevo y no toques el runner todavía.", at: at(12) },
+    { kind: "tool", text: "Edit · banco.md", at: at(8) },
+    { kind: "reply", text: s.last_reply ?? DEMO_REPLY, at: at(6) },
+  ];
+}
 
 function session(p: Partial<SessionView> & Pick<SessionView, "id" | "attention" | "status_label">): SessionView {
   return {
     provider: "claude",
     title: null,
+    first_prompt: null,
+    command: null,
     last_prompt: null,
     last_reply: null,
     last_action: null,
@@ -52,6 +93,9 @@ function initialRooms(): RoomView[] {
           attention: "needs_you",
           status_label: "Pide permiso: Bash · npm run e2e -- --grep sync",
           title: "Reparar la sincronización offline",
+          first_prompt:
+            "Los cambios hechos sin conexión se pierden al volver la red. Reprodúcelo con un e2e y arréglalo sin tocar el esquema de la base de datos.",
+          command: "claude --permission-mode default",
           worktree_path: "/code/tintero",
           can_approve: true,
           status_since: minutes(2),
@@ -76,7 +120,9 @@ function initialRooms(): RoomView[] {
           attention: "finished",
           status_label: "Terminado",
           title: "Documentar el banco de pruebas",
-          last_reply: "He actualizado docs/tareas con el relevo del bloque V y los rojos sin validez.",
+          first_prompt: "Documenta en docs/tareas cómo repetir el bloque V del banco de pruebas.",
+          command: "claude --resume c3d4e5f6",
+          last_reply: DEMO_REPLY,
           worktree_path: "/code/tintero",
           status_since: minutes(6),
         }),
@@ -195,6 +241,12 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
       sendInput: done,
       launch: launched,
       resume: launched,
+      detail: async (id): Promise<SessionDetail> => {
+        const s = find(id);
+        if (!s) throw new Error("sesión desconocida");
+        return { session: s, timeline: demoTimeline(s) };
+      },
+      openExternal: async (url) => void window.open(url, "_blank", "noopener"),
     },
     integration: { status: async () => status, install: async () => status, uninstall: async () => status },
     terminals: {

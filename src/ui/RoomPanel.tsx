@@ -1,5 +1,6 @@
 import type { WarRoomStore } from "../application/warRoomStore";
 import { roomHome, type RoomView } from "../domain/attention";
+import { PlusIcon } from "./icons";
 import { SessionScreen } from "./SessionScreen";
 
 type Props = { room: RoomView; store: WarRoomStore; now: number; showArchived: boolean };
@@ -10,22 +11,26 @@ export function RoomPanel({ room, store, now, showArchived }: Props) {
 
   return (
     <section className="room" data-attention={room.attention}>
-      <h2>
-        <span className="lamp small" data-attention={room.attention} />
-        {room.repo_name}
-        <small>{sessions.length}</small>
+      <header className="room-head">
+        <span className="dot" data-attention={room.attention} />
+        <h2>{room.repo_name}</h2>
+        <span className="count">{sessions.length}</span>
         {home && (
           <span className="room-actions">
-            <button onClick={() => store.launch(home, room.repo_name, "app")} title={`Abrir claude en ${home}`}>
-              + Agente
+            <button className="ghost" onClick={() => store.launch(home, room.repo_name, "app")} title={`Abrir claude en ${home}`}>
+              <PlusIcon size={14} /> Agente
             </button>
-            <button onClick={() => store.launch(home, room.repo_name, "warp")} title={`Abrir claude en Warp, en ${home}`}>
-              + en Warp
+            <button
+              className="ghost"
+              onClick={() => store.launch(home, room.repo_name, "warp")}
+              title={`Abrir claude en una pestaña de Warp, en ${home}`}
+            >
+              <PlusIcon size={14} /> en Warp
             </button>
           </span>
         )}
-      </h2>
-      <div className="screens">
+      </header>
+      <div className="cards">
         {sessions.map((s) => (
           <SessionScreen key={s.id} session={s} store={store} now={now} />
         ))}

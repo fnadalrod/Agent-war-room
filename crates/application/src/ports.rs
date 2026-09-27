@@ -66,6 +66,8 @@ pub trait ViewPublisher: Send + Sync {
 pub struct TranscriptSummary {
     /// Título que el propio agente genera para la sesión.
     pub title: Option<String>,
+    /// El encargo con el que empezó la sesión.
+    pub first_prompt: Option<String>,
     pub last_prompt: Option<String>,
     /// Último texto del agente (no herramientas).
     pub last_reply: Option<String>,
@@ -84,9 +86,29 @@ pub struct SubagentDetail {
     pub last_tool: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimelineKind {
+    /// Lo que escribiste.
+    Prompt,
+    /// Texto del agente (Markdown).
+    Reply,
+    /// Uso de una herramienta, resumido: "Bash · cargo test".
+    Tool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimelineItem {
+    pub kind: TimelineKind,
+    pub text: String,
+    /// Milisegundos desde epoch, si el transcript lo dice.
+    pub at: Option<i64>,
+}
+
 pub trait TranscriptReader: Send + Sync {
     /// Lectura incremental: llamarla a menudo debe ser barato.
     fn read(&self, transcript_path: &str, subagent_ids: &[String]) -> Option<TranscriptSummary>;
+    /// Las últimas `limit` entradas de la conversación principal. Bajo demanda (vista previa).
+    fn recent(&self, transcript_path: &str, limit: usize) -> Vec<TimelineItem>;
 }
 
 /// A dónde saltar para ver una sesión.

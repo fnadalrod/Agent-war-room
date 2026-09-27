@@ -7,6 +7,8 @@ export type { AttentionView, SessionView, WarRoomView };
 export type { RoomView } from "./generated/RoomView";
 export type { SubagentView } from "./generated/SubagentView";
 export type { IntegrationStatus } from "./generated/IntegrationStatus";
+export type { SessionDetail } from "./generated/SessionDetail";
+export type { TimelineEntryView } from "./generated/TimelineEntryView";
 
 export const ATTENTION_LABEL: Record<AttentionView, string> = {
   needs_you: "Te necesita",
@@ -58,6 +60,12 @@ export function activity(s: SessionView): string {
   return s.status_label;
 }
 
+/** La actividad, solo si dice algo más que el chip de estado ("Terminado" ya se ve en el chip). */
+export function extraActivity(s: SessionView): string | null {
+  const text = activity(s);
+  return text === ATTENTION_LABEL[s.attention] ? null : text;
+}
+
 /** Cómo se llega a la sesión, para el tooltip del botón "Ir a". */
 export function whereItLives(s: SessionView): string {
   if (s.in_warp) return "Warp (pane exacto)";
@@ -74,4 +82,28 @@ export function isWritable(s: SessionView): boolean {
 export function roomHome(room: import("./generated/RoomView").RoomView): string | null {
   const main = room.sessions.find((s) => !s.is_linked_worktree) ?? room.sessions[0];
   return main?.worktree_path ?? null;
+}
+
+/** Texto plano de un Markdown, para extractos de una línea o tres. */
+export function plainText(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+(.*)$/gm, "$1 —")
+    .replace(/^\s{0,3}(>|[-*+]|\d+\.)\s+/gm, "")
+    .replace(/(\*\*|__|\*|_|~~)(.*?)\1/g, "$2")
+    .replace(/\|/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Herramientas seguidas de la conversación, agrupadas: "Read ×3 · Bash · Edit". */
+export function toolDigest(labels: string[]): string {
+  const counts = new Map<string, number>();
+  for (const label of labels) {
+    const name = label.split(" · ")[0];
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return [...counts].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name)).join(" · ");
 }

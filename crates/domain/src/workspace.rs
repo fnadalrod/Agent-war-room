@@ -25,6 +25,8 @@ pub struct ProcessInfo {
 pub struct TerminalHost {
     /// PID del proceso del agente, para saber si sigue vivo.
     pub agent_pid: Option<u32>,
+    /// Cómo se lanzó el agente (`claude --resume …`).
+    pub agent_command: Option<String>,
     /// Cadena de procesos desde el padre del hook hacia arriba (shell, agente, terminal…).
     pub ancestry: Vec<ProcessInfo>,
     pub tmux_pane: Option<String>,

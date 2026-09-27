@@ -6,6 +6,9 @@ import { WarRoomStore } from "./application/warRoomStore";
 import { createDemo } from "./infrastructure/demoGateway";
 import { tauriIntegrationGateway, tauriTerminalGateway, tauriWarRoomGateway } from "./infrastructure/tauriGateway";
 import { App } from "./ui/App";
+import "@fontsource-variable/inter";
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/600.css";
 import "./ui/styles.css";
 
 const insideTauri = "__TAURI_INTERNALS__" in window;

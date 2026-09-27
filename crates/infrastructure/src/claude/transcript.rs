@@ -3,8 +3,10 @@
 //! `<proyecto>/<sesión>.jsonl` es la conversación principal; los subagentes viven en
 //! `<proyecto>/<sesión>/subagents/agent-<id>.jsonl` con un `agent-<id>.meta.json` al lado.
 
-use super::tools::{clip, tool_label};
-use awr_application::ports::{SubagentDetail, TranscriptReader, TranscriptSummary};
+use super::tools::tool_label;
+use awr_application::ports::{
+    SubagentDetail, TimelineItem, TimelineKind, TranscriptReader, TranscriptSummary,
+};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs::File;
@@ -15,12 +17,18 @@ use std::sync::Mutex;
 /// La primera lectura de un transcript largo empieza por aquí desde el final: el título y el último
 /// prompt se repiten a menudo, así que basta con la cola.
 const INITIAL_TAIL_BYTES: u64 = 512 * 1024;
-const REPLY_MAX_CHARS: usize = 600;
+/// Tope de seguridad para una respuesta; se conserva tal cual (Markdown, saltos de línea).
+const REPLY_MAX_CHARS: usize = 20_000;
+/// Cabecera donde buscar el primer prompt de la sesión.
+const HEAD_BYTES: u64 = 512 * 1024;
+/// Cola que se lee para la vista previa de la conversación.
+const TIMELINE_TAIL_BYTES: u64 = 2 * 1024 * 1024;
 
 #[derive(Default)]
 pub struct ClaudeTranscriptReader {
     files: Mutex<HashMap<PathBuf, Tail>>,
     descriptions: Mutex<HashMap<PathBuf, Option<String>>>,
+    first_prompts: Mutex<HashMap<PathBuf, String>>,
 }
 
 #[derive(Default, Clone)]
@@ -50,6 +58,21 @@ impl ClaudeTranscriptReader {
         let tail = files.entry(path.to_path_buf()).or_default();
         advance(path, tail).ok()?;
         Some(tail.facts.clone())
+    }
+
+    /// Primer prompt de la sesión. Se busca en la cabecera una sola vez: no cambia.
+    fn first_prompt(&self, path: &Path) -> Option<String> {
+        if let Some(known) = self.first_prompts.lock().unwrap().get(path) {
+            return Some(known.clone());
+        }
+        let prompt = head_lines(path, HEAD_BYTES)
+            .ok()?
+            .iter()
+            .flat_map(timeline_items)
+            .find(|i| i.kind == TimelineKind::Prompt)?
+            .text;
+        self.first_prompts.lock().unwrap().insert(path.to_path_buf(), prompt.clone());
+        Some(prompt)
     }
 
     fn description(&self, meta: &Path) -> Option<String> {
@@ -87,6 +110,7 @@ impl TranscriptReader for ClaudeTranscriptReader {
 
         Some(TranscriptSummary {
             title: facts.custom_title.or(facts.ai_title),
+            first_prompt: self.first_prompt(main),
             last_prompt: facts.last_prompt,
             last_reply: facts.last_reply,
             last_action: facts.last_action,
@@ -94,6 +118,117 @@ impl TranscriptReader for ClaudeTranscriptReader {
             context_tokens: facts.context_tokens,
             subagents,
         })
+    }
+
+    fn recent(&self, transcript_path: &str, limit: usize) -> Vec<TimelineItem> {
+        let Ok(lines) = tail_lines(Path::new(transcript_path), TIMELINE_TAIL_BYTES) else {
+            return Vec::new();
+        };
+        let mut items: Vec<TimelineItem> = lines.iter().flat_map(timeline_items).collect();
+        let skip = items.len().saturating_sub(limit);
+        items.drain(..skip);
+        items
+    }
+}
+
+/// Líneas JSON completas de los primeros `bytes` del fichero.
+fn head_lines(path: &Path, bytes: u64) -> std::io::Result<Vec<Value>> {
+    let mut buf = Vec::new();
+    File::open(path)?.take(bytes).read_to_end(&mut buf)?;
+    let complete = match buf.iter().rposition(|&b| b == b'\n') {
+        Some(i) => &buf[..i],
+        None => &buf[..],
+    };
+    Ok(complete.split(|&b| b == b'\n').filter_map(|l| serde_json::from_slice(l).ok()).collect())
+}
+
+/// Líneas JSON completas de los últimos `bytes` del fichero.
+fn tail_lines(path: &Path, bytes: u64) -> std::io::Result<Vec<Value>> {
+    let mut file = File::open(path)?;
+    let len = file.metadata()?.len();
+    let start = len.saturating_sub(bytes);
+    file.seek(SeekFrom::Start(start))?;
+    let mut buf = Vec::with_capacity((len - start) as usize);
+    file.read_to_end(&mut buf)?;
+    let mut lines = buf.split(|&b| b == b'\n');
+    if start > 0 {
+        lines.next();
+    }
+    Ok(lines.filter_map(|l| serde_json::from_slice(l).ok()).collect())
+}
+
+fn timeline_items(entry: &Value) -> Vec<TimelineItem> {
+    // Los subagentes tienen su propio transcript; aquí solo la conversación principal.
+    if entry.get("isSidechain").and_then(Value::as_bool) == Some(true)
+        || entry.get("isMeta").and_then(Value::as_bool) == Some(true)
+    {
+        return Vec::new();
+    }
+    let at = entry.get("timestamp").and_then(Value::as_str).and_then(parse_iso_ms);
+    let item = |kind, text: String| TimelineItem { kind, text, at };
+    match entry.get("type").and_then(Value::as_str) {
+        Some("user") => match entry.pointer("/message/content") {
+            Some(Value::String(prompt)) if !prompt.starts_with('<') && !prompt.trim().is_empty() => {
+                vec![item(TimelineKind::Prompt, cap(prompt.trim(), REPLY_MAX_CHARS))]
+            }
+            Some(Value::Array(blocks)) => blocks
+                .iter()
+                .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
+                .filter_map(|b| b.get("text").and_then(Value::as_str))
+                .filter(|t| !t.starts_with('<') && !t.trim().is_empty())
+                .map(|t| item(TimelineKind::Prompt, cap(t.trim(), REPLY_MAX_CHARS)))
+                .collect(),
+            _ => Vec::new(),
+        },
+        Some("assistant") => entry
+            .pointer("/message/content")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|block| match block.get("type").and_then(Value::as_str) {
+                Some("text") => block
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|t| !t.is_empty())
+                    .map(|t| item(TimelineKind::Reply, cap(t, REPLY_MAX_CHARS))),
+                Some("tool_use") => block
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(|name| item(TimelineKind::Tool, tool_label(name, block.get("input")))),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// `2026-09-27T22:44:39.232Z` → milisegundos desde epoch (solo UTC, que es lo que escribe Claude).
+fn parse_iso_ms(s: &str) -> Option<i64> {
+    let s = s.strip_suffix('Z')?;
+    let (date, time) = s.split_once('T')?;
+    let mut d = date.split('-').map(|p| p.parse::<i64>());
+    let (y, m, day) = (d.next()?.ok()?, d.next()?.ok()?, d.next()?.ok()?);
+    let (hms, frac) = time.split_once('.').unwrap_or((time, "0"));
+    let mut t = hms.split(':').map(|p| p.parse::<i64>());
+    let (h, min, sec) = (t.next()?.ok()?, t.next()?.ok()?, t.next()?.ok()?);
+    let ms: i64 = format!("{frac:0<3}")[..3].parse().ok()?;
+    // Días desde 1970-01-01 (algoritmo de Howard Hinnant).
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some(((days * 24 + h) * 60 + min) * 60_000 + sec * 1000 + ms)
+}
+
+/// Recorta por caracteres conservando el formato.
+fn cap(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        text.to_owned()
+    } else {
+        format!("{}…", text.chars().take(max - 1).collect::<String>())
     }
 }
 
@@ -175,7 +310,7 @@ fn absorb_assistant(facts: &mut Facts, entry: &Value) {
                 if let Some(t) = block.get("text").and_then(Value::as_str).map(str::trim)
                     && !t.is_empty()
                 {
-                    facts.last_reply = Some(clip(t, REPLY_MAX_CHARS));
+                    facts.last_reply = Some(cap(t, REPLY_MAX_CHARS));
                 }
             }
             Some("tool_use") => {
@@ -226,7 +361,7 @@ mod tests {
         let s = reader.read(path.to_str().unwrap(), &[]).unwrap();
         assert_eq!(s.title.as_deref(), Some("Arreglar login"));
         assert_eq!(s.last_prompt.as_deref(), Some("arregla el login"));
-        assert_eq!(s.last_reply.as_deref(), Some("Voy a mirar. Primero"));
+        assert_eq!(s.last_reply.as_deref(), Some("Voy a mirar.\n\nPrimero"), "conserva el Markdown");
         assert_eq!(s.last_action.as_deref(), Some("Read · login.rs"));
         assert_eq!(s.model.as_deref(), Some("claude-opus-5-5"));
         assert_eq!(s.context_tokens, Some(1502));
@@ -286,6 +421,54 @@ mod tests {
         append(&path, &line(json!({ "type": "ai-title", "aiTitle": "Reciente" })));
         let s = ClaudeTranscriptReader::new().read(path.to_str().unwrap(), &[]).unwrap();
         assert_eq!(s.title.as_deref(), Some("Reciente"));
+    }
+
+    #[test]
+    fn recent_timeline_has_prompts_replies_and_tools_in_order_without_noise() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.jsonl");
+        append(&path, &line(json!({ "type": "user", "timestamp": "2026-09-27T22:44:39.232Z", "message": { "content": "arregla el **login**" } })));
+        append(&path, &line(json!({ "type": "user", "message": { "content": "<command-name>/clear</command-name>" } })));
+        append(&path, &line(json!({ "type": "user", "isMeta": true, "message": { "content": "meta" } })));
+        append(&path, &assistant(json!([{ "type": "tool_use", "name": "Read", "input": { "file_path": "/a/login.rs" } }])));
+        append(&path, &line(json!({ "type": "user", "message": { "content": [{ "type": "tool_result", "content": "..." }] } })));
+        append(&path, &line(json!({ "type": "assistant", "isSidechain": true, "message": { "content": [{ "type": "text", "text": "de un subagente" }] } })));
+        append(&path, &assistant(json!([{ "type": "text", "text": "## Hecho\n\n- uno\n- dos" }])));
+
+        let items = ClaudeTranscriptReader::new().recent(path.to_str().unwrap(), 10);
+        let kinds: Vec<_> = items.iter().map(|i| (i.kind, i.text.as_str())).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                (TimelineKind::Prompt, "arregla el **login**"),
+                (TimelineKind::Tool, "Read · login.rs"),
+                (TimelineKind::Reply, "## Hecho\n\n- uno\n- dos"),
+            ]
+        );
+        assert_eq!(items[0].at, Some(1_790_549_079_232));
+
+        let last = ClaudeTranscriptReader::new().recent(path.to_str().unwrap(), 1);
+        assert_eq!(last.len(), 1);
+        assert_eq!(last[0].kind, TimelineKind::Reply);
+    }
+
+    #[test]
+    fn remembers_the_first_prompt_even_when_the_transcript_is_long() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.jsonl");
+        append(&path, &line(json!({ "type": "user", "message": { "content": "<command-name>/init</command-name>" } })));
+        append(&path, &line(json!({ "type": "user", "message": { "content": "Migra el login a OAuth" } })));
+        let filler = line(json!({ "type": "user", "message": { "content": "x".repeat(1000) } }));
+        append(&path, &filler.repeat(700));
+        let s = ClaudeTranscriptReader::new().read(path.to_str().unwrap(), &[]).unwrap();
+        assert_eq!(s.first_prompt.as_deref(), Some("Migra el login a OAuth"));
+    }
+
+    #[test]
+    fn parses_claude_timestamps() {
+        assert_eq!(parse_iso_ms("1970-01-01T00:00:00.000Z"), Some(0));
+        assert_eq!(parse_iso_ms("2000-03-01T12:30:05.5Z"), Some(951_913_805_500));
+        assert_eq!(parse_iso_ms("mañana"), None);
     }
 
     #[test]
