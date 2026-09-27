@@ -6,4 +6,16 @@ export type SessionView = { id: string, provider: string, attention: AttentionVi
 /**
  * Frase corta para la pantalla: "Bash", "Pide permiso: Edit", "Te toca"…
  */
-status_label: string, worktree_path: string, branch: string | null, is_linked_worktree: boolean, subagents: Array<SubagentView>, turns: number, started_at: number, last_activity_at: number, status_since: number, archived: boolean, muted: boolean, alive: boolean, terminal: string | null, tmux_pane: string | null, };
+status_label: string, 
+/**
+ * Título que genera el agente; `null` hasta que lo escribe.
+ */
+title: string | null, last_prompt: string | null, last_reply: string | null, last_action: string | null, model: string | null, context_tokens: number | null, worktree_path: string, branch: string | null, is_linked_worktree: boolean, subagents: Array<SubagentView>, turns: number, started_at: number, last_activity_at: number, status_since: number, archived: boolean, muted: boolean, alive: boolean, terminal: string | null, tmux_pane: string | null, 
+/**
+ * Hay enlace directo al pane de Warp.
+ */
+in_warp: boolean, 
+/**
+ * Terminal propio de la app: se puede ver y escribir desde aquí.
+ */
+pty_id: string | null, };

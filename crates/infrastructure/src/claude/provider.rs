@@ -22,6 +22,8 @@ impl AgentProvider for ClaudeProvider {
             return Err(PortError::Failed("hook de Claude sin session_id o hook_event_name".into()));
         };
         let tool = field("tool_name").map(str::to_owned);
+        // Los hooks de herramientas desde un subagente llevan `agent_id`.
+        let subagent = field("agent_id").map(str::to_owned);
 
         let kind = match event {
             "SessionStart" => SessionEventKind::Started,
@@ -30,12 +32,15 @@ impl AgentProvider for ClaudeProvider {
                 Some(t) if QUESTION_TOOLS.contains(&t.as_str()) => {
                     SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: Some(t) }
                 }
-                Some(t) => SessionEventKind::ToolStarted { tool: t },
+                Some(t) => match subagent {
+                    Some(id) => SessionEventKind::SubagentTool { id, tool: t },
+                    None => SessionEventKind::ToolStarted { tool: t },
+                },
                 None => return Ok(None),
             },
-            "PostToolUse" | "PostToolUseFailure" => match tool {
-                Some(t) => SessionEventKind::ToolFinished { tool: t, failed: event == "PostToolUseFailure" },
-                None => return Ok(None),
+            "PostToolUse" | "PostToolUseFailure" => match (tool, subagent) {
+                (Some(t), None) => SessionEventKind::ToolFinished { tool: t, failed: event == "PostToolUseFailure" },
+                _ => return Ok(None),
             },
             "PermissionRequest" => SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool },
             "Notification" => match notification_kind(field("notification_type"), field("message")) {
@@ -125,6 +130,15 @@ mod tests {
             translate(hook("PreToolUse", json!({ "tool_name": "Bash" }))),
             Some(SessionEventKind::ToolStarted { tool: "Bash".into() })
         );
+    }
+
+    #[test]
+    fn tools_used_by_subagents_are_attributed_to_them() {
+        assert_eq!(
+            translate(hook("PreToolUse", json!({ "tool_name": "Grep", "agent_id": "a1", "agent_type": "Explore" }))),
+            Some(SessionEventKind::SubagentTool { id: "a1".into(), tool: "Grep".into() })
+        );
+        assert_eq!(translate(hook("PostToolUse", json!({ "tool_name": "Grep", "agent_id": "a1" }))), None);
     }
 
     #[test]

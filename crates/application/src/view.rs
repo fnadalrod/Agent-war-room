@@ -1,8 +1,9 @@
 //! Read model que consume el front. Se exporta a TS con `ts-rs` (`cargo test -p awr-application`).
 
-use awr_domain::{Attention, Session, SessionStatus, WaitReason, WarRoom};
+use crate::ports::TranscriptSummary;
+use awr_domain::{Attention, Session, SessionId, SessionStatus, WaitReason, WarRoom};
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use ts_rs::TS;
 
 /// Mismo orden de urgencia que `Attention`.
@@ -54,6 +55,14 @@ pub struct SessionView {
     pub attention: AttentionView,
     /// Frase corta para la pantalla: "Bash", "Pide permiso: Edit", "Te toca"…
     pub status_label: String,
+    /// Título que genera el agente; `null` hasta que lo escribe.
+    pub title: Option<String>,
+    pub last_prompt: Option<String>,
+    pub last_reply: Option<String>,
+    pub last_action: Option<String>,
+    pub model: Option<String>,
+    #[ts(type = "number | null")]
+    pub context_tokens: Option<u64>,
     pub worktree_path: String,
     pub branch: Option<String>,
     pub is_linked_worktree: bool,
@@ -70,6 +79,10 @@ pub struct SessionView {
     pub alive: bool,
     pub terminal: Option<String>,
     pub tmux_pane: Option<String>,
+    /// Hay enlace directo al pane de Warp.
+    pub in_warp: bool,
+    /// Terminal propio de la app: se puede ver y escribir desde aquí.
+    pub pty_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
@@ -77,6 +90,8 @@ pub struct SessionView {
 pub struct SubagentView {
     pub id: String,
     pub kind: Option<String>,
+    pub description: Option<String>,
+    pub last_tool: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -90,7 +105,7 @@ pub struct IntegrationStatus {
     pub bridge_present: bool,
 }
 
-pub fn project(room: &WarRoom) -> WarRoomView {
+pub fn project(room: &WarRoom, summaries: &HashMap<SessionId, TranscriptSummary>) -> WarRoomView {
     let mut by_repo: BTreeMap<String, RoomView> = BTreeMap::new();
     for session in room.sessions() {
         let entry = by_repo.entry(session.workspace.repo.0.clone()).or_insert_with(|| RoomView {
@@ -99,13 +114,13 @@ pub fn project(room: &WarRoom) -> WarRoomView {
             attention: AttentionView::Offline,
             sessions: Vec::new(),
         });
-        entry.sessions.push(session_view(session));
+        entry.sessions.push(session_view(session, summaries.get(&session.id)));
     }
 
     let mut rooms: Vec<RoomView> = by_repo
         .into_values()
         .map(|mut r| {
-            r.sessions.sort_by_key(|s| std::cmp::Reverse(s.last_activity_at));
+            r.sessions.sort_by_key(|s| (std::cmp::Reverse(s.attention), std::cmp::Reverse(s.last_activity_at)));
             r.attention = r
                 .sessions
                 .iter()
@@ -125,19 +140,36 @@ pub fn project(room: &WarRoom) -> WarRoomView {
     WarRoomView { aggregate: room.aggregate_attention().into(), rooms }
 }
 
-fn session_view(s: &Session) -> SessionView {
+fn session_view(s: &Session, summary: Option<&TranscriptSummary>) -> SessionView {
+    let summary = summary.cloned().unwrap_or_default();
+    let detail = |id: &str| summary.subagents.iter().find(|d| d.id == id).cloned().unwrap_or_default();
     SessionView {
         id: s.id.0.clone(),
         provider: format!("{:?}", s.provider).to_lowercase(),
         attention: s.attention().into(),
         status_label: status_label(s),
+        title: summary.title.clone(),
+        last_prompt: summary.last_prompt.clone(),
+        last_reply: summary.last_reply.clone(),
+        last_action: summary.last_action.clone(),
+        model: summary.model.clone(),
+        context_tokens: summary.context_tokens,
         worktree_path: s.workspace.worktree_path.clone(),
         branch: s.workspace.branch.clone(),
         is_linked_worktree: s.workspace.is_linked_worktree,
         subagents: s
             .subagents
             .values()
-            .map(|a| SubagentView { id: a.id.clone(), kind: a.kind.clone() })
+            .map(|a| {
+                let d = detail(&a.id);
+                SubagentView {
+                    id: a.id.clone(),
+                    kind: a.kind.clone(),
+                    description: d.description,
+                    // El transcript da más detalle ("Grep · patrón"); el hook, al menos el nombre.
+                    last_tool: d.last_tool.or_else(|| a.current_tool.clone()),
+                }
+            })
             .collect(),
         turns: s.turns,
         started_at: s.started_at.0,
@@ -148,6 +180,8 @@ fn session_view(s: &Session) -> SessionView {
         alive: s.is_alive(),
         terminal: terminal_name(s),
         tmux_pane: s.host.tmux_pane.clone(),
+        in_warp: s.host.warp_focus_url.is_some(),
+        pty_id: s.host.pty_id.clone(),
     }
 }
 

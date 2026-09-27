@@ -38,6 +38,8 @@ fn run() -> Option<()> {
             tmux: std::env::var("TMUX").ok(),
             tmux_pane: std::env::var("TMUX_PANE").ok(),
             term_program: std::env::var("TERM_PROGRAM").ok(),
+            warp_focus_url: std::env::var("WARP_FOCUS_URL").ok(),
+            pty_id: std::env::var("AWR_PTY_ID").ok(),
         },
         payload,
     };

@@ -1,22 +1,30 @@
 import type { IntegrationStatus, SessionView, WarRoomView } from "../domain/attention";
 import type { IntegrationGateway, WarRoomGateway } from "./ports";
 
+export type Toast = { text: string; tone: "ok" | "warn" };
+
 export type WarRoomState = {
   view: WarRoomView | null;
   integration: IntegrationStatus | null;
   error: string | null;
+  toast: Toast | null;
   busy: boolean;
 };
 
+const TOAST_MS = 3500;
+
 /** Store sin framework: la UI se suscribe con `useSyncExternalStore`. */
 export class WarRoomStore {
-  private state: WarRoomState = { view: null, integration: null, error: null, busy: false };
+  private state: WarRoomState = { view: null, integration: null, error: null, toast: null, busy: false };
   private readonly listeners = new Set<() => void>();
+  private toastTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly rooms: WarRoomGateway;
+  private readonly integration: IntegrationGateway;
 
-  constructor(
-    private readonly rooms: WarRoomGateway,
-    private readonly integration: IntegrationGateway,
-  ) {}
+  constructor(rooms: WarRoomGateway, integration: IntegrationGateway) {
+    this.rooms = rooms;
+    this.integration = integration;
+  }
 
   async start(): Promise<() => void> {
     const unsubscribe = await this.rooms.onChange((view) => this.set({ view }));
@@ -34,9 +42,20 @@ export class WarRoomStore {
 
   readonly snapshot = () => this.state;
 
-  /** Abrir una pantalla terminada equivale a haberla revisado. */
+  /** Ir a la ventana de la sesión; si era un "terminado", el núcleo lo marca como revisado. */
+  goTo(s: SessionView) {
+    void this.rooms.focus(s.id).then(
+      (via) => this.notify({ text: `→ ${s.title ?? s.worktree_path} (${via})`, tone: "ok" }),
+      (reason) => this.notify({ text: String(reason), tone: "warn" }),
+    );
+  }
+
   acknowledge(s: SessionView) {
-    if (s.attention === "finished") void this.run(() => this.rooms.markSeen(s.id));
+    void this.run(() => this.rooms.markSeen(s.id));
+  }
+
+  acknowledgeAll() {
+    void this.run(() => this.rooms.markAllSeen());
   }
 
   toggleArchive(s: SessionView) {
@@ -57,6 +76,12 @@ export class WarRoomStore {
 
   dismissError() {
     this.set({ error: null });
+  }
+
+  private notify(toast: Toast) {
+    clearTimeout(this.toastTimer);
+    this.set({ toast });
+    this.toastTimer = setTimeout(() => this.set({ toast: null }), TOAST_MS);
   }
 
   private async run(action: () => Promise<unknown>) {

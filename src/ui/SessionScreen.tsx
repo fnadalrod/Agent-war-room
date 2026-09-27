@@ -1,32 +1,43 @@
 import type { WarRoomStore } from "../application/warRoomStore";
-import { ATTENTION_LABEL, deskName, shortId, type SessionView } from "../domain/attention";
+import {
+  activity,
+  contextLabel,
+  deskName,
+  modelName,
+  shortId,
+  whereItLives,
+  type SessionView,
+} from "../domain/attention";
 import { since } from "./useStore";
 
 type Props = { session: SessionView; store: WarRoomStore; now: number };
 
 export function SessionScreen({ session: s, store, now }: Props) {
+  const reply = s.attention !== "working" ? s.last_reply : null;
+
   return (
-    <article
-      className="screen"
-      data-attention={s.attention}
-      data-muted={s.muted}
-      data-archived={s.archived}
-      onClick={() => store.acknowledge(s)}
-      title={s.attention === "finished" ? "Clic para marcar como revisada" : undefined}
-    >
-      <div className="glass">
-        <div className="status">{s.status_label}</div>
+    <article className="screen" data-attention={s.attention} data-muted={s.muted} data-archived={s.archived}>
+      <button
+        className="glass"
+        disabled={!s.alive}
+        onClick={() => store.goTo(s)}
+        title={s.alive ? `Ir a la sesión · ${whereItLives(s)}` : "Sesión cerrada"}
+      >
+        <div className="title">{s.title ?? deskName(s)}</div>
+        <div className="status">{activity(s)}</div>
         <div className="since">{since(s.status_since, now)}</div>
+        {reply && <p className="reply">{reply}</p>}
         {s.subagents.length > 0 && (
-          <div className="subagents">
+          <ul className="subagents">
             {s.subagents.map((a) => (
-              <span key={a.id} className="subagent" title={a.id}>
-                {a.kind ?? "subagente"}
-              </span>
+              <li key={a.id} title={a.id}>
+                <span className="who">{a.description ?? a.kind ?? "subagente"}</span>
+                {a.last_tool && <span className="doing">{a.last_tool}</span>}
+              </li>
             ))}
-          </div>
+          </ul>
         )}
-      </div>
+      </button>
 
       <footer>
         <div className="where">
@@ -35,13 +46,14 @@ export function SessionScreen({ session: s, store, now }: Props) {
           {s.is_linked_worktree && <span className="tag">worktree</span>}
         </div>
         <div className="meta">
-          <span>{ATTENTION_LABEL[s.attention]}</span>
+          {modelName(s) && <span>{modelName(s)}</span>}
+          {contextLabel(s) && <span>· {contextLabel(s)} ctx</span>}
           <span>· {s.turns} turnos</span>
-          {s.terminal && <span>· {s.terminal}</span>}
-          {s.tmux_pane && <span>· tmux {s.tmux_pane}</span>}
+          <span>· {whereItLives(s)}</span>
           <span className="id">{shortId(s)}</span>
         </div>
-        <div className="actions" onClick={(e) => e.stopPropagation()}>
+        <div className="actions">
+          {s.attention === "finished" && <button onClick={() => store.acknowledge(s)}>Visto</button>}
           <button onClick={() => store.toggleMute(s)}>{s.muted ? "Reactivar avisos" : "Silenciar"}</button>
           <button onClick={() => store.toggleArchive(s)}>{s.archived ? "Readmitir" : "Despedir"}</button>
         </div>

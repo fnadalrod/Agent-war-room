@@ -27,10 +27,15 @@ pub struct WireProcess {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct EnvHints {
     pub tmux: Option<String>,
     pub tmux_pane: Option<String>,
     pub term_program: Option<String>,
+    /// `$WARP_FOCUS_URL`: enfoca el pane exacto de Warp.
+    pub warp_focus_url: Option<String>,
+    /// `$AWR_PTY_ID`: la sesión corre en un terminal lanzado por la propia app.
+    pub pty_id: Option<String>,
 }
 
 /// `$XDG_RUNTIME_DIR/agent-war-room/ingress.sock`, o `/tmp/agent-war-room-$USER/…` sin XDG.

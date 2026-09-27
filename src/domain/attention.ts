@@ -5,6 +5,7 @@ import type { WarRoomView } from "./generated/WarRoomView";
 
 export type { AttentionView, SessionView, WarRoomView };
 export type { RoomView } from "./generated/RoomView";
+export type { SubagentView } from "./generated/SubagentView";
 export type { IntegrationStatus } from "./generated/IntegrationStatus";
 
 export const ATTENTION_LABEL: Record<AttentionView, string> = {
@@ -37,4 +38,29 @@ export function deskName(s: SessionView): string {
 
 export function shortId(s: SessionView): string {
   return s.id.slice(0, 8);
+}
+
+/** "claude-opus-5-5" → "opus-5-5". */
+export function modelName(s: SessionView): string | null {
+  return s.model?.replace(/^claude-/, "") ?? null;
+}
+
+/** 152340 → "152k". */
+export function contextLabel(s: SessionView): string | null {
+  if (s.context_tokens == null) return null;
+  const k = s.context_tokens / 1000;
+  return k >= 1000 ? `${(k / 1000).toFixed(1)}M` : `${Math.round(k)}k`;
+}
+
+/** Qué hace ahora: la acción detallada del transcript si hay, si no la etiqueta del hook. */
+export function activity(s: SessionView): string {
+  if (s.attention === "working" && s.last_action) return s.last_action;
+  return s.status_label;
+}
+
+/** Cómo se llega a la sesión, para el tooltip del botón "Ir a". */
+export function whereItLives(s: SessionView): string {
+  if (s.in_warp) return "Warp (pane exacto)";
+  if (s.tmux_pane) return `tmux ${s.tmux_pane}`;
+  return s.terminal ?? "terminal desconocida";
 }

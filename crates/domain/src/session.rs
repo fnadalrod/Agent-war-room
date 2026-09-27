@@ -23,6 +23,8 @@ pub struct Subagent {
     pub id: String,
     pub kind: Option<String>,
     pub started_at: Timestamp,
+    #[serde(default)]
+    pub current_tool: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -138,11 +140,24 @@ impl Session {
             SessionEventKind::SubagentStarted { id, kind } => {
                 self.subagents.insert(
                     id.clone(),
-                    Subagent { id: id.clone(), kind: kind.clone(), started_at: at },
+                    Subagent { id: id.clone(), kind: kind.clone(), started_at: at, current_tool: None },
                 );
             }
             SessionEventKind::SubagentStopped { id } => {
                 self.subagents.remove(id);
+            }
+            SessionEventKind::SubagentTool { id, tool } => {
+                let subagent = self.subagents.entry(id.clone()).or_insert_with(|| Subagent {
+                    id: id.clone(),
+                    kind: None,
+                    started_at: at,
+                    current_tool: None,
+                });
+                subagent.current_tool = Some(tool.clone());
+                // Si un subagente sigue trabajando, el permiso que se esperaba ya se resolvió.
+                if matches!(self.status, SessionStatus::AwaitingYou { .. }) {
+                    self.set_status(SessionStatus::Working { tool: None }, at);
+                }
             }
             SessionEventKind::CompactionStarted => {
                 self.set_status(SessionStatus::Compacting, at);

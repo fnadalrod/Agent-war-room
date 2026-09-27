@@ -61,6 +61,54 @@ pub trait ViewPublisher: Send + Sync {
     fn publish(&self, view: &WarRoomView);
 }
 
+/// Lo que el transcript cuenta de una sesión y que los hooks no traen.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TranscriptSummary {
+    /// Título que el propio agente genera para la sesión.
+    pub title: Option<String>,
+    pub last_prompt: Option<String>,
+    /// Último texto del agente (no herramientas).
+    pub last_reply: Option<String>,
+    /// Última herramienta usada con su argumento principal: "Bash · cargo test".
+    pub last_action: Option<String>,
+    pub model: Option<String>,
+    /// Tokens de contexto del último turno (entrada + caché).
+    pub context_tokens: Option<u64>,
+    pub subagents: Vec<SubagentDetail>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SubagentDetail {
+    pub id: String,
+    pub description: Option<String>,
+    pub last_tool: Option<String>,
+}
+
+pub trait TranscriptReader: Send + Sync {
+    /// Lectura incremental: llamarla a menudo debe ser barato.
+    fn read(&self, transcript_path: &str, subagent_ids: &[String]) -> Option<TranscriptSummary>;
+}
+
+/// A dónde saltar para ver una sesión.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FocusTarget {
+    pub host: awr_domain::TerminalHost,
+    /// Textos que probablemente aparecen en el título de la ventana correcta, por prioridad.
+    pub caption_hints: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FocusOutcome {
+    /// Se pidió enfocar; `via` dice cómo ("tmux + kwin", "kwin"…).
+    Focused { via: String },
+    /// No hay forma conocida de llegar (sin ventana localizable o escritorio no soportado).
+    Unreachable { reason: String },
+}
+
+pub trait WindowNavigator: Send + Sync {
+    fn focus(&self, target: &FocusTarget) -> PortResult<FocusOutcome>;
+}
+
 /// Integra el puente de hooks en la configuración del agente.
 pub trait IntegrationInstaller: Send + Sync {
     fn status(&self) -> PortResult<IntegrationStatus>;

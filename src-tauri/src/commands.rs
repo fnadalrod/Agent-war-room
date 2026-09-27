@@ -1,7 +1,7 @@
 //! Adaptador de entrada: commands que invoca el front.
 
 use awr_application::WarRoomService;
-use awr_application::ports::{IntegrationInstaller, PortResult};
+use awr_application::ports::{FocusOutcome, IntegrationInstaller, PortResult};
 use awr_application::view::{IntegrationStatus, WarRoomView};
 use awr_domain::SessionId;
 use std::sync::Arc;
@@ -22,6 +22,26 @@ pub fn get_view(service: Service) -> WarRoomView {
 #[tauri::command]
 pub fn mark_seen(service: Service, id: String) -> Result<(), String> {
     done(service.mark_seen(SessionId(id)))
+}
+
+#[tauri::command]
+pub fn mark_all_seen(service: Service) -> Result<(), String> {
+    done(service.mark_all_seen())
+}
+
+/// Devuelve cómo se llegó ("kwin", "tmux + kwin", "warp") o falla con el motivo.
+#[tauri::command]
+pub async fn focus(service: State<'_, Arc<WarRoomService>>, id: String) -> Result<String, String> {
+    let service = service.inner().clone();
+    // Lanza procesos (busctl, tmux): fuera del hilo de la UI.
+    let outcome = tauri::async_runtime::spawn_blocking(move || service.focus(SessionId(id)))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    match outcome {
+        FocusOutcome::Focused { via } => Ok(via),
+        FocusOutcome::Unreachable { reason } => Err(reason),
+    }
 }
 
 #[tauri::command]

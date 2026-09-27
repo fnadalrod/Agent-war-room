@@ -245,6 +245,27 @@ mod tests {
     }
 
     #[test]
+    fn subagent_tools_do_not_hijack_the_main_status_but_resolve_a_pending_permission() {
+        let mut room = WarRoom::new();
+        room.apply(signal("s", 1, SessionEventKind::ToolStarted { tool: "Agent".into() }));
+        room.apply(signal("s", 2, SessionEventKind::SubagentTool { id: "a1".into(), tool: "Grep".into() }));
+        let s = room.get(&SessionId("s".into())).unwrap();
+        assert_eq!(s.status, SessionStatus::Working { tool: Some("Agent".into()) });
+        assert_eq!(s.subagents["a1"].current_tool.as_deref(), Some("Grep"));
+
+        room.apply(signal("s", 3, SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: Some("Bash".into()) }));
+        room.apply(signal("s", 4, SessionEventKind::SubagentTool { id: "a1".into(), tool: "Bash".into() }));
+        assert_eq!(attention(&room, "s"), Attention::Working);
+    }
+
+    #[test]
+    fn events_stored_before_new_fields_still_load() {
+        let old = r#"{"session":"s","at":1,"context":{"provider":"claude","workspace":{"repo":"r","repo_name":"r","worktree_path":"/r","branch":null,"is_linked_worktree":false},"host":{"agent_pid":7,"ancestry":[],"tmux_pane":null,"term_program":null},"transcript_path":null},"kind":{"type":"started"}}"#;
+        let e: SessionEvent = serde_json::from_str(old).unwrap();
+        assert_eq!(e.context.unwrap().host.warp_focus_url, None);
+    }
+
+    #[test]
     fn events_roundtrip_through_json() {
         let e = signal("s", 1, SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: None });
         let json = serde_json::to_string(&e).unwrap();

@@ -10,6 +10,8 @@ export const tauriWarRoomGateway: WarRoomGateway = {
   load: () => invoke<WarRoomView>("get_view"),
   onChange: (listener) => listen<WarRoomView>(VIEW_EVENT, (e) => listener(e.payload)),
   markSeen: (id) => invoke("mark_seen", { id }),
+  markAllSeen: () => invoke("mark_all_seen"),
+  focus: (id) => invoke<string>("focus", { id }),
   archive: (id) => invoke("archive", { id }),
   unarchive: (id) => invoke("unarchive", { id }),
   mute: (id) => invoke("mute", { id }),

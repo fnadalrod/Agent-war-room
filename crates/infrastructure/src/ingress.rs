@@ -77,7 +77,11 @@ fn to_signal(envelope: HookEnvelope) -> Option<IncomingSignal> {
                 .map(|p| ProcessInfo { pid: p.pid, name: p.name })
                 .collect(),
             tmux_pane: envelope.env.tmux_pane,
+            // `$TMUX` es `socket,pid_servidor,sesión`.
+            tmux_socket: envelope.env.tmux.and_then(|t| t.split(',').next().map(str::to_owned)),
             term_program: envelope.env.term_program,
+            warp_focus_url: envelope.env.warp_focus_url,
+            pty_id: envelope.env.pty_id,
         },
         payload: envelope.payload,
     })

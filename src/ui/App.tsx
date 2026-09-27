@@ -25,6 +25,9 @@ export function App({ store }: { store: WarRoomStore }) {
                 <b>{countBy(view, a)}</b> {ATTENTION_LABEL[a]}
               </span>
             ))}
+            {countBy(view, "finished") > 0 && (
+              <button onClick={() => store.acknowledgeAll()}>Todo visto</button>
+            )}
             <label className="toggle">
               <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
               Archivadas ({archivedCount(view)})
@@ -37,6 +40,12 @@ export function App({ store }: { store: WarRoomStore }) {
         <div className="error" role="alert">
           {state.error}
           <button onClick={() => store.dismissError()}>Cerrar</button>
+        </div>
+      )}
+
+      {state.toast && (
+        <div className="toast" data-tone={state.toast.tone} role="status">
+          {state.toast.text}
         </div>
       )}
 

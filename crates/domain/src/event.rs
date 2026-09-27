@@ -48,6 +48,8 @@ pub enum SessionEventKind {
     TurnEnded,
     SubagentStarted { id: String, kind: Option<String> },
     SubagentStopped { id: String },
+    /// Un subagente usa una herramienta. No cambia la herramienta de la sesión principal.
+    SubagentTool { id: String, tool: String },
     CompactionStarted,
     Ended { reason: EndReason },
 
