@@ -462,3 +462,91 @@ button.primary {
   min-height: 0;
   padding: 6px 0 0 8px;
 }
+
+.segmented {
+  display: flex;
+}
+
+.segmented button {
+  border-radius: 0;
+}
+
+.segmented button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.segmented button:last-child {
+  border-left: 0;
+  border-radius: 0 4px 4px 0;
+}
+
+.segmented button[aria-pressed="true"] {
+  border-color: var(--finished);
+  background: color-mix(in srgb, var(--finished) 22%, #1a2336);
+}
+
+/* War Room pixel art */
+.pixel-room {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin-top: 8px;
+}
+
+.pixel-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.pixel-stage canvas {
+  display: block;
+  max-width: 100%;
+  border: 2px solid var(--panel-edge);
+  border-radius: 4px;
+  image-rendering: pixelated;
+  cursor: pointer;
+}
+
+.pixel-tip {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  max-width: 70%;
+  padding: 6px 10px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+  background: rgb(14 21 36 / 0.92);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.inspector {
+  position: sticky;
+  top: 70px;
+  flex: 0 0 340px;
+}
+
+.inspector .close {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+@media (max-width: 900px) {
+  .pixel-room {
+    flex-direction: column;
+  }
+
+  .inspector {
+    position: relative;
+    top: 0;
+    flex-basis: auto;
+    width: 100%;
+  }
+}

@@ -60,20 +60,60 @@ Tests = reproducir secuencias de eventos.
 
 ### "Ir a" antes que "escribir"
 
-Prioridad: saltar a la ventana/pane correcto (KWin por DBus en KDE Wayland, tmux, Warp a nivel de
-ventana). Escribir en la sesión solo para sesiones lanzadas desde la app (PTY) o en tmux.
+Prioridad: saltar a la ventana o pane correcto.
+
+- **Warp:** enfoca el pane exacto con `WARP_FOCUS_URL`, que el puente captura.
+- **tmux:** selecciona el pane y enfoca la terminal de su cliente.
+- **KDE Plasma (X11 y Wayland):** un script de KWin cargado por DBus busca la ventana cuya PID esté
+  en la cadena de procesos del agente. Si hay varias del mismo proceso, desempata por el título,
+  dando más peso a la palabra completa (`Tintero` no gana en `Tintero3Repo`).
+
+Escribir en la sesión solo es posible si corre en un terminal de la app (PTY enlazado por
+`AWR_PTY_ID`) o en tmux.
+
+### Aprobar permisos desde la app
+
+Comprobado con Claude Code real (2.1.283):
+
+- El diálogo de `PermissionRequest` se muestra en la terminal **mientras** el hook está en marcha.
+- Si el hook responde primero, Claude aplica su decisión.
+- Si contestas antes en la terminal, Claude mata el hook y descarta su respuesta.
+
+Por eso el puente espera la decisión de la app (timeout de 600 s) sin bloquear a nadie, y no hace
+falta ningún interruptor. La app detecta el EOF de la conexión para retirar el botón de aprobar.
+
+### Agentes lanzados desde la app
+
+- Se abren con un shell de login, porque el PATH del escritorio no incluye `~/.local/bin`.
+- No heredan las marcas de subsesión (`CLAUDECODE`, `CLAUDE_CODE_*`…). Con ellas Claude se tomaría
+  por un subproceso y no guardaría transcript.
+- **Reanudar en Warp:** se escribe un Tab Config (`awr-*.toml`, que se borra pasadas 24 h) y se abre
+  con `warp://tab_config/…`.
 
 ## Fases
 
-- **F0**: puente, ingesta, máquina de estados, bandeja con color agregado, avisos, vista clásica por
-  repo, archivar/silenciar/visto, instalador.
-- **F1**: "ir a" (KWin, tmux, Warp), transcript (último mensaje, herramienta), árbol de subagentes.
-- **F2**: aprobar permisos desde la app (hook bloqueante con fallback a `ask`), sesiones PTY propias.
-- **F3**: War Room pixel art (PixiJS) sobre el mismo read model.
+Todas implementadas:
+
+- **F0**: puente, ingesta, máquina de estados, bandeja con el color agregado, avisos, vista clásica
+  por repo, archivar/silenciar/visto e instalador.
+- **F1**: "ir a" (Warp, tmux, KWin), lectura incremental del transcript y actividad de los
+  subagentes.
+- **F2**: aprobar o denegar permisos desde la app, terminales propios, escritura en sesiones, y
+  lanzar o reanudar agentes (en la app o en Warp).
+- **F3**: War Room pixel art sobre el mismo read model. Es Canvas 2D a baja resolución con fuente
+  bitmap propia: no hizo falta PixiJS.
+
+Pendiente o fuera de alcance por ahora:
+
+- Matar el proceso de un agente desde la app.
+- Otros proveedores además de Claude (el puerto `AgentProvider` está listo).
+- Escritorios que no sean KDE para "ir a".
+- macOS.
 
 ## Consecuencias
 
 - Plataforma objetivo inicial: Linux (KDE Wayland). macOS después.
-- Los tipos del read model se generan desde Rust (`ts-rs`) a `src/domain/generated`; el front no
+- Los tipos del read model se generan desde Rust (`ts-rs`) a `src/domain/generated`: el front no
   duplica contratos a mano.
+- Fuera de Tauri, el front usa adaptadores de demostración que implementan los mismos puertos.
 - Sin la app abierta no se registra nada (el puente descarta). Aceptable: la app vive en la bandeja.

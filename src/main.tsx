@@ -1,12 +1,18 @@
-// Raíz de composición del front: conecta el store con los adaptadores de Tauri.
+// Raíz de composición del front: conecta el store con los adaptadores de Tauri, o con los de
+// demostración si la UI se abre fuera de la app (navegador, capturas, diseño).
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { WarRoomStore } from "./application/warRoomStore";
+import { createDemo } from "./infrastructure/demoGateway";
 import { tauriIntegrationGateway, tauriTerminalGateway, tauriWarRoomGateway } from "./infrastructure/tauriGateway";
 import { App } from "./ui/App";
 import "./ui/styles.css";
 
-const store = new WarRoomStore(tauriWarRoomGateway, tauriIntegrationGateway, tauriTerminalGateway);
+const insideTauri = "__TAURI_INTERNALS__" in window;
+const demo = insideTauri ? null : createDemo();
+const store = demo
+  ? new WarRoomStore(demo.rooms, demo.integration, demo.terminals)
+  : new WarRoomStore(tauriWarRoomGateway, tauriIntegrationGateway, tauriTerminalGateway);
 void store.start();
 
 createRoot(document.getElementById("root")!).render(
