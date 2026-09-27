@@ -3,7 +3,7 @@
 use crate::ports::TranscriptSummary;
 use awr_domain::{Attention, Session, SessionId, SessionStatus, WaitReason, WarRoom};
 use serde::Serialize;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use ts_rs::TS;
 
 /// Mismo orden de urgencia que `Attention`.
@@ -83,6 +83,8 @@ pub struct SessionView {
     pub in_warp: bool,
     /// Terminal propio de la app: se puede ver y escribir desde aquí.
     pub pty_id: Option<String>,
+    /// Hay un permiso pendiente que se puede aprobar o denegar desde la app.
+    pub can_approve: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
@@ -105,7 +107,11 @@ pub struct IntegrationStatus {
     pub bridge_present: bool,
 }
 
-pub fn project(room: &WarRoom, summaries: &HashMap<SessionId, TranscriptSummary>) -> WarRoomView {
+pub fn project(
+    room: &WarRoom,
+    summaries: &HashMap<SessionId, TranscriptSummary>,
+    approvable: &HashSet<SessionId>,
+) -> WarRoomView {
     let mut by_repo: BTreeMap<String, RoomView> = BTreeMap::new();
     for session in room.sessions() {
         let entry = by_repo.entry(session.workspace.repo.0.clone()).or_insert_with(|| RoomView {
@@ -114,7 +120,7 @@ pub fn project(room: &WarRoom, summaries: &HashMap<SessionId, TranscriptSummary>
             attention: AttentionView::Offline,
             sessions: Vec::new(),
         });
-        entry.sessions.push(session_view(session, summaries.get(&session.id)));
+        entry.sessions.push(session_view(session, summaries.get(&session.id), approvable.contains(&session.id)));
     }
 
     let mut rooms: Vec<RoomView> = by_repo
@@ -140,7 +146,7 @@ pub fn project(room: &WarRoom, summaries: &HashMap<SessionId, TranscriptSummary>
     WarRoomView { aggregate: room.aggregate_attention().into(), rooms }
 }
 
-fn session_view(s: &Session, summary: Option<&TranscriptSummary>) -> SessionView {
+fn session_view(s: &Session, summary: Option<&TranscriptSummary>, can_approve: bool) -> SessionView {
     let summary = summary.cloned().unwrap_or_default();
     let detail = |id: &str| summary.subagents.iter().find(|d| d.id == id).cloned().unwrap_or_default();
     SessionView {
@@ -182,6 +188,7 @@ fn session_view(s: &Session, summary: Option<&TranscriptSummary>) -> SessionView
         tmux_pane: s.host.tmux_pane.clone(),
         in_warp: s.host.warp_focus_url.is_some(),
         pty_id: s.host.pty_id.clone(),
+        can_approve,
     }
 }
 
@@ -190,9 +197,10 @@ fn status_label(s: &Session) -> String {
         SessionStatus::Idle => "En espera".into(),
         SessionStatus::Working { tool: Some(tool) } => tool.clone(),
         SessionStatus::Working { tool: None } => "Pensando".into(),
-        SessionStatus::AwaitingYou { reason: WaitReason::Permission, tool } => match tool {
-            Some(tool) => format!("Pide permiso: {tool}"),
-            None => "Pide permiso".into(),
+        SessionStatus::AwaitingYou { reason: WaitReason::Permission, tool, detail } => match (tool, detail) {
+            (Some(tool), Some(detail)) => format!("Pide permiso: {tool} · {detail}"),
+            (Some(tool), None) => format!("Pide permiso: {tool}"),
+            _ => "Pide permiso".into(),
         },
         SessionStatus::AwaitingYou { reason: WaitReason::Question, .. } => "Te pregunta".into(),
         SessionStatus::AwaitingInput if s.unseen => "Terminado".into(),

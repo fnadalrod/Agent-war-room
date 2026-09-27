@@ -109,6 +109,57 @@ pub trait WindowNavigator: Send + Sync {
     fn focus(&self, target: &FocusTarget) -> PortResult<FocusOutcome>;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ApprovalDecision {
+    Allow,
+    Deny { message: Option<String> },
+}
+
+/// Canal de vuelta hacia un agente que espera una decisión de permiso.
+pub trait ApprovalResponder: Send + Sync {
+    /// El agente sigue esperando: nadie ha contestado aún en la terminal.
+    fn is_open(&self) -> bool;
+    /// Entrega la decisión. `false` si ya no había nadie esperando.
+    fn respond(&self, decision: ApprovalDecision) -> bool;
+}
+
+/// Dónde abrir un agente nuevo o reanudado.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LaunchTarget {
+    /// Terminal propio de la app: se ve y se escribe desde la war room.
+    App,
+    /// Pestaña nueva de Warp.
+    Warp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchRequest {
+    pub cwd: String,
+    /// Reanudar esta sesión (`claude --resume <id>`) en vez de empezar una nueva.
+    pub resume: Option<SessionId>,
+    pub target: LaunchTarget,
+    /// Nombre para la pestaña o el terminal.
+    pub label: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LaunchOutcome {
+    /// Terminal de la app; la UI puede abrirlo ya, antes de que llegue el primer hook.
+    AppTerminal { pty_id: String },
+    External { via: String },
+}
+
+pub trait AgentLauncher: Send + Sync {
+    fn launch(&self, request: &LaunchRequest) -> PortResult<LaunchOutcome>;
+}
+
+/// Escribe en una sesión viva como si se tecleara en su terminal.
+pub trait SessionInput: Send + Sync {
+    /// `Err` si la terminal de la sesión no admite escritura desde fuera (solo "ir a").
+    fn send(&self, host: &awr_domain::TerminalHost, text: &str) -> PortResult<()>;
+}
+
 /// Integra el puente de hooks en la configuración del agente.
 pub trait IntegrationInstaller: Send + Sync {
     fn status(&self) -> PortResult<IntegrationStatus>;

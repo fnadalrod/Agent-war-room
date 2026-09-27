@@ -1,4 +1,8 @@
-//! Contrato del socket entre `warroom-hook` y la app. Un envelope JSON por conexión.
+//! Contrato del socket entre `warroom-hook` y la app.
+//!
+//! Una conexión por hook: el puente escribe un [`HookEnvelope`] en una línea (`\n`). Si marca
+//! `expects_reply`, deja la conexión abierta y espera una línea con un [`HookReply`]; si la app
+//! la cierra sin responder, el agente sigue su flujo normal.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -18,6 +22,17 @@ pub struct HookEnvelope {
     pub env: EnvHints,
     /// JSON del hook tal cual lo entregó el agente.
     pub payload: serde_json::Value,
+    /// El puente espera una decisión (p. ej. un permiso que se puede aprobar desde la app).
+    #[serde(default)]
+    pub expects_reply: bool,
+}
+
+/// Decisión de la app sobre un hook que la esperaba.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "decision", rename_all = "snake_case")]
+pub enum HookReply {
+    Allow,
+    Deny { message: Option<String> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

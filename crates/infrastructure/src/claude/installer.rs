@@ -23,6 +23,9 @@ pub const HOOKED_EVENTS: &[&str] = &[
 /// Identifica nuestras entradas en `settings.json`, sin tocar las de nadie más.
 const MARKER: &str = "warroom-hook";
 const HOOK_TIMEOUT_SECS: u64 = 5;
+/// `PermissionRequest` espera tu decisión desde la app; Claude muestra su diálogo a la vez y, si
+/// contestas allí, mata el hook. El puente se rinde a los 590 s.
+const PERMISSION_TIMEOUT_SECS: u64 = 600;
 
 /// Merge no destructivo de nuestros hooks en `~/.claude/settings.json`.
 pub struct ClaudeHookInstaller {
@@ -135,9 +138,10 @@ fn add_hooks(settings: &mut Map<String, Value>, command: &str) {
     for event in HOOKED_EVENTS {
         let groups = hooks.entry(*event).or_insert_with(|| Value::Array(Vec::new()));
         if let Some(groups) = groups.as_array_mut() {
+            let timeout = if *event == "PermissionRequest" { PERMISSION_TIMEOUT_SECS } else { HOOK_TIMEOUT_SECS };
             groups.push(json!({
                 "matcher": "",
-                "hooks": [{ "type": "command", "command": command, "timeout": HOOK_TIMEOUT_SECS }]
+                "hooks": [{ "type": "command", "command": command, "timeout": timeout }]
             }));
         }
     }
@@ -243,6 +247,8 @@ mod tests {
         assert_eq!(stop.len(), 2, "el ajeno + el nuestro, sin duplicar");
         assert_eq!(stop[0]["hooks"][0]["command"], "node other.js");
         assert!(backup_path(&installer.settings_path).exists());
+        assert_eq!(settings["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"], 600);
+        assert_eq!(settings["hooks"]["Stop"][1]["hooks"][0]["timeout"], 5);
     }
 
     #[test]

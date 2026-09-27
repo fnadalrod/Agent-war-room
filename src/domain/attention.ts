@@ -64,3 +64,14 @@ export function whereItLives(s: SessionView): string {
   if (s.tmux_pane) return `tmux ${s.tmux_pane}`;
   return s.terminal ?? "terminal desconocida";
 }
+
+/** Se puede escribir en ella desde la app (terminal propio o tmux). */
+export function isWritable(s: SessionView): boolean {
+  return s.alive && (s.pty_id != null || s.tmux_pane != null);
+}
+
+/** Carpeta donde abrir un agente nuevo en esta sala: el checkout principal si lo conocemos. */
+export function roomHome(room: import("./generated/RoomView").RoomView): string | null {
+  const main = room.sessions.find((s) => !s.is_linked_worktree) ?? room.sessions[0];
+  return main?.worktree_path ?? null;
+}

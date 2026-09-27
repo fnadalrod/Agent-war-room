@@ -3,6 +3,7 @@
 //! `<proyecto>/<sesión>.jsonl` es la conversación principal; los subagentes viven en
 //! `<proyecto>/<sesión>/subagents/agent-<id>.jsonl` con un `agent-<id>.meta.json` al lado.
 
+use super::tools::{clip, tool_label};
 use awr_application::ports::{SubagentDetail, TranscriptReader, TranscriptSummary};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -15,7 +16,6 @@ use std::sync::Mutex;
 /// prompt se repiten a menudo, así que basta con la cola.
 const INITIAL_TAIL_BYTES: u64 = 512 * 1024;
 const REPLY_MAX_CHARS: usize = 600;
-const ARG_MAX_CHARS: usize = 60;
 
 #[derive(Default)]
 pub struct ClaudeTranscriptReader {
@@ -188,29 +188,6 @@ fn absorb_assistant(facts: &mut Facts, entry: &Value) {
     }
 }
 
-/// "Bash · cargo test", "Read · view.rs", "Agent · Revisar el login"…
-fn tool_label(name: &str, input: Option<&Value>) -> String {
-    const KEYS: &[&str] = &["description", "file_path", "notebook_path", "path", "pattern", "command", "url", "query", "skill", "prompt"];
-    let Some(input) = input else { return name.to_owned() };
-    let arg = KEYS.iter().find_map(|k| Some((*k, input.get(*k)?.as_str()?)));
-    match arg {
-        Some((key, value)) if key.ends_with("path") => {
-            let file = Path::new(value).file_name().map(|f| f.to_string_lossy().into_owned());
-            format!("{name} · {}", file.unwrap_or_else(|| value.to_owned()))
-        }
-        Some((_, value)) => format!("{name} · {}", clip(value, ARG_MAX_CHARS)),
-        None => name.to_owned(),
-    }
-}
-
-fn clip(text: &str, max: usize) -> String {
-    let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if flat.chars().count() <= max {
-        flat
-    } else {
-        format!("{}…", flat.chars().take(max - 1).collect::<String>())
-    }
-}
 
 #[cfg(test)]
 mod tests {

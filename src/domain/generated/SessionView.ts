@@ -18,4 +18,8 @@ in_warp: boolean,
 /**
  * Terminal propio de la app: se puede ver y escribir desde aquí.
  */
-pty_id: string | null, };
+pty_id: string | null, 
+/**
+ * Hay un permiso pendiente que se puede aprobar o denegar desde la app.
+ */
+can_approve: boolean, };

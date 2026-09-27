@@ -1,10 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { IntegrationGateway, WarRoomGateway } from "../application/ports";
+import type {
+  IntegrationGateway,
+  Launched,
+  TerminalGateway,
+  TerminalInfo,
+  WarRoomGateway,
+} from "../application/ports";
 import type { IntegrationStatus, WarRoomView } from "../domain/attention";
 
-/** Debe coincidir con `adapters::VIEW_EVENT` en src-tauri. */
+/** Deben coincidir con `adapters.rs` en src-tauri. */
 const VIEW_EVENT = "warroom://view";
+const PTY_OUTPUT_EVENT = "pty://output";
+const PTY_EXIT_EVENT = "pty://exit";
 
 export const tauriWarRoomGateway: WarRoomGateway = {
   load: () => invoke<WarRoomView>("get_view"),
@@ -16,6 +24,29 @@ export const tauriWarRoomGateway: WarRoomGateway = {
   unarchive: (id) => invoke("unarchive", { id }),
   mute: (id) => invoke("mute", { id }),
   unmute: (id) => invoke("unmute", { id }),
+  approve: (id) => invoke("approve", { id }),
+  deny: (id, message) => invoke("deny", { id, message: message ?? null }),
+  sendInput: (id, text) => invoke("send_input", { id, text }),
+  launch: (cwd, target) => invoke<Launched>("launch", { cwd, target }),
+  resume: (id, target) => invoke<Launched>("resume", { id, target }),
+};
+
+function fromBase64(data: string): Uint8Array {
+  const raw = atob(data);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+
+export const tauriTerminalGateway: TerminalGateway = {
+  list: () => invoke<TerminalInfo[]>("pty_list"),
+  snapshot: async (id) => fromBase64(await invoke<string>("pty_snapshot", { id })),
+  write: (id, data) => invoke("pty_write", { id, data }),
+  resize: (id, cols, rows) => invoke("pty_resize", { id, cols, rows }),
+  close: (id) => invoke("pty_close", { id }),
+  onOutput: (listener) =>
+    listen<{ id: string; data: string }>(PTY_OUTPUT_EVENT, (e) => listener(e.payload.id, fromBase64(e.payload.data))),
+  onExit: (listener) => listen<string>(PTY_EXIT_EVENT, (e) => listener(e.payload)),
 };
 
 export const tauriIntegrationGateway: IntegrationGateway = {

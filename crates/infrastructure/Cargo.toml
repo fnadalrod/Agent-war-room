@@ -9,9 +9,11 @@ license.workspace = true
 awr-domain.workspace = true
 awr-application.workspace = true
 awr-wire.workspace = true
+serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order"] }
 tokio.workspace = true
 rusqlite = { version = "0.37", features = ["bundled"] }
+portable-pty = "0.9"
 
 [dev-dependencies]
 tempfile = "3"

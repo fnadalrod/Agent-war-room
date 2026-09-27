@@ -1,5 +1,6 @@
 use awr_application::ports::{AgentProvider, PortError, PortResult, Translated};
 use awr_domain::{EndReason, ProviderKind, SessionEventKind, SessionId, WaitReason};
+use super::tools::{clip, tool_argument};
 use serde_json::Value;
 
 /// Herramientas cuyo `PreToolUse` significa que Claude te está preguntando algo.
@@ -30,7 +31,7 @@ impl AgentProvider for ClaudeProvider {
             "UserPromptSubmit" => SessionEventKind::PromptSubmitted,
             "PreToolUse" => match tool {
                 Some(t) if QUESTION_TOOLS.contains(&t.as_str()) => {
-                    SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: Some(t) }
+                    SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: Some(t), detail: None }
                 }
                 Some(t) => match subagent {
                     Some(id) => SessionEventKind::SubagentTool { id, tool: t },
@@ -42,7 +43,16 @@ impl AgentProvider for ClaudeProvider {
                 (Some(t), None) => SessionEventKind::ToolFinished { tool: t, failed: event == "PostToolUseFailure" },
                 _ => return Ok(None),
             },
-            "PermissionRequest" => SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool },
+            "PermissionRequest" => SessionEventKind::AwaitingYou {
+                reason: WaitReason::Permission,
+                tool,
+                // Para Bash el comando dice más que su descripción.
+                detail: payload
+                    .pointer("/tool_input/command")
+                    .and_then(Value::as_str)
+                    .map(|c| clip(c, 80))
+                    .or_else(|| tool_argument(payload.get("tool_input"))),
+            },
             "Notification" => match notification_kind(field("notification_type"), field("message")) {
                 Some(kind) => kind,
                 None => return Ok(None),
@@ -84,8 +94,8 @@ fn notification_kind(kind: Option<&str>, message: Option<&str>) -> Option<Sessio
         }
     })?;
     match kind.as_str() {
-        "permission_prompt" => Some(SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: None }),
-        "elicitation_dialog" => Some(SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: None }),
+        "permission_prompt" => Some(SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: None, detail: None }),
+        "elicitation_dialog" => Some(SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: None, detail: None }),
         "idle_prompt" => Some(SessionEventKind::IdlePrompt),
         _ => None,
     }
@@ -124,7 +134,7 @@ mod tests {
     fn questions_are_distinguished_from_regular_tools() {
         assert_eq!(
             translate(hook("PreToolUse", json!({ "tool_name": "AskUserQuestion" }))),
-            Some(SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: Some("AskUserQuestion".into()) })
+            Some(SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: Some("AskUserQuestion".into()), detail: None })
         );
         assert_eq!(
             translate(hook("PreToolUse", json!({ "tool_name": "Bash" }))),
@@ -142,6 +152,18 @@ mod tests {
     }
 
     #[test]
+    fn permission_requests_say_what_they_want_to_run() {
+        assert_eq!(
+            translate(hook("PermissionRequest", json!({ "tool_name": "Bash", "tool_input": { "command": "touch x.txt", "description": "Crear" } }))),
+            Some(SessionEventKind::AwaitingYou {
+                reason: WaitReason::Permission,
+                tool: Some("Bash".into()),
+                detail: Some("touch x.txt".into())
+            })
+        );
+    }
+
+    #[test]
     fn notifications_by_type_or_by_legacy_message() {
         assert_eq!(
             translate(hook("Notification", json!({ "notification_type": "idle_prompt" }))),
@@ -149,7 +171,7 @@ mod tests {
         );
         assert_eq!(
             translate(hook("Notification", json!({ "message": "Claude needs your permission to use Bash" }))),
-            Some(SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: None })
+            Some(SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: None, detail: None })
         );
         assert_eq!(translate(hook("Notification", json!({ "notification_type": "auth_success" }))), None);
     }

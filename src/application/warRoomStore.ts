@@ -1,10 +1,14 @@
 import type { IntegrationStatus, SessionView, WarRoomView } from "../domain/attention";
-import type { IntegrationGateway, WarRoomGateway } from "./ports";
+import type { IntegrationGateway, Launched, LaunchTarget, TerminalGateway, WarRoomGateway } from "./ports";
 
 export type Toast = { text: string; tone: "ok" | "warn" };
 
+/** Terminal de la app abierto en el panel. */
+export type OpenTerminal = { id: string; label: string };
+
 export type WarRoomState = {
   view: WarRoomView | null;
+  terminal: OpenTerminal | null;
   integration: IntegrationStatus | null;
   error: string | null;
   toast: Toast | null;
@@ -15,15 +19,17 @@ const TOAST_MS = 3500;
 
 /** Store sin framework: la UI se suscribe con `useSyncExternalStore`. */
 export class WarRoomStore {
-  private state: WarRoomState = { view: null, integration: null, error: null, toast: null, busy: false };
+  private state: WarRoomState = { view: null, terminal: null, integration: null, error: null, toast: null, busy: false };
   private readonly listeners = new Set<() => void>();
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly rooms: WarRoomGateway;
   private readonly integration: IntegrationGateway;
+  readonly terminals: TerminalGateway;
 
-  constructor(rooms: WarRoomGateway, integration: IntegrationGateway) {
+  constructor(rooms: WarRoomGateway, integration: IntegrationGateway, terminals: TerminalGateway) {
     this.rooms = rooms;
     this.integration = integration;
+    this.terminals = terminals;
   }
 
   async start(): Promise<() => void> {
@@ -48,6 +54,52 @@ export class WarRoomStore {
       (via) => this.notify({ text: `→ ${s.title ?? s.worktree_path} (${via})`, tone: "ok" }),
       (reason) => this.notify({ text: String(reason), tone: "warn" }),
     );
+  }
+
+  approve(s: SessionView) {
+    void this.run(() => this.rooms.approve(s.id)).then((ok) => ok && this.notify({ text: "Permiso aprobado", tone: "ok" }));
+  }
+
+  deny(s: SessionView) {
+    void this.run(() => this.rooms.deny(s.id)).then((ok) => ok && this.notify({ text: "Permiso denegado", tone: "ok" }));
+  }
+
+  /** Escribe un mensaje en la sesión y lo envía. Resuelve a `true` si se entregó. */
+  async send(s: SessionView, text: string): Promise<boolean> {
+    try {
+      await this.rooms.sendInput(s.id, text);
+      return true;
+    } catch (e) {
+      this.notify({ text: String(e), tone: "warn" });
+      return false;
+    }
+  }
+
+  launch(cwd: string, label: string, target: LaunchTarget) {
+    void this.rooms.launch(cwd, target).then(
+      (launched) => this.afterLaunch(launched, label),
+      (e) => this.notify({ text: String(e), tone: "warn" }),
+    );
+  }
+
+  resume(s: SessionView, target: LaunchTarget) {
+    void this.rooms.resume(s.id, target).then(
+      (launched) => this.afterLaunch(launched, s.title ?? s.worktree_path),
+      (e) => this.notify({ text: String(e), tone: "warn" }),
+    );
+  }
+
+  openTerminal(id: string, label: string) {
+    this.set({ terminal: { id, label } });
+  }
+
+  closeTerminalPanel() {
+    this.set({ terminal: null });
+  }
+
+  private afterLaunch(launched: Launched, label: string) {
+    if (launched.pty_id) this.openTerminal(launched.pty_id, label);
+    else this.notify({ text: `Abierto en ${launched.via}`, tone: "ok" });
   }
 
   acknowledge(s: SessionView) {
@@ -84,13 +136,16 @@ export class WarRoomStore {
     this.toastTimer = setTimeout(() => this.set({ toast: null }), TOAST_MS);
   }
 
-  private async run(action: () => Promise<unknown>) {
+  /** Ejecuta una acción mostrando el error si falla. Resuelve a si tuvo éxito. */
+  private async run(action: () => Promise<unknown>): Promise<boolean> {
     this.set({ busy: true });
     try {
       await action();
       this.set({ busy: false });
+      return true;
     } catch (e) {
       this.set({ busy: false, error: String(e) });
+      return false;
     }
   }
 

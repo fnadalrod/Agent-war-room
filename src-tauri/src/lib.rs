@@ -12,6 +12,8 @@ use awr_infrastructure::git::GitRepoResolver;
 use awr_infrastructure::sqlite::SqliteEventStore;
 use awr_infrastructure::system::{ProcProbe, SystemClock};
 use awr_infrastructure::ingress;
+use awr_infrastructure::launch::{DesktopLauncher, TerminalInput};
+use awr_infrastructure::pty::PtyManager;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,6 +31,16 @@ pub fn run() {
             commands::mark_seen,
             commands::mark_all_seen,
             commands::focus,
+            commands::approve,
+            commands::deny,
+            commands::send_input,
+            commands::launch,
+            commands::resume,
+            commands::pty_list,
+            commands::pty_snapshot,
+            commands::pty_write,
+            commands::pty_resize,
+            commands::pty_close,
             commands::archive,
             commands::unarchive,
             commands::mute,
@@ -55,6 +67,9 @@ pub fn run() {
 fn compose(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let data_dir = dirs::data_dir().ok_or("sin directorio de datos")?.join("agent-war-room");
     let tray = tray::create(app)?;
+    let pty = PtyManager::new(adapters::pty_sink(app.clone()));
+    app.manage(pty.clone());
+    let warp_tab_configs = dirs::data_dir().ok_or("sin directorio de datos")?.join("warp-terminal/tab_configs");
 
     let service = Arc::new(WarRoomService::new(Ports {
         providers: vec![Arc::new(ClaudeProvider)],
@@ -66,6 +81,8 @@ fn compose(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         publisher: Arc::new(adapters::TauriPublisher::new(app.clone(), tray)),
         transcripts: Arc::new(ClaudeTranscriptReader::new()),
         navigator: Arc::new(DesktopNavigator::detect()),
+        launcher: Arc::new(DesktopLauncher::new(pty.clone(), warp_tab_configs)),
+        input: Arc::new(TerminalInput::new(pty)),
     }));
     service.restore()?;
     app.manage(service.clone());

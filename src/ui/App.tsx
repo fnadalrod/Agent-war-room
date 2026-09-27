@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import type { WarRoomStore } from "../application/warRoomStore";
 import { ATTENTION_LABEL, archivedCount, countBy } from "../domain/attention";
 import { IntegrationBar } from "./IntegrationBar";
 import { RoomPanel } from "./RoomPanel";
+
+// xterm pesa: solo se carga al abrir un terminal.
+const TerminalPanel = lazy(() => import("./TerminalPanel").then((m) => ({ default: m.TerminalPanel })));
 import { useNow, useWarRoom } from "./useStore";
 
 export function App({ store }: { store: WarRoomStore }) {
@@ -12,7 +15,7 @@ export function App({ store }: { store: WarRoomStore }) {
   const view = state.view;
 
   return (
-    <div className="app" data-aggregate={view?.aggregate ?? "offline"}>
+    <div className="app" data-aggregate={view?.aggregate ?? "offline"} data-terminal={state.terminal != null}>
       <header className="topbar">
         <div className="brand">
           <span className="lamp" data-attention={view?.aggregate ?? "offline"} />
@@ -63,6 +66,12 @@ export function App({ store }: { store: WarRoomStore }) {
           </p>
         )}
       </main>
+
+      {state.terminal && (
+        <Suspense fallback={null}>
+          <TerminalPanel key={state.terminal.id} terminal={state.terminal} store={store} />
+        </Suspense>
+      )}
     </div>
   );
 }

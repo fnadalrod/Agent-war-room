@@ -1,26 +1,38 @@
 //! `warroom-hook`: lo invoca el agente en cada hook y reenvía el evento a la app.
 //!
-//! Invariantes: no escribe nada en stdout (el agente lo interpretaría), sale siempre con 0 y
-//! tarda milisegundos aunque la app no esté abierta. Nunca debe romper ni frenar al agente.
+//! Invariantes: sale siempre con 0, tarda milisegundos si la app no está, y solo escribe en
+//! stdout una decisión explícita de la app. Nunca debe romper ni frenar al agente.
+//!
+//! En `PermissionRequest` espera la decisión de la app (aprobar/denegar desde la war room). No
+//! bloquea a nadie: Claude muestra su diálogo a la vez y, si contestas en la terminal, mata este
+//! proceso y descarta su respuesta.
 
-use awr_wire::{EnvHints, HookEnvelope, PROTOCOL_VERSION, WireProcess};
-use std::io::{Read, Write};
+use awr_wire::{EnvHints, HookEnvelope, HookReply, PROTOCOL_VERSION, WireProcess};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const MAX_PAYLOAD_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_ANCESTRY: usize = 12;
 const AGENT_PROCESS_NAMES: &[&str] = &["claude"];
+/// Por debajo del timeout del hook (600 s) para salir por nuestro pie.
+const REPLY_WAIT: Duration = Duration::from_secs(590);
 
 fn main() {
-    let _ = run();
+    if let Some(output) = run() {
+        let mut stdout = std::io::stdout();
+        let _ = stdout.write_all(output.as_bytes());
+        let _ = stdout.flush();
+    }
     std::process::exit(0);
 }
 
-fn run() -> Option<()> {
+/// Devuelve lo que hay que imprimir para el agente, si la app decidió algo.
+fn run() -> Option<String> {
     let mut raw = String::new();
     std::io::stdin().take(MAX_PAYLOAD_BYTES).read_to_string(&mut raw).ok()?;
     let payload: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let event = payload.get("hook_event_name").and_then(|e| e.as_str()).unwrap_or_default().to_owned();
 
     let ancestry = ancestry(std::os::unix::process::parent_id());
     let agent_pid = ancestry
@@ -42,8 +54,10 @@ fn run() -> Option<()> {
             pty_id: std::env::var("AWR_PTY_ID").ok(),
         },
         payload,
+        expects_reply: event == "PermissionRequest",
     };
-    let line = serde_json::to_vec(&envelope).ok()?;
+    let mut line = serde_json::to_vec(&envelope).ok()?;
+    line.push(b'\n');
 
     if let Ok(dump) = std::env::var("WARROOM_HOOK_DUMP") {
         append_dump(&dump, &line);
@@ -52,7 +66,30 @@ fn run() -> Option<()> {
     let mut stream = UnixStream::connect(awr_wire::socket_path()).ok()?;
     stream.set_write_timeout(Some(Duration::from_millis(500))).ok()?;
     stream.write_all(&line).ok()?;
-    stream.shutdown(std::net::Shutdown::Write).ok()
+    if !envelope.expects_reply {
+        return None;
+    }
+
+    stream.set_read_timeout(Some(REPLY_WAIT)).ok()?;
+    let mut reply = String::new();
+    BufReader::new(stream).read_line(&mut reply).ok()?;
+    let reply: HookReply = serde_json::from_str(reply.trim()).ok()?;
+    Some(permission_output(&reply))
+}
+
+/// Salida que Claude Code entiende para `PermissionRequest`.
+fn permission_output(reply: &HookReply) -> String {
+    let decision = match reply {
+        HookReply::Allow => serde_json::json!({ "behavior": "allow" }),
+        HookReply::Deny { message } => serde_json::json!({
+            "behavior": "deny",
+            "message": message.clone().unwrap_or_else(|| "Denegado desde Agent War Room".into()),
+        }),
+    };
+    serde_json::json!({
+        "hookSpecificOutput": { "hookEventName": "PermissionRequest", "decision": decision }
+    })
+    .to_string()
 }
 
 /// Sube por `/proc/<pid>/stat` desde el padre del hook. El agente puede lanzar el hook a través de
@@ -81,7 +118,6 @@ fn read_stat(pid: u32) -> Option<(String, u32)> {
 fn append_dump(path: &str, line: &[u8]) {
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = f.write_all(line);
-        let _ = f.write_all(b"\n");
     }
 }
 
@@ -101,5 +137,17 @@ mod tests {
         let (name, ppid) = read_stat(std::process::id()).unwrap();
         assert!(!name.is_empty());
         assert_eq!(ppid, std::os::unix::process::parent_id());
+    }
+
+    #[test]
+    fn permission_output_matches_claude_code_contract() {
+        let allow: serde_json::Value = serde_json::from_str(&permission_output(&HookReply::Allow)).unwrap();
+        assert_eq!(allow["hookSpecificOutput"]["hookEventName"], "PermissionRequest");
+        assert_eq!(allow["hookSpecificOutput"]["decision"]["behavior"], "allow");
+
+        let deny: serde_json::Value =
+            serde_json::from_str(&permission_output(&HookReply::Deny { message: Some("no".into()) })).unwrap();
+        assert_eq!(deny["hookSpecificOutput"]["decision"]["behavior"], "deny");
+        assert_eq!(deny["hookSpecificOutput"]["decision"]["message"], "no");
     }
 }

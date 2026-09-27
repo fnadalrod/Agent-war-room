@@ -2,6 +2,11 @@ import type { IntegrationStatus, WarRoomView } from "../domain/attention";
 
 export type Unsubscribe = () => void;
 
+export type LaunchTarget = "app" | "warp";
+
+/** `ptyId` presente si el agente se abrió en un terminal de la app. */
+export type Launched = { pty_id: string | null; via: string };
+
 /** Todo lo que el front necesita del núcleo. La implementación real habla con Tauri. */
 export interface WarRoomGateway {
   load(): Promise<WarRoomView>;
@@ -14,6 +19,24 @@ export interface WarRoomGateway {
   unarchive(id: string): Promise<void>;
   mute(id: string): Promise<void>;
   unmute(id: string): Promise<void>;
+  approve(id: string): Promise<void>;
+  deny(id: string, message?: string): Promise<void>;
+  sendInput(id: string, text: string): Promise<void>;
+  launch(cwd: string, target: LaunchTarget): Promise<Launched>;
+  resume(id: string, target: LaunchTarget): Promise<Launched>;
+}
+
+export type TerminalInfo = { id: string; label: string; cwd: string; alive: boolean };
+
+/** Terminales propios de la app (PTY). */
+export interface TerminalGateway {
+  list(): Promise<TerminalInfo[]>;
+  snapshot(id: string): Promise<Uint8Array>;
+  write(id: string, data: string): Promise<void>;
+  resize(id: string, cols: number, rows: number): Promise<void>;
+  close(id: string): Promise<void>;
+  onOutput(listener: (id: string, data: Uint8Array) => void): Promise<Unsubscribe>;
+  onExit(listener: (id: string) => void): Promise<Unsubscribe>;
 }
 
 export interface IntegrationGateway {

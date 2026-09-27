@@ -18,6 +18,10 @@ pub struct SessionContext {
     pub workspace: Workspace,
     pub host: TerminalHost,
     pub transcript_path: Option<String>,
+    /// Carpeta exacta donde corre el agente (puede ser una subcarpeta del worktree). Hace falta
+    /// para reanudar: Claude guarda las sesiones por carpeta.
+    #[serde(default)]
+    pub cwd: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,7 +46,13 @@ pub enum SessionEventKind {
     PromptSubmitted,
     ToolStarted { tool: String },
     ToolFinished { tool: String, failed: bool },
-    AwaitingYou { reason: WaitReason, tool: Option<String> },
+    AwaitingYou {
+        reason: WaitReason,
+        tool: Option<String>,
+        /// Qué pide exactamente: el comando, el fichero…
+        #[serde(default)]
+        detail: Option<String>,
+    },
     /// El agente lleva un rato esperando input (no necesariamente tras un fin de turno visto).
     IdlePrompt,
     TurnEnded,

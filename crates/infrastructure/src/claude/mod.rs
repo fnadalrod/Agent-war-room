@@ -2,6 +2,7 @@
 
 mod installer;
 mod provider;
+mod tools;
 mod transcript;
 
 pub use installer::ClaudeHookInstaller;

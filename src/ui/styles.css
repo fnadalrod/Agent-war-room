@@ -374,3 +374,91 @@ button:disabled {
   text-align: center;
   color: var(--muted);
 }
+
+.muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+button.primary {
+  border-color: var(--c, var(--working));
+  background: color-mix(in srgb, var(--c, var(--working)) 25%, #1a2336);
+  font-weight: 600;
+}
+
+.room-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.approval {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px;
+  border-top: 1px solid var(--panel-edge);
+  background: color-mix(in srgb, var(--needs-you) 10%, transparent);
+}
+
+.quick-input {
+  padding: 8px 14px;
+  border-top: 1px solid var(--panel-edge);
+}
+
+.quick-input input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+  background: #050912;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.quick-input input:focus {
+  outline: 1px solid var(--finished);
+}
+
+/* Terminal propio: panel inferior que deja ver la sala por encima. */
+.app[data-terminal="true"] {
+  padding-bottom: calc(45vh + 20px);
+}
+
+.terminal-panel {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  height: 45vh;
+  min-height: 220px;
+  border-top: 2px solid var(--finished);
+  background: #050912;
+  box-shadow: 0 -8px 30px rgb(0 0 0 / 0.6);
+}
+
+.terminal-panel header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--panel-edge);
+  background: var(--panel);
+}
+
+.terminal-host {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 0 0 8px;
+}

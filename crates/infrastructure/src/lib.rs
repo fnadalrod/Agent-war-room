@@ -4,5 +4,7 @@ pub mod claude;
 pub mod desktop;
 pub mod git;
 pub mod ingress;
+pub mod launch;
+pub mod pty;
 pub mod sqlite;
 pub mod system;

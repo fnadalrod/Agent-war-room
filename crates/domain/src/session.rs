@@ -11,7 +11,7 @@ pub enum SessionStatus {
     /// Esperando tu primer prompt o ya revisada.
     Idle,
     Working { tool: Option<String> },
-    AwaitingYou { reason: WaitReason, tool: Option<String> },
+    AwaitingYou { reason: WaitReason, tool: Option<String>, detail: Option<String> },
     /// Turno terminado: te toca.
     AwaitingInput,
     Compacting,
@@ -34,6 +34,8 @@ pub struct Session {
     pub workspace: Workspace,
     pub host: TerminalHost,
     pub transcript_path: Option<String>,
+    #[serde(default)]
+    pub cwd: Option<String>,
     pub status: SessionStatus,
     pub subagents: BTreeMap<String, Subagent>,
     pub started_at: Timestamp,
@@ -54,6 +56,7 @@ impl Session {
             workspace: context.workspace,
             host: context.host,
             transcript_path: context.transcript_path,
+            cwd: context.cwd,
             status: SessionStatus::Idle,
             subagents: BTreeMap::new(),
             started_at: at,
@@ -79,6 +82,11 @@ impl Session {
     /// Si la sesión cuenta para el color de la bandeja y para los avisos.
     pub fn is_on_watch(&self) -> bool {
         !self.archived && !self.muted
+    }
+
+    /// Dónde relanzar el agente para reanudar esta sesión.
+    pub fn launch_dir(&self) -> &str {
+        self.cwd.as_deref().unwrap_or(&self.workspace.worktree_path)
     }
 
     pub fn is_alive(&self) -> bool {
@@ -116,15 +124,17 @@ impl Session {
             SessionEventKind::ToolFinished { .. } => {
                 self.set_status(SessionStatus::Working { tool: None }, at);
             }
-            SessionEventKind::AwaitingYou { reason, tool } => {
+            SessionEventKind::AwaitingYou { reason, tool, detail } => {
                 // Un segundo aviso de la misma espera (sin herramienta) no borra lo que ya sabíamos.
-                let tool = match &self.status {
-                    SessionStatus::AwaitingYou { reason: current, tool: known } if current == reason => {
-                        tool.clone().or_else(|| known.clone())
+                let (tool, detail) = match &self.status {
+                    SessionStatus::AwaitingYou { reason: current, tool: known_tool, detail: known_detail }
+                        if current == reason =>
+                    {
+                        (tool.clone().or_else(|| known_tool.clone()), detail.clone().or_else(|| known_detail.clone()))
                     }
-                    _ => tool.clone(),
+                    _ => (tool.clone(), detail.clone()),
                 };
-                self.set_status(SessionStatus::AwaitingYou { reason: *reason, tool }, at);
+                self.set_status(SessionStatus::AwaitingYou { reason: *reason, tool, detail }, at);
             }
             SessionEventKind::IdlePrompt => {
                 // Solo corrige si se perdió el fin de turno; no reabre algo ya visto.
@@ -180,6 +190,9 @@ impl Session {
         self.workspace = context.workspace;
         if context.transcript_path.is_some() {
             self.transcript_path = context.transcript_path;
+        }
+        if context.cwd.is_some() {
+            self.cwd = context.cwd;
         }
         // Los hooks de una misma sesión pueden llegar sin cadena de procesos (p. ej. al cerrar).
         if context.host.agent_pid.is_some() {

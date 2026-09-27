@@ -1,5 +1,6 @@
 use crate::ports::{
-    AgentProvider, Clock, EventStore, FocusOutcome, FocusTarget, Notice, Notifier, PortError,
+    AgentLauncher, AgentProvider, ApprovalDecision, ApprovalResponder, Clock, LaunchOutcome,
+    LaunchRequest, LaunchTarget, SessionInput, EventStore, FocusOutcome, FocusTarget, Notice, Notifier, PortError,
     PortResult, ProcessProbe, RepoResolver, TranscriptReader, TranscriptSummary, ViewPublisher,
     WindowNavigator,
 };
@@ -8,19 +9,20 @@ use awr_domain::{
     Attention, AttentionChange, SessionContext, SessionEvent, SessionEventKind, SessionId,
     SessionStatus, TerminalHost, Timestamp, WarRoom,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 /// Cuánto historial se reconstruye al arrancar.
 const RESTORE_WINDOW_MS: i64 = 3 * 24 * 60 * 60 * 1000;
 
 /// Señal cruda de un agente, ya separada del transporte.
-#[derive(Debug, Clone)]
 pub struct IncomingSignal {
     pub provider: String,
     pub received_at: Option<Timestamp>,
     pub host: TerminalHost,
     pub payload: serde_json::Value,
+    /// Presente si el agente espera una decisión (permiso aprobable desde la app).
+    pub reply: Option<Arc<dyn ApprovalResponder>>,
 }
 
 /// Todo lo externo que necesita el servicio.
@@ -34,18 +36,22 @@ pub struct Ports {
     pub publisher: Arc<dyn ViewPublisher>,
     pub transcripts: Arc<dyn TranscriptReader>,
     pub navigator: Arc<dyn WindowNavigator>,
+    pub launcher: Arc<dyn AgentLauncher>,
+    pub input: Arc<dyn SessionInput>,
 }
 
 pub struct WarRoomService {
     room: Mutex<WarRoom>,
     /// Enriquecimiento derivado del transcript; no es estado de dominio y no se persiste.
     summaries: Mutex<HashMap<SessionId, TranscriptSummary>>,
+    /// Permisos que se pueden resolver desde la app. Efímeros: viven lo que la conexión del hook.
+    approvals: Mutex<HashMap<SessionId, Arc<dyn ApprovalResponder>>>,
     ports: Ports,
 }
 
 impl WarRoomService {
     pub fn new(ports: Ports) -> Self {
-        Self { room: Mutex::new(WarRoom::new()), summaries: Mutex::default(), ports }
+        Self { room: Mutex::new(WarRoom::new()), summaries: Mutex::default(), approvals: Mutex::default(), ports }
     }
 
     /// Reconstruye el estado desde el almacén sin avisar de nada. Devuelve los eventos aplicados.
@@ -78,6 +84,12 @@ impl WarRoomService {
             return Ok(());
         };
 
+        if let Some(reply) = signal.reply
+            && matches!(translated.kind, SessionEventKind::AwaitingYou { reason: awr_domain::WaitReason::Permission, .. })
+        {
+            self.approvals().insert(translated.session.clone(), reply);
+        }
+
         let workspace = self.ports.resolver.resolve(&translated.cwd);
         self.commit(SessionEvent {
             session: translated.session,
@@ -87,6 +99,7 @@ impl WarRoomService {
                 workspace,
                 host: signal.host,
                 transcript_path: translated.transcript_path,
+                cwd: Some(translated.cwd.clone()).filter(|c| !c.is_empty()),
             }),
             kind: translated.kind,
         })
@@ -124,6 +137,70 @@ impl WarRoomService {
 
     pub fn unmute(&self, id: SessionId) -> PortResult<()> {
         self.intent(id, SessionEventKind::Unmuted)
+    }
+
+    /// Aprueba el permiso pendiente como si hubieras pulsado "Yes" en la terminal.
+    pub fn approve(&self, id: SessionId) -> PortResult<()> {
+        self.decide(id, ApprovalDecision::Allow)
+    }
+
+    pub fn deny(&self, id: SessionId, message: Option<String>) -> PortResult<()> {
+        self.decide(id, ApprovalDecision::Deny { message })
+    }
+
+    fn decide(&self, id: SessionId, decision: ApprovalDecision) -> PortResult<()> {
+        let responder = self
+            .approvals()
+            .remove(&id)
+            .ok_or_else(|| PortError::Failed("no hay ningún permiso pendiente en esa sesión".into()))?;
+        let delivered = responder.respond(decision);
+        self.publish();
+        if delivered {
+            Ok(())
+        } else {
+            Err(PortError::Failed("ya se había respondido en la terminal".into()))
+        }
+    }
+
+    /// Abre un agente nuevo en una carpeta (normalmente el worktree de una sala).
+    pub fn launch(&self, cwd: String, target: LaunchTarget) -> PortResult<LaunchOutcome> {
+        let label = folder_name(&cwd);
+        self.ports.launcher.launch(&LaunchRequest { cwd, resume: None, target, label })
+    }
+
+    /// Reanuda una sesión cerrada (`claude --resume`) en su carpeta original.
+    pub fn resume(&self, id: SessionId, target: LaunchTarget) -> PortResult<LaunchOutcome> {
+        let request = {
+            let room = self.room();
+            let session = room
+                .get(&id)
+                .ok_or_else(|| PortError::Failed(format!("sesión desconocida: {id}")))?;
+            if session.is_alive() {
+                return Err(PortError::Failed("la sesión sigue abierta: usa \"Ir a\"".into()));
+            }
+            let label = self
+                .summaries()
+                .get(&id)
+                .and_then(|s| s.title.clone())
+                .unwrap_or_else(|| folder_name(&session.workspace.worktree_path));
+            LaunchRequest { cwd: session.launch_dir().to_owned(), resume: Some(id.clone()), target, label }
+        };
+        self.ports.launcher.launch(&request)
+    }
+
+    /// Escribe un mensaje en la sesión y lo envía (Enter).
+    pub fn send_input(&self, id: SessionId, text: &str) -> PortResult<()> {
+        let host = {
+            let room = self.room();
+            let session = room
+                .get(&id)
+                .ok_or_else(|| PortError::Failed(format!("sesión desconocida: {id}")))?;
+            if !session.is_alive() {
+                return Err(PortError::Failed("la sesión está cerrada".into()));
+            }
+            session.host.clone()
+        };
+        self.ports.input.send(&host, text)
     }
 
     /// Salta a la ventana (y pane) de la sesión. Ir a una sesión terminada es revisarla.
@@ -170,7 +247,13 @@ impl WarRoomService {
         for event in lost {
             self.commit(event)?;
         }
-        let mut changed = false;
+        // Permisos contestados en la terminal: Claude mató el hook y la conexión se cerró.
+        let mut changed = {
+            let mut approvals = self.approvals();
+            let before = approvals.len();
+            approvals.retain(|_, r| r.is_open());
+            approvals.len() != before
+        };
         for id in &active {
             changed |= self.refresh_summary(id);
         }
@@ -181,7 +264,8 @@ impl WarRoomService {
     }
 
     pub fn view(&self) -> WarRoomView {
-        view::project(&self.room(), &self.summaries())
+        let approvable: HashSet<SessionId> = self.approvals().keys().cloned().collect();
+        view::project(&self.room(), &self.summaries(), &approvable)
     }
 
     fn intent(&self, id: SessionId, kind: SessionEventKind) -> PortResult<()> {
@@ -193,6 +277,10 @@ impl WarRoomService {
         let persisted = event.clone();
         let id = event.session.clone();
         let from_agent = event.context.is_some();
+        // Cualquier otra señal del agente significa que el permiso ya se resolvió por otra vía.
+        if from_agent && !matches!(event.kind, SessionEventKind::AwaitingYou { .. }) {
+            self.approvals().remove(&id);
+        }
         let change = {
             let mut room = self.room();
             let Some(change) = room.apply(event) else {
@@ -255,6 +343,10 @@ impl WarRoomService {
         self.room.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    fn approvals(&self) -> MutexGuard<'_, HashMap<SessionId, Arc<dyn ApprovalResponder>>> {
+        self.approvals.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn summaries(&self) -> MutexGuard<'_, HashMap<SessionId, TranscriptSummary>> {
         self.summaries.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -293,7 +385,7 @@ mod tests {
             let kind = match payload["e"].as_str().unwrap() {
                 "prompt" => SessionEventKind::PromptSubmitted,
                 "stop" => SessionEventKind::TurnEnded,
-                "ask" => SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: None },
+                "ask" => SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: None, detail: None },
                 _ => return Ok(None),
             };
             Ok(Some(Translated {
@@ -356,6 +448,8 @@ mod tests {
         notices: Mutex<Vec<Notice>>,
         views: Mutex<Vec<WarRoomView>>,
         focused: Mutex<Vec<FocusTarget>>,
+        launched: Mutex<Vec<LaunchRequest>>,
+        typed: Mutex<Vec<(Option<u32>, String)>>,
     }
     impl Notifier for Recorder {
         fn notify(&self, notice: &Notice) {
@@ -371,6 +465,19 @@ mod tests {
         fn focus(&self, target: &FocusTarget) -> PortResult<FocusOutcome> {
             self.focused.lock().unwrap().push(target.clone());
             Ok(FocusOutcome::Focused { via: "test".into() })
+        }
+    }
+
+    impl AgentLauncher for Recorder {
+        fn launch(&self, request: &LaunchRequest) -> PortResult<LaunchOutcome> {
+            self.launched.lock().unwrap().push(request.clone());
+            Ok(LaunchOutcome::AppTerminal { pty_id: "p1".into() })
+        }
+    }
+    impl SessionInput for Recorder {
+        fn send(&self, host: &TerminalHost, text: &str) -> PortResult<()> {
+            self.typed.lock().unwrap().push((host.agent_pid, text.to_owned()));
+            Ok(())
         }
     }
 
@@ -394,6 +501,8 @@ mod tests {
             publisher: rec.clone(),
             transcripts: transcript.clone(),
             navigator: rec.clone(),
+            launcher: rec.clone(),
+            input: rec.clone(),
         });
         Harness { svc, store, rec, transcript }
     }
@@ -408,7 +517,30 @@ mod tests {
             received_at: None,
             host: TerminalHost { agent_pid: Some(7), ..Default::default() },
             payload: serde_json::json!({ "s": s, "e": e }),
+            reply: None,
         }
+    }
+
+    #[derive(Default)]
+    struct FakeResponder {
+        closed: std::sync::atomic::AtomicBool,
+        got: Mutex<Option<ApprovalDecision>>,
+    }
+    impl ApprovalResponder for FakeResponder {
+        fn is_open(&self) -> bool {
+            !self.closed.load(Ordering::SeqCst)
+        }
+        fn respond(&self, decision: ApprovalDecision) -> bool {
+            *self.got.lock().unwrap() = Some(decision);
+            self.is_open()
+        }
+    }
+
+    fn asking(s: &str) -> (IncomingSignal, Arc<FakeResponder>) {
+        let responder = Arc::new(FakeResponder::default());
+        let mut sig = signal(s, "ask");
+        sig.reply = Some(responder.clone());
+        (sig, responder)
     }
 
     fn id(s: &str) -> SessionId {
@@ -510,6 +642,65 @@ mod tests {
         }
         h.svc.mark_all_seen().unwrap();
         assert_eq!(h.svc.view().aggregate, AttentionView::Idle);
+    }
+
+    #[test]
+    fn a_pending_permission_can_be_approved_from_the_app() {
+        let h = harness();
+        h.svc.ingest(signal("a", "prompt")).unwrap();
+        let (sig, responder) = asking("a");
+        h.svc.ingest(sig).unwrap();
+        assert!(h.svc.view().rooms[0].sessions[0].can_approve);
+
+        h.svc.approve(id("a")).unwrap();
+        assert_eq!(*responder.got.lock().unwrap(), Some(ApprovalDecision::Allow));
+        assert!(!h.svc.view().rooms[0].sessions[0].can_approve);
+        assert!(h.svc.approve(id("a")).is_err(), "solo se responde una vez");
+    }
+
+    #[test]
+    fn answering_in_the_terminal_withdraws_the_approval() {
+        let h = harness();
+        let (sig, responder) = asking("a");
+        h.svc.ingest(sig).unwrap();
+
+        responder.closed.store(true, Ordering::SeqCst);
+        h.svc.tick().unwrap();
+        assert!(!h.svc.view().rooms[0].sessions[0].can_approve);
+
+        let (sig, _) = asking("b");
+        h.svc.ingest(sig).unwrap();
+        h.svc.ingest(signal("b", "stop")).unwrap();
+        let view = h.svc.view();
+        let b = view.rooms[0].sessions.iter().find(|s| s.id == "b").unwrap();
+        assert!(!b.can_approve, "otra señal del agente cierra la ventana de aprobación");
+        assert!(h.svc.deny(id("b"), None).is_err());
+    }
+
+    #[test]
+    fn a_closed_session_resumes_in_its_original_folder_with_its_title() {
+        let h = harness_with(Arc::default(), false);
+        h.transcript.0.lock().unwrap().title = Some("Arreglar login".into());
+        h.svc.ingest(signal("a", "prompt")).unwrap();
+        assert!(h.svc.resume(id("a"), LaunchTarget::Warp).is_err(), "viva: se va a ella, no se reanuda");
+
+        h.svc.tick().unwrap();
+        h.svc.resume(id("a"), LaunchTarget::Warp).unwrap();
+        let launched = h.rec.launched.lock().unwrap();
+        assert_eq!(launched[0].resume, Some(id("a")));
+        assert_eq!(launched[0].cwd, "/code/app");
+        assert_eq!(launched[0].label, "Arreglar login");
+    }
+
+    #[test]
+    fn typing_goes_to_live_sessions_only() {
+        let h = harness_with(Arc::default(), false);
+        h.svc.ingest(signal("a", "prompt")).unwrap();
+        h.svc.send_input(id("a"), "sigue").unwrap();
+        assert_eq!(h.rec.typed.lock().unwrap()[0], (Some(7), "sigue".to_string()));
+
+        h.svc.tick().unwrap();
+        assert!(h.svc.send_input(id("a"), "hola").is_err());
     }
 
     #[test]

@@ -113,6 +113,7 @@ mod tests {
             },
             host: TerminalHost { agent_pid: pid, ..Default::default() },
             transcript_path: None,
+            cwd: Some("/repo/sub".into()),
         }
     }
 
@@ -154,7 +155,7 @@ mod tests {
             .apply(signal(
                 "s",
                 2,
-                SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: Some("Bash".into()) },
+                SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: Some("Bash".into()), detail: None },
             ))
             .unwrap();
         assert_eq!(change.to, Attention::NeedsYou);
@@ -253,7 +254,7 @@ mod tests {
         assert_eq!(s.status, SessionStatus::Working { tool: Some("Agent".into()) });
         assert_eq!(s.subagents["a1"].current_tool.as_deref(), Some("Grep"));
 
-        room.apply(signal("s", 3, SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: Some("Bash".into()) }));
+        room.apply(signal("s", 3, SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: Some("Bash".into()), detail: None }));
         room.apply(signal("s", 4, SessionEventKind::SubagentTool { id: "a1".into(), tool: "Bash".into() }));
         assert_eq!(attention(&room, "s"), Attention::Working);
     }
@@ -267,7 +268,7 @@ mod tests {
 
     #[test]
     fn events_roundtrip_through_json() {
-        let e = signal("s", 1, SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: None });
+        let e = signal("s", 1, SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: None, detail: None });
         let json = serde_json::to_string(&e).unwrap();
         assert_eq!(serde_json::from_str::<SessionEvent>(&json).unwrap(), e);
     }
