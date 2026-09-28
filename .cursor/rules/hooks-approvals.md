@@ -16,14 +16,14 @@ So it is a race that the terminal can always win: holding the hook is safe and n
 
 - Bridge: for `PermissionRequest` it sets `expects_reply`, writes the envelope and waits up to 590 s
   for one line (`HookReply::Allow` / `Deny { message }`), then prints Claude's JSON. Default deny text:
-  `DEFAULT_DENY_MESSAGE` (Spanish, user-facing).
+  `DEFAULT_DENY_MESSAGE` (user-facing).
 - Ingress: `SocketResponder::watch` keeps the std stream to reply and spawns a tokio task on a clone
   that sets `closed` on EOF — that EOF is Claude killing the bridge because the terminal answered.
   (`UnixStream::peek` is unstable, hence the watcher.) The socket is non-blocking (shared with tokio):
   the reply write retries on `WouldBlock`.
 - Service: a pending approval is an `Arc<dyn ApprovalResponder>` per session (ephemeral, never
   persisted). It is dropped when any other agent signal arrives, and `tick()` drops closed ones so the
-  "Approve" buttons disappear. Notices say `approvable` so the notification gets an "Aprobar" button.
+  "Approve" buttons disappear. Notices say `approvable` so the notification gets an "Approve" button.
 
 ## Tests
 

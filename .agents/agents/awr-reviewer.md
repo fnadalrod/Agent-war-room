@@ -1,6 +1,6 @@
 ---
 name: awr-reviewer
-description: Reviews the current working tree diff of Agent War Room against the project invariants (layer direction, English code with Spanish copy only in locale/copy modules, persisted-event compatibility, bridge invariants, test isolation, docs anti-rot) and returns findings ranked by severity. Read-only; never edits or commits. Use before committing a large change or when your context is full.
+description: Reviews the current working tree diff of Agent War Room against the project invariants (layer direction, everything in English, user-visible copy only in locale/copy modules, persisted-event compatibility, bridge invariants, test isolation, docs anti-rot) and returns findings ranked by severity. Read-only; never edits or commits. Use before committing a large change or when your context is full.
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---
@@ -17,7 +17,7 @@ the matching rule in `.cursor/rules/` (`python3 scripts/rules_for_path.py <file>
 1. **Layers**: no `awr-domain` code depending on IO/time/Claude; no application code calling
    infrastructure directly; front `ui → application → domain`; Tauri names mirrored in
    `tauriGateway.ts`.
-2. **Language**: identifiers/comments/tests in English; user-visible Spanish only in
+2. **Language**: identifiers/comments/tests in English; user-visible text only in
    `crates/*/src/locale.rs`, `src-tauri/src/locale.rs`, `src/domain/copy.ts`.
 3. **Persistence**: new stored fields have `#[serde(default)]`; no renamed/removed serde tags.
 4. **Bridge** (`crates/hook-bridge`): always exit 0, nothing on stdout except an app decision, no slow

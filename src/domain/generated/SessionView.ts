@@ -6,7 +6,7 @@ import type { UsageView } from "./UsageView";
 
 export type SessionView = { id: string, provider: string, attention: AttentionView, 
 /**
- * Short on-screen phrase (Spanish UI copy): the current tool, a permission request, "your turn"…
+ * Short on-screen phrase (UI copy): the current tool, a permission request, "your turn"…
  */
 status_label: string, 
 /**

@@ -219,18 +219,18 @@ export function toggle<T>(list: T[], item: T): T[] {
 
 // ---------- Usage, context and stalls ----------
 
-/** 1234 → "1,2k"; 12_345_678 → "12,3M". Compact counts for badges. */
+/** 1234 → "1.2k"; 12_345_678 → "12.3M". Compact counts for badges. */
 export function tokenCount(n: number): string {
   if (n < 1000) return String(n);
   const [value, unit] = n >= 1_000_000 ? [n / 1_000_000, "M"] : [n / 1000, "k"];
   const digits = value >= 100 ? 0 : 1;
-  return `${value.toFixed(digits).replace(".", ",").replace(/,0$/, "")}${unit}`;
+  return `${value.toFixed(digits).replace(/\.0$/, "")}${unit}`;
 }
 
-/** "$0,42", "$12". */
+/** "$0.42", "$12". */
 export function money(usd: number): string {
   if (usd >= 100) return `$${Math.round(usd)}`;
-  return `$${usd.toFixed(2).replace(".", ",")}`;
+  return `$${usd.toFixed(2)}`;
 }
 
 /** How full the context is, 0..1, if the window is known. */

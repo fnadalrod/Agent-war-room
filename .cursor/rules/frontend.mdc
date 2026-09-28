@@ -1,5 +1,5 @@
 ---
-description: The React front — layers, the framework-free store, ports and adapters (Tauri, demo), the Spanish copy module, generated types, styling tokens and components. Read before touching src/.
+description: The React front — layers, the framework-free store, ports and adapters (Tauri, demo), the copy module, generated types, styling tokens and components. Read before touching src/.
 globs: src/**, index.html, vite.config.ts, tsconfig.json
 alwaysApply: false
 ---
@@ -9,7 +9,7 @@ alwaysApply: false
 ## Layers
 
 - `domain/` — pure presentation rules (`attention.ts`: labels logic, filters, usage formatting),
-  `copy.ts` (**all** Spanish UI text), `generated/` (ts-rs types from `crates/application/src/view.rs`
+  `copy.ts` (**all** UI text), `generated/` (ts-rs types from `crates/application/src/view.rs`
   — never edit; regenerate with `cargo test -p awr-application`).
 - `application/` — `WarRoomStore` (framework-free; components subscribe with `useWarRoom(store)`)
   and `ports.ts` (WarRoomGateway, TerminalGateway, IntegrationGateway, FilterStorage).

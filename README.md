@@ -1,303 +1,316 @@
 # Agent War Room
 
-Una sala de control para tus agentes de código. Si trabajas con varias sesiones de Claude Code a la
-vez, repartidas por repos, terminales y ventanas del IDE, acabas perdiendo de vista cuál te está
-esperando. Agent War Room muestra **una pantalla por sesión, agrupadas por repositorio**, que se
-ilumina cuando algo te necesita, cuando termina o cuando parece atascada. Vive en la bandeja del
-sistema: solo la miras cuando cambia de color.
+A control room for your coding agents. If you run several Claude Code sessions at once, spread across
+repos, terminals and IDE windows, you end up losing track of which one is waiting for you. Agent War
+Room shows **one screen per session, grouped by repository**, that lights up when something needs
+you, when it finishes or when it looks stuck. It lives in the system tray: you only look at it when it
+changes color.
 
-![Vista clásica: varios repos, sesiones y subagentes](docs/screenshots/classic.png)
+![Classic view: several repos, sessions and subagents](docs/screenshots/classic.png)
 
-![War Room pixel art: el mismo estado como una sala con puestos](docs/screenshots/pixel.png)
+![Pixel-art War Room: the same state as a room full of desks](docs/screenshots/pixel.png)
 
-- **Local por completo.** No hay servidor ni cuenta: lee los hooks y transcripts de Claude Code en
-  tu máquina.
-- **No molesta al agente.** Si la app está cerrada, el puente de hooks sale al instante y Claude
-  sigue como si nada.
-- **Linux primero** (KDE Plasma en Wayland es el entorno probado). El núcleo está en Rust y la
-  interfaz en React sobre Tauri 2.
+- **Fully local.** No server, no account: it reads Claude Code's hooks and transcripts on your
+  machine.
+- **Never gets in the agent's way.** If the app is closed, the hook bridge exits immediately and
+  Claude carries on as if nothing happened.
+- **Linux first** (KDE Plasma on Wayland is the tested environment). The core is Rust and the UI is
+  React on Tauri 2.
 
-## Índice
+## Contents
 
-- [Qué ves](#qué-ves)
-- [Guía de uso](#guía-de-uso)
-- [Instalación](#instalación)
-- [Conectar Claude Code](#conectar-claude-code)
-- [Cómo funciona](#cómo-funciona)
-- [Datos y privacidad](#datos-y-privacidad)
-- [Solución de problemas](#solución-de-problemas)
-- [Desarrollo](#desarrollo)
-- [Para agentes de código](#para-agentes-de-código)
-- [Limitaciones y pendiente](#limitaciones-y-pendiente)
+- [What you see](#what-you-see)
+- [Usage guide](#usage-guide)
+- [Installation](#installation)
+- [Connecting Claude Code](#connecting-claude-code)
+- [How it works](#how-it-works)
+- [Data and privacy](#data-and-privacy)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [For coding agents](#for-coding-agents)
+- [Contributing](#contributing)
+- [Limitations and roadmap](#limitations-and-roadmap)
+- [License](#license)
 
-## Qué ves
+## What you see
 
-### Estados
+### States
 
-Cada sesión tiene un nivel de atención, de más a menos urgente. La bandeja toma el color del más
-urgente de toda la sala.
+Every session has an attention level, from most to least urgent. The tray takes the color of the most
+urgent one in the whole room.
 
-| Estado | Cuándo | Aviso |
+| State | When | Notifies |
 |---|---|---|
-| 🔴 **Te necesita** | Pide un permiso, te hace una pregunta o espera que apruebes un plan | Sí |
-| 🔵 **Terminado** | Acabó su turno y aún no lo has mirado | Sí |
-| 🟠 **Atascado** | Lleva 6 minutos "trabajando" sin dar ninguna señal | Una vez |
-| 🟢 **Trabajando** | Ejecutando herramientas o pensando | No |
-| ⚪ **En espera** / **Cerrado** | Sin turno en curso / proceso terminado | No |
+| 🔴 **Needs you** | Asks for a permission, asks you a question or waits for you to approve a plan | Yes |
+| 🔵 **Finished** | Finished its turn and you have not looked at it yet | Yes |
+| 🟠 **Stuck** | Has been "working" for 6 minutes without any sign of life | Once |
+| 🟢 **Working** | Running tools or thinking | No |
+| ⚪ **Idle** / **Closed** | No turn in progress / process ended | No |
 
-### Cola "Requiere tu atención"
+### The "Needs your attention" queue
 
-Arriba del todo, lo que te espera en todos los repos, ordenado por urgencia y antigüedad. Se filtra
-por repo, por skill y por procedencia de la skill; los filtros se recuerdan.
+At the very top: everything waiting for you across all repos, ordered by urgency and age. It can be
+filtered by repo, by skill and by where the skill comes from; filters are remembered.
 
-![Sala filtrada por repo y skill](docs/screenshots/filtered.png)
+![Room filtered by repo and skill](docs/screenshots/filtered.png)
 
-### Vista previa de una sesión
+### Session preview
 
-Al pulsar una pantalla se abre su detalle, leído del transcript:
+Clicking a screen opens its detail, read from the transcript:
 
-- Título, **encargo inicial** (primer prompt) y **comando con el que se lanzó**.
-- **Última respuesta completa en Markdown**, con vista ampliada.
-- Conversación reciente con las herramientas agrupadas y la acción en curso (`Bash · cargo test`).
-- **Modelo y esfuerzo** de la sesión, de cada subagente y de cada respuesta.
-- **Contexto usado** (avisa antes de que compacte), tokens y **coste estimado** a precio de API,
-  subagentes incluidos.
-- **Skills** lanzadas, etiquetadas por quién las lanzó (tú o el agente) y de dónde vienen (del
-  proyecto, tuyas, de un plugin o integradas).
+- Title, **initial request** (first prompt) and **the command it was launched with**.
+- **Full last answer rendered as Markdown**, with an expanded view.
+- Recent conversation with tools grouped, and the action in progress (`Bash · cargo test`).
+- **Model and effort** of the session, of each subagent and of each answer.
+- **Context used** (warns before it compacts), tokens and **estimated cost** at API prices,
+  subagents included.
+- **Skills** used, tagged by who launched them (you or the agent) and where they come from (the
+  project, yours, a plugin or built in).
 
-![Detalle de una sesión](docs/screenshots/detail.png)
+![Session detail](docs/screenshots/detail.png)
 
-### Subagentes
+### Subagents
 
-Los subagentes aparecen en pequeño alrededor de su sesión, con su propio estado. Se pueden pulsar
-para ver qué están haciendo, con qué modelo y cuánto llevan gastado.
+Subagents appear in small around their session, with their own state. Click one to see what it is
+doing, with which model and how much it has spent.
 
-![Detalle de un subagente](docs/screenshots/subagent.png)
+![Subagent detail](docs/screenshots/subagent.png)
 
-### Cambios de una sesión (bajo demanda)
+### A session's changes (on demand)
 
-El botón **Cambios** muestra los ficheros que editó la sesión (también sus subagentes) y los
-**commits hechos en su worktree desde que empezó**, con el diff de cada uno. No se calcula hasta que
-lo pides.
+The **Changes** button shows the files the session edited (its subagents included) and the **commits
+made in its worktree since it started**, with each one's diff. Nothing is computed until you ask.
 
-![Cambios de una sesión](docs/screenshots/changes.png)
+![A session's changes](docs/screenshots/changes.png)
 
-![Diff de un commit](docs/screenshots/diff.png)
+![A commit's diff](docs/screenshots/diff.png)
 
-## Guía de uso
+## Usage guide
 
-- **Siguiente.** Salta a lo que más lleva esperándote: primero lo que te pide algo, luego lo
-  terminado. Tienes botón en la cabecera, entrada en el menú de la bandeja y el comando
-  `agent-war-room --next` para un atajo global (ver [Atajo global](#atajo-global-siguiente-kde)).
-- **Ir a.** Lleva a la ventana de la sesión:
-  - Warp: al pane exacto, con `WARP_FOCUS_URL`.
-  - tmux: al pane, cambiando el cliente si hace falta.
-  - KDE: a la ventana, localizada por su cadena de procesos y desempatada por el título. Así se
-    distinguen varios proyectos abiertos en un mismo IDE.
-- **Aprobar o denegar permisos desde la sala** o desde el propio aviso. Claude sigue mostrando su
-  diálogo en el terminal: gana quien conteste antes.
-- **Responder.** Escribe en la sesión cuando corre en un terminal de la app o en tmux. El botón
-  "Responder" de los avisos abre la vista previa con el cursor en el mensaje (las notificaciones de
-  Linux no admiten escribir dentro del aviso).
-- **Lanzar y reanudar.** Arranca un agente en un repo, o reanuda una sesión cerrada, en un terminal
-  integrado (xterm.js) o en una pestaña de Warp.
-- **Despedir** (archivar) una sesión aunque siga abierta: deja de avisar y desaparece de la sala.
-  Vuelve sola si le escribes. Se puede restaurar durante 3 días.
-- **Silenciar**: sigue visible, pero sin avisos.
-- **Hoy.** La cabecera suma los tokens y el coste estimado del día en todas las sesiones.
-- **Dos vistas del mismo estado:** la clásica (tarjetas) y la **War Room** pixel art. Se cambia
-  desde la cabecera.
+- **Next.** Jumps to whatever has been waiting for you the longest: first what asks you for
+  something, then what has finished. There is a button in the header, an entry in the tray menu and
+  the `agent-war-room --next` command for a global shortcut (see
+  [Global "next" shortcut](#global-next-shortcut-kde)).
+- **Go to.** Takes you to the session's window:
+  - Warp: to the exact pane, via `WARP_FOCUS_URL`.
+  - tmux: to the pane, switching the client if needed.
+  - KDE: to the window, found through its process chain and disambiguated by title. That way several
+    projects open in the same IDE are told apart.
+- **Approve or deny permissions from the room** or straight from the notification. Claude still shows
+  its own dialog in the terminal: whoever answers first wins.
+- **Reply.** Write into the session when it runs in an app terminal or in tmux. The notifications'
+  "Reply" button opens the preview with the cursor in the message box (Linux notifications do not
+  support typing inside the notification).
+- **Launch and resume.** Start an agent in a repo, or resume a closed session, in a built-in terminal
+  (xterm.js) or in a Warp tab.
+- **Dismiss** (archive) a session even if it is still open: it stops notifying and leaves the room. It
+  comes back on its own if you write to it, and can be restored for 3 days.
+- **Mute**: still visible, but without notifications.
+- **Today.** The header adds up the day's tokens and estimated cost across all sessions.
+- **Two views of the same state:** the classic one (cards) and the pixel-art **War Room**. Switch
+  from the header.
 
-Los avisos de escritorio llevan botones: **Ver**, **Ir a**, **Aprobar** y **Responder**.
+Desktop notifications come with buttons: **View**, **Go to**, **Approve** and **Reply**.
 
-## Instalación
+## Installation
 
-### Requisitos
+### Requirements
 
-- Linux. Probado en Fedora con KDE Plasma (Wayland). Otros escritorios funcionan, pero sin "Ir a"
-  por ventana: solo Warp y tmux.
-- Rust estable (edición 2021) y Node 20 o superior.
-- Dependencias de sistema de Tauri. En Fedora:
+- Linux. Tested on Fedora with KDE Plasma (Wayland). Other desktops work, but without per-window
+  "Go to": only Warp and tmux.
+- Stable Rust (2021 edition) and Node 20 or later.
+- Tauri's system dependencies. On Fedora:
 
   ```sh
   sudo dnf install webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel openssl-devel
   ```
 
-  En Debian/Ubuntu: `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`.
-- Opcional: `tmux` (escribir en sesiones y "Ir a" dentro de tmux), [Warp](https://www.warp.dev/)
-  (pestañas y foco por pane), `git` (lista de commits de una sesión).
+  On Debian/Ubuntu: `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`.
+- Optional: `tmux` (writing into sessions and "Go to" inside tmux), [Warp](https://www.warp.dev/)
+  (tabs and per-pane focus), `git` (a session's commit list).
 
-### Desde el código
+### From source
 
 ```sh
 npm install
-npm run app          # compila el puente warroom-hook y lanza `tauri dev`
+npm run app          # builds the warroom-hook bridge and runs `tauri dev`
 ```
 
-### Como paquete
+### As a package
 
 ```sh
-npm run package      # compila el puente en release y genera .deb, .rpm y AppImage
+npm run package      # builds the bridge in release and produces .deb, .rpm and AppImage
 ```
 
-Los paquetes quedan en `target/release/bundle/` e incluyen `warroom-hook` junto al ejecutable.
+Packages end up in `target/release/bundle/` and ship `warroom-hook` next to the executable.
 
-## Conectar Claude Code
+## Connecting Claude Code
 
-La primera vez, pulsa **Conectar Claude Code** en la cabecera. Eso:
+The first time, click **Connect Claude Code** in the header. It:
 
-- Añade hooks a `~/.claude/settings.json` sin tocar los tuyos, y guarda antes una copia
-  `settings.json.warroom-bak`.
-- Hace que apunten a `~/.local/share/agent-war-room/bin/warroom-hook`, una copia estable del puente.
-- Registra los eventos `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`,
-  `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `Notification`, `Stop`,
-  `SubagentStart`, `SubagentStop` y `PreCompact`.
+- Adds hooks to `~/.claude/settings.json` without touching yours, saving a
+  `settings.json.warroom-bak` copy first.
+- Points them at `~/.local/share/agent-war-room/bin/warroom-hook`, a stable copy of the bridge.
+- Registers the `SessionStart`, `SessionEnd`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
+  `PostToolUseFailure`, `PermissionRequest`, `Notification`, `Stop`, `SubagentStart`,
+  `SubagentStop` and `PreCompact` events.
 
-Solo las sesiones que arranquen después quedan conectadas. **Desconectar**, en el mismo menú, quita
-exactamente esos hooks y deja el resto como estaba.
+Only sessions started afterwards are connected. **Disconnect**, in the same menu, removes exactly
+those hooks and leaves the rest as it was.
 
-En ese menú también está **Abrir al iniciar sesión**, que arranca la app oculta en la bandeja.
+That menu also has **Open at login (in the tray)**, which starts the app hidden in the tray.
 
-### Atajo global "siguiente" (KDE)
+### Global "next" shortcut (KDE)
 
-Configuración del sistema → Teclado → Atajos → Añadir nuevo → Comando o script:
-`agent-war-room --next` (o la ruta del binario si no está instalado), y asígnale una tecla.
+System Settings → Keyboard → Shortcuts → Add New → Command or Script: `agent-war-room --next` (or the
+binary's path if it is not installed), and bind it to a key.
 
-Con la app abierta, el atajo salta a la ventana de la sesión que más lleva esperando; si no la
-encuentra, abre su vista previa. Si la app no está abierta, la arranca.
+With the app open, the shortcut jumps to the window of the session that has been waiting the longest;
+if it cannot find the window, it opens its preview. If the app is not running, it starts it.
 
-## Cómo funciona
+## How it works
 
 ```
- Claude Code ──hook──▶ warroom-hook ──socket unix──▶ Agent War Room (Tauri)
-   (cada evento)       (puente, Rust)                 ├─ núcleo Rust (hexagonal)
-                        · sube por /proc hasta el      │   dominio ─ aplicación ─ infraestructura
-                          terminal/IDE                 ├─ SQLite: eventos append-only
-                        · recoge TMUX, WARP_*, …       ├─ lectura incremental de transcripts
-                        · sale siempre con 0           └─ UI React: vista clásica y pixel art
+ Claude Code ──hook──▶ warroom-hook ──unix socket──▶ Agent War Room (Tauri)
+   (each event)        (bridge, Rust)                 ├─ Rust core (hexagonal)
+                        · walks /proc up to the        │   domain ─ application ─ infrastructure
+                          terminal/IDE                 ├─ SQLite: append-only events
+                        · collects TMUX, WARP_*, …     ├─ incremental transcript reading
+                        · always exits 0               └─ React UI: classic and pixel-art views
 ```
 
-1. Claude Code ejecuta `warroom-hook` en cada evento. El puente averigua dónde corre la sesión
-   (proceso, terminal, pane de tmux o de Warp) y manda un sobre al socket de la app. Si la app no
-   está, sale al momento.
-2. Para `PermissionRequest`, el puente espera la decisión de la sala (hasta ~10 minutos). Si
-   contestas en el terminal, Claude mata el hook y la sala lo detecta.
-3. La app guarda cada evento en SQLite y recalcula el estado de la sesión. El dominio es puro: una
-   máquina de estados por sesión que decide el nivel de atención.
-4. En paralelo lee el transcript JSONL de forma incremental para el título, las respuestas, el
-   modelo, las skills, los subagentes, el consumo y los ficheros tocados.
-5. La UI recibe una vista ya calculada; los tipos TypeScript se generan desde Rust con `ts-rs`.
+1. Claude Code runs `warroom-hook` on every event. The bridge works out where the session runs
+   (process, terminal, tmux or Warp pane) and sends an envelope to the app's socket. If the app is not
+   there, it exits at once.
+2. For `PermissionRequest`, the bridge waits for the room's decision (up to ~10 minutes). If you answer
+   in the terminal, Claude kills the hook and the room notices.
+3. The app stores every event in SQLite and recomputes the session's state. The domain is pure: one
+   state machine per session that decides its attention level.
+4. In parallel it reads the JSONL transcript incrementally for the title, answers, model, skills,
+   subagents, usage and touched files.
+5. The UI receives a precomputed view; the TypeScript types are generated from Rust with `ts-rs`.
 
-El proyecto se divide así:
+The project is split like this:
 
-| Crate / carpeta | Qué contiene |
+| Crate / folder | Contents |
 |---|---|
-| `crates/domain` | Sesiones, estados, atención, subagentes, skills. Sin dependencias salvo serde. |
-| `crates/application` | Casos de uso (`WarRoomService`), puertos y la vista que consume la UI. |
-| `crates/infrastructure` | Adaptadores: Claude (hooks, transcripts, precios), SQLite, socket, KWin, tmux, Warp, PTYs, git. |
-| `crates/wire` | Protocolo entre el puente y la app. |
-| `crates/hook-bridge` | El binario `warroom-hook`. |
-| `src-tauri` | Composición, comandos y eventos, bandeja, avisos, `--next`, autoarranque. |
-| `src` | React por capas: dominio, aplicación, infraestructura (Tauri o demo) y UI. |
+| `crates/domain` | Sessions, states, attention, subagents, skills. No dependencies but serde. |
+| `crates/application` | Use cases (`WarRoomService`), ports and the view the UI consumes. |
+| `crates/infrastructure` | Adapters: Claude (hooks, transcripts, prices), SQLite, socket, KWin, tmux, Warp, PTYs, git. |
+| `crates/wire` | Protocol between the bridge and the app. |
+| `crates/hook-bridge` | The `warroom-hook` binary. |
+| `src-tauri` | Composition, commands and events, tray, notifications, `--next`, autostart. |
+| `src` | Layered React: domain, application, infrastructure (Tauri or demo) and UI. |
 
-Los agentes están tras un puerto (`AgentProvider`). Hoy solo hay adaptador para Claude Code, pero
-añadir otro no toca el dominio. Decisiones y alternativas en
-[`docs/adr/0001-arquitectura.md`](docs/adr/0001-arquitectura.md).
+Agents sit behind a port (`AgentProvider`). Today there is only a Claude Code adapter, but adding
+another one does not touch the domain. Decisions and alternatives in
+[`docs/adr/0001-architecture.md`](docs/adr/0001-architecture.md).
 
-## Datos y privacidad
+## Data and privacy
 
-Todo se queda en tu máquina; la app no hace peticiones de red.
+Everything stays on your machine; the app makes no network requests.
 
-| Qué | Dónde |
+| What | Where |
 |---|---|
-| Eventos (append-only, 14 días) | `~/.local/share/agent-war-room/events.db` |
-| Puente instalado | `~/.local/share/agent-war-room/bin/warroom-hook` |
-| Socket (permisos `0700`) | `$XDG_RUNTIME_DIR/agent-war-room/ingress.sock` |
-| Hooks añadidos | `~/.claude/settings.json` (copia en `.warroom-bak`) |
+| Events (append-only, 14 days) | `~/.local/share/agent-war-room/events.db` |
+| Installed bridge | `~/.local/share/agent-war-room/bin/warroom-hook` |
+| Socket (`0700` permissions) | `$XDG_RUNTIME_DIR/agent-war-room/ingress.sock` |
+| Added hooks | `~/.claude/settings.json` (copy in `.warroom-bak`) |
 
-La app **lee** los transcripts de `~/.claude/projects/`, `/proc` (para localizar procesos y
-ventanas) y, al pulsar **Cambios**, el `git log` del worktree de la sesión. Solo **escribe** en tus
-sesiones cuando tú respondes o apruebas algo desde la sala.
+The app **reads** the transcripts in `~/.claude/projects/`, `/proc` (to locate processes and
+windows) and, when you click **Changes**, the `git log` of the session's worktree. It only **writes**
+into your sessions when you reply or approve something from the room.
 
-El coste es una **estimación** a precio público de API: con una suscripción no es lo que pagas,
-pero sirve para comparar sesiones.
+The cost is an **estimate** at public API prices: on a subscription it is not what you pay, but it is
+useful to compare sessions.
 
-## Solución de problemas
+## Troubleshooting
 
-| Síntoma | Qué mirar |
+| Symptom | What to check |
 |---|---|
-| Una sesión no aparece | Solo aparecen las que arrancaron después de conectar. Comprueba que el menú dice "conectado" y reinicia esa sesión de Claude. |
-| Aparece pero sin título ni respuestas | Claude lanzado desde otra sesión de Claude hereda variables `CLAUDE_CODE_*` que desactivan el transcript. Lánzalo desde un terminal limpio (los lanzamientos de la app ya las limpian). |
-| "Ir a" no hace nada | Fuera de KDE solo funcionan Warp y tmux. En KDE, si hay varias ventanas del mismo IDE, el título del proyecto desempata: que el nombre del repo aparezca en la ventana ayuda. |
-| No puedo escribir en una sesión | Solo es posible si corre en un terminal de la app o en tmux. |
-| No llegan avisos | Revisa que no esté silenciada o despedida y que el escritorio permita notificaciones de la app. |
-| Quiero ver qué manda Claude | Arranca Claude con `WARROOM_HOOK_DUMP=/ruta/fichero.jsonl`: el puente guarda cada sobre. |
+| A session does not show up | Only sessions started after connecting show up. Check that the menu says "connected" and restart that Claude session. |
+| It shows up but without title or answers | Claude launched from inside another Claude session inherits `CLAUDE_CODE_*` variables that disable the transcript. Launch it from a clean terminal (launches from the app already scrub them). |
+| "Go to" does nothing | Outside KDE only Warp and tmux work. On KDE, with several windows of the same IDE, the project title breaks the tie: having the repo name in the window title helps. |
+| I cannot write into a session | Only possible when it runs in an app terminal or in tmux. |
+| No notifications | Check that the session is not muted or dismissed and that the desktop allows the app's notifications. |
+| I want to see what Claude sends | Start Claude with `WARROOM_HOOK_DUMP=/path/file.jsonl`: the bridge saves every envelope. |
 
-## Desarrollo
+## Development
 
 ```sh
-scripts/check.sh           # comprueba solo lo que cambió respecto a HEAD, con salida mínima
-scripts/check.sh all       # todo: clippy, tests, tsc, vitest, build y docs de agentes
-cargo test --workspace     # dominio, casos de uso y adaptadores; regenera src/domain/generated
+scripts/check.sh           # checks only what changed vs HEAD, with minimal output
+scripts/check.sh all       # everything: clippy, tests, tsc, vitest, build and agent docs
+cargo test --workspace     # domain, use cases and adapters; regenerates src/domain/generated
 npm test                   # front (Vitest)
-npm run shot -- /tmp/shots # capturas de la UI de demostración (las de docs/screenshots)
+npm run shot -- /tmp/shots # screenshots of the demo UI (the ones in docs/screenshots)
 ```
 
-Fuera de Tauri (`npm run dev` en el navegador), la UI usa una sala de demostración con 5 repos y 11
-sesiones. Sirve para diseñar sin la app ni agentes reales.
+Outside Tauri (`npm run dev` in the browser), the UI uses a demo room with 5 repos and 11 sessions.
+Handy for designing without the app or real agents.
 
-Pruebas de punta a punta con un Claude Code real. Van aisladas (socket, carpeta y tmux propios, sin
-tocar tu configuración) y cuestan una llamada corta cada una:
+End-to-end tests against a real Claude Code. They are isolated (their own socket, folder and tmux,
+without touching your configuration) and cost one short call each:
 
 ```sh
 cargo build -p warroom-hook
 cargo test -p awr-infrastructure --test claude_e2e -- --ignored --nocapture
 ```
 
-Pruebas manuales contra el escritorio:
+Manual tests against the desktop:
 
 ```sh
 cargo test -p awr-infrastructure kwin_live -- --ignored
-AWR_TRANSCRIPT=/ruta/sesion.jsonl cargo test -p awr-infrastructure transcript_live -- --ignored --nocapture
+AWR_TRANSCRIPT=/path/session.jsonl cargo test -p awr-infrastructure transcript_live -- --ignored --nocapture
 ```
 
-Convenciones: el código y los comentarios en inglés; los textos de la interfaz en español,
-centralizados en `locale.rs` (Rust) y `src/domain/copy.ts` (front). Commits convencionales en
-español.
+Conventions: everything in English (code, UI copy, docs, commits); user-visible text is centralized in
+`locale.rs` (Rust) and `src/domain/copy.ts` (front). Conventional commits.
 
-## Para agentes de código
+## For coding agents
 
-El proyecto trae documentación pensada para agentes (Claude Code, Cursor, Codex…), organizada para
-gastar poco contexto: el agente carga un índice corto y va abriendo solo lo que necesita.
+The project ships documentation meant for agents (Claude Code, Cursor, Codex…), organized to spend
+little context: the agent loads a short index and opens only what it needs.
 
-- **[`AGENTS.md`](AGENTS.md)** es la única entrada: invariantes, una tabla de "qué leer según lo que
-  vas a hacer" y otra por área. No contiene conocimiento, solo dice dónde está.
-- **`.cursor/rules/`** guarda el conocimiento en dos niveles. Los *routers* (`*.mdc`) se asocian a
-  rutas de código con `globs`. Las *hojas* (`*.md`) solo se abren cuando su disparador, en la tabla
-  del router, encaja con la tarea.
-- **Hook de reglas.** En Claude Code, al leer o editar un fichero, un hook avisa una vez por sesión
-  de qué regla lo cubre (y de sus secciones, si es larga). En cualquier herramienta:
-  `python3 scripts/rules_for_path.py <fichero>`.
-- **`.agents/skills/`** tiene procedimientos paso a paso (`verify`, `extend-session-model`,
+- **[`AGENTS.md`](AGENTS.md)** is the single entry point: invariants, a "what to read for what you are
+  about to do" table and another one by area. It holds no knowledge, it only says where it is.
+- **`.cursor/rules/`** stores the knowledge in two levels. *Routers* (`*.mdc`) are tied to code paths
+  through `globs`. *Leaves* (`*.md`) are only opened when their trigger, in the router's table,
+  matches the task.
+- **Rules hook.** In Claude Code, when a file is read or edited, a hook announces once per session
+  which rule covers it (and its sections, if it is long). In any tool:
+  `python3 scripts/rules_for_path.py <file>`.
+- **`.agents/skills/`** holds step-by-step procedures (`verify`, `extend-session-model`,
   `add-provider`, `e2e`, `close-task`, `anti-rot`).
-- **`.agents/agents/`** tiene subagentes que leen mucho y devuelven poco (transcripts, capturas,
-  revisión). `.claude/skills` y `.claude/agents` son enlaces a estas carpetas.
-- **Antipodredumbre.** `python3 scripts/check_docs.py` (también `scripts/check.sh docs`) detecta
-  rutas muertas, reglas inalcanzables, hojas huérfanas, globs sin ficheros y documentos demasiado
-  grandes. La skill `anti-rot` cubre lo que requiere criterio.
+- **`.agents/agents/`** holds subagents that read a lot and return little (transcripts, screenshots,
+  review). `.claude/skills` and `.claude/agents` are links to these folders.
+- **Anti-rot.** `python3 scripts/check_docs.py` (also `scripts/check.sh docs`) catches dead paths,
+  unreachable rules, orphan leaves, globs without files and oversized documents. The `anti-rot` skill
+  covers what needs judgement.
+- Agents work in English in the repo but **reply to you in your language**.
 
-Qué carga cada herramienta y qué se pierde fuera de Claude Code: [`.agents/README.md`](.agents/README.md).
+What each tool loads and what is lost outside Claude Code: [`.agents/README.md`](.agents/README.md).
 
-## Limitaciones y pendiente
+## Contributing
 
-- Solo Claude Code. El puerto para otros agentes existe (skill `add-provider`), pero sin adaptadores.
-- "Ir a" por ventana solo en KDE (KWin). GNOME y X11 genérico no están hechos.
-- Sin verificar en vivo: los botones de los avisos, el atajo `--next`, el autoarranque, el paquete
-  RPM instalado y que Warp recoja las pestañas generadas.
-- El coste depende de una tabla de precios en el código (`claude/pricing.rs`); un modelo nuevo sin
-  precio aparece sin coste.
-- Sin versión web: la UI de navegador es solo la demo.
+Issues and pull requests are welcome.
 
-## Licencia
+- Before opening a PR, run `scripts/check.sh all` and, for UI changes, `npm run shot -- <dir>` and
+  look at the screenshots.
+- If you work with a coding agent, point it at [`AGENTS.md`](AGENTS.md): it routes it to the right
+  rules and skills, and the `close-task` skill covers checks and commits.
+- If you change something the agent docs cite, update them in the same PR
+  (`python3 scripts/check_docs.py`).
 
-Propietaria. Todos los derechos reservados.
+## Limitations and roadmap
+
+- Claude Code only. The port for other agents exists (skill `add-provider`), but no adapters yet.
+- Per-window "Go to" only on KDE (KWin). GNOME and generic X11 are not done.
+- Not verified live: notification buttons, the `--next` shortcut, autostart, the installed RPM
+  package and Warp picking up the generated tabs.
+- The cost depends on a price table in the code (`claude/pricing.rs`); a new model without a price
+  shows no cost.
+- No web version: the browser UI is only the demo.
+
+## License
+
+See [LICENSE](LICENSE).

@@ -22,14 +22,14 @@ import type {
 
 const minutes = (m: number) => Date.now() - m * 60_000;
 
-/** Status labels come from the core in Spanish (crates/application/src/locale.rs); mirror them. */
+/** Status labels come from the core (crates/application/src/locale.rs); mirror them. */
 const STATUS = {
-  thinking: "Pensando",
-  asksQuestion: "Te pregunta",
-  asksPermission: "Pide permiso",
-  finished: "Terminado",
-  yourTurn: "Te toca",
-  ended: "Cerrada",
+  thinking: "Thinking",
+  asksQuestion: "Asks you",
+  asksPermission: "Asks permission",
+  finished: "Finished",
+  yourTurn: "Your turn",
+  ended: "Closed",
 };
 
 const DEMO_REPLY = `## Done

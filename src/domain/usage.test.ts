@@ -6,15 +6,15 @@ describe("usage and stalls", () => {
   it("formats token counts compactly", () => {
     expect([tokenCount(950), tokenCount(1_200), tokenCount(12_345_678), tokenCount(120_000_000), tokenCount(2_000_000)]).toEqual([
       "950",
-      "1,2k",
-      "12,3M",
+      "1.2k",
+      "12.3M",
       "120M",
       "2M",
     ]);
   });
 
-  it("formats money for a Spanish UI", () => {
-    expect([money(0.42), money(47.68), money(312.4)]).toEqual(["$0,42", "$47,68", "$312"]);
+  it("formats money", () => {
+    expect([money(0.42), money(47.68), money(312.4)]).toEqual(["$0.42", "$47.68", "$312"]);
   });
 
   it("knows how full the context is and when to warn", () => {

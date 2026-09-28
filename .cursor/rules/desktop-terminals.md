@@ -24,7 +24,7 @@ scrollback for re-attaching. Closing the window keeps PTYs alive (app lives in t
 ## Typing into a session (launch.rs::TerminalInput)
 
 PTY → write text, wait ~60 ms, then `\r` (sent together, Enter would be taken as a pasted newline).
-tmux → `send-keys -l <text>` then `Enter`. Anything else → error "use Ir a".
+tmux → `send-keys -l <text>` then `Enter`. Anything else → error "use Go to".
 
 ## Driving Claude's TUI in a raw PTY (tests)
 

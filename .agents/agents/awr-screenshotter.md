@@ -16,8 +16,7 @@ model: sonnet
 3. Check against what the caller says should be visible, plus the usual suspects: text clipped or
    wrapping badly, elements overlapping or overflowing their card, panels covering controls, colors
    not matching the state (red needs you, blue finished, green working, amber stalled, grey idle),
-   empty areas where content was expected, Spanish UI copy (no English UI strings; demo *data* is
-   English on purpose).
+   empty areas where content was expected, UI copy that is not in English.
 
 ## Output contract
 

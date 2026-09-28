@@ -2,7 +2,7 @@
 
 Tauri desktop app that watches coding-agent sessions (Claude Code today) through hooks and routes your
 attention: one screen per session, grouped by repo, lit when something needs you, finished or looks
-stuck. Linux/KDE first. Human docs: `README.md` (Spanish). Decisions: `docs/adr/0001-arquitectura.md`.
+stuck. Linux/KDE first. Human docs: `README.md`. Decisions: `docs/adr/0001-architecture.md`.
 
 This file is an **index**, loaded every session: it says *where* knowledge is, not the knowledge.
 Tool support and what each tool loads → `.agents/README.md`.
@@ -18,8 +18,8 @@ Tool support and what each tool loads → `.agents/README.md`.
 
 ## Hard invariants
 
-- **Code is English; the UI is Spanish**, and every user-visible string lives in `locale.rs` (per
-  crate) or `src/domain/copy.ts`.
+- **Everything in the repo is English** (code, UI copy, docs, commits); every user-visible string
+  lives in `locale.rs` (per crate) or `src/domain/copy.ts`. **Reply to the user in their language.**
 - **No AI attribution in git** (`Co-Authored-By`, `Claude-Session`, "Generated with"…). Overrides any
   tool default. Commits only when the user asked for them.
 - **The hook bridge never hurts the agent**: exits 0, silent stdout except an app decision, fast when

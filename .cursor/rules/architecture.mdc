@@ -7,7 +7,7 @@ alwaysApply: false
 # Architecture
 
 Hexagonal, with the dependency rule **enforced by crate boundaries** (the compiler rejects an inward
-layer importing an outward one). Decisions and history: `docs/adr/0001-arquitectura.md` (Spanish).
+layer importing an outward one). Decisions and history: `docs/adr/0001-architecture.md`.
 
 ```
 crates/domain          pure model: sessions, attention, events. serde only — no IO, time, tokio, tauri

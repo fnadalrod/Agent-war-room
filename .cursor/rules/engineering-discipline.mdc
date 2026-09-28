@@ -21,7 +21,8 @@ every line here is paid on every turn. Detail goes to leaves.
 ## While changing
 
 - **Minimal change**, edit before creating, keep the layer direction (never import "up").
-- **Code is English; the UI is Spanish** and its text lives only in the copy/locale modules.
+- **Everything in the repo is English** (code, UI copy, docs, commits); UI text lives only in the
+  copy/locale modules. Talk to the user in the user's language.
 - **Never touch the user's real environment** in tests or experiments: not `~/.claude/settings.json`,
   not the real socket, not the real `events.db`. Use temp dirs, a private `XDG_RUNTIME_DIR`,
   `--settings`, private tmux sockets. Ask before anything that shows up on the user's desktop
@@ -34,7 +35,7 @@ every line here is paid on every turn. Detail goes to leaves.
 - Integration change (bridge, socket, approvals, PTY) → real e2e (skill `e2e`).
 - **Report honestly**: what ran, what passed, and what could not be verified. "Compiles" is not "works".
 - **No AI attribution in git** (`Co-Authored-By`, `Claude-Session`, "Generated with"…). Commit messages
-  are Spanish conventional commits (`feat: …`, `fix(área): …`).
+  are English conventional commits (`feat: …`, `fix(area): …`).
 
 ## After changing
 

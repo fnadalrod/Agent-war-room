@@ -1,19 +1,19 @@
-//! Spanish user-facing copy. The product UI is in Spanish; keep every user-visible string here so
-//! the rest of the code stays in English.
+//! User-facing copy. Keep every user-visible string here so wording lives in one place and the rest
+//! of the code stays free of UI text.
 
 use std::fmt::Display;
 
 // Typing into sessions and launching agents.
 
 pub const EXTERNAL_TERMINAL_NO_INPUT: &str =
-    "esta sesión vive en una terminal externa: no se puede escribir desde aquí, usa \"Ir a\"";
+    "this session lives in an external terminal: you can't write to it from here, use \"Go to\"";
 
 pub fn invalid_session_id(id: impl Display) -> String {
-    format!("id de sesión no válido: {id}")
+    format!("invalid session id: {id}")
 }
 
 pub fn unknown_terminal(id: &str) -> String {
-    format!("terminal desconocido: {id}")
+    format!("unknown terminal: {id}")
 }
 
 /// Name of the Warp tab opened for an agent.
@@ -23,12 +23,12 @@ pub fn warp_tab_name(label: &str) -> String {
 
 // "Go to" a session: reasons shown when its window cannot be reached.
 
-pub const UNSUPPORTED_DESKTOP: &str = "escritorio no soportado (de momento solo KDE Plasma)";
-pub const UNKNOWN_SESSION_TERMINAL: &str = "no se conoce la terminal de esta sesión";
-pub const NO_CANDIDATE_PROCESSES: &str = "sin procesos candidatos";
+pub const UNSUPPORTED_DESKTOP: &str = "unsupported desktop (only KDE Plasma for now)";
+pub const UNKNOWN_SESSION_TERMINAL: &str = "this session's terminal is unknown";
+pub const NO_CANDIDATE_PROCESSES: &str = "no candidate processes";
 
 pub fn tmux_no_client(pane: &str) -> String {
-    format!("pane {pane} seleccionado, pero no hay ningún cliente de tmux adjunto")
+    format!("pane {pane} selected, but no tmux client is attached")
 }
 
 pub fn tmux_failed(error: &str) -> String {
@@ -36,19 +36,18 @@ pub fn tmux_failed(error: &str) -> String {
 }
 
 pub fn kwin_script_not_loaded(reply: &str) -> String {
-    format!("KWin no cargó el script: {reply}")
+    format!("KWin did not load the script: {reply}")
 }
 
 // Hook installation.
 
-pub const SETTINGS_NOT_AN_OBJECT: &str = "settings.json no es un objeto JSON";
-pub const BRIDGE_NOT_FOUND: &str =
-    "no se encuentra el binario warroom-hook; compílalo con `cargo build -p warroom-hook`";
+pub const SETTINGS_NOT_AN_OBJECT: &str = "settings.json is not a JSON object";
+pub const BRIDGE_NOT_FOUND: &str = "the warroom-hook binary was not found; build it with `cargo build -p warroom-hook`";
 
 pub fn settings_invalid_json(error: impl Display) -> String {
-    format!("settings.json no es JSON válido: {error}")
+    format!("settings.json is not valid JSON: {error}")
 }
 
 pub fn invalid_bridge(path: impl Display) -> String {
-    format!("{path} no es un ejecutable válido del puente")
+    format!("{path} is not a valid bridge executable")
 }

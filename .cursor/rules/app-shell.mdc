@@ -24,8 +24,8 @@ both or neither.
 - Tray: lamp colored by aggregate attention (generated RGBA, no assets), tooltip with counters, menu
   "next / open / quit".
 - Notifications (`adapters.rs::DesktopNotifier`, `notify-rust`): one per session (stable id replaces
-  the previous), NeedsYou = critical + no timeout. Buttons: Ver, Ir a, Aprobar (if approvable),
-  Responder. Freedesktop has **no inline reply** (notify-rust says so): "Responder" opens the preview
+  the previous), NeedsYou = critical + no timeout. Buttons: View, Go to, Approve (if approvable),
+  Reply. Freedesktop has **no inline reply** (notify-rust says so): "Reply" opens the preview
   with the message box focused.
 - Single instance: a second launch forwards argv; `--next` jumps to what has waited longest
   (`go_next`), used from a KDE global shortcut. `--hidden` comes from autostart.
