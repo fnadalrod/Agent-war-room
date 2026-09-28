@@ -18,8 +18,9 @@ Tool support and what each tool loads → `.agents/README.md`.
 
 ## Hard invariants
 
-- **Everything in the repo is English** (code, UI copy, docs, commits); every user-visible string
-  lives in `locale.rs` (per crate) or `src/domain/copy.ts`. **Reply to the user in their language.**
+- **Everything in the repo is English** (code, docs, commits). **Reply to the user in their language.**
+- **No plain user-visible text in code**: it lives in the translation catalogs `locales/<lang>.json`,
+  reached through `locale.rs` (Rust) / `src/domain/copy.ts` (front) (`i18n.mdc`).
 - **No AI attribution in git** (`Co-Authored-By`, `Claude-Session`, "Generated with"…). Overrides any
   tool default. Commits only when the user asked for them.
 - **The hook bridge never hurts the agent**: exits 0, silent stdout except an app decision, fast when
@@ -41,6 +42,7 @@ Tool support and what each tool loads → `.agents/README.md`.
 | Touch approvals, the bridge or the socket | `hooks-ingest.mdc` → `hooks-approvals.md` → skill `e2e` |
 | Touch "go to", terminals, launching, typing | `desktop.mdc` → `desktop-kwin.md` / `desktop-terminals.md` |
 | Change UI or copy | `frontend.mdc` → skill `verify` (screenshots) or subagent `awr-screenshotter` |
+| Add or change user-visible text, or a language | `i18n.mdc` |
 | Touch the pixel-art War Room | `frontend.mdc` → `frontend-pixel-art.md` |
 | Add a Tauri command/event, tray, notifications, packaging | `app-shell.mdc` (+`app-packaging.md`) |
 | Support another agent (Codex, Gemini…) | skill `add-provider` |
@@ -60,6 +62,7 @@ All in `.cursor/rules/`. "+leaves" = router with a trigger table.
 - Go-to window, PTYs, launcher, typing, git, liveness (`desktop/**`, `pty.rs`, `launch.rs`, `git.rs`, `system.rs`) → `desktop.mdc` (+leaves: KWin, terminals)
 - Tauri shell: composition, commands/events, tray, notifications, `--next`, packaging (`src-tauri/**`) → `app-shell.mdc` (+leaf: packaging)
 - React front: layers, store, copy, styling, detail panel (`src/**`) → `frontend.mdc` (+leaf: pixel art)
+- Translations: catalogs, `awr-i18n`, `locale.rs`, `copy.ts`, language pick (`locales/**`, `crates/i18n/**`) → `i18n.mdc`
 - Tests, e2e, screenshots, check script → `testing.mdc` (+leaf: real-Claude e2e)
 
 Nested `AGENTS.md`/`CLAUDE.md` pointers in `crates/`, `src/`, `src-tauri/` repeat the relevant line.

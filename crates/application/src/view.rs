@@ -421,19 +421,19 @@ pub(crate) fn session_view(
 
 fn status_label(s: &Session) -> String {
     match &s.status {
-        SessionStatus::Idle => locale::STATUS_IDLE.into(),
+        SessionStatus::Idle => locale::status_idle().into(),
         SessionStatus::Working { tool: Some(tool) } => tool.clone(),
-        SessionStatus::Working { tool: None } => locale::STATUS_THINKING.into(),
+        SessionStatus::Working { tool: None } => locale::status_thinking().into(),
         SessionStatus::AwaitingYou { reason: WaitReason::Permission, tool, detail } => match (tool, detail) {
             (Some(tool), Some(detail)) => locale::asks_permission_for_detail(tool, detail),
             (Some(tool), None) => locale::asks_permission_for(tool),
-            _ => locale::STATUS_ASKS_PERMISSION.into(),
+            _ => locale::status_asks_permission().into(),
         },
-        SessionStatus::AwaitingYou { reason: WaitReason::Question, .. } => locale::STATUS_ASKS_QUESTION.into(),
-        SessionStatus::AwaitingInput if s.unseen => locale::STATUS_FINISHED.into(),
-        SessionStatus::AwaitingInput => locale::STATUS_YOUR_TURN.into(),
-        SessionStatus::Compacting => locale::STATUS_COMPACTING.into(),
-        SessionStatus::Ended { .. } => locale::STATUS_ENDED.into(),
+        SessionStatus::AwaitingYou { reason: WaitReason::Question, .. } => locale::status_asks_question().into(),
+        SessionStatus::AwaitingInput if s.unseen => locale::status_finished().into(),
+        SessionStatus::AwaitingInput => locale::status_your_turn().into(),
+        SessionStatus::Compacting => locale::status_compacting().into(),
+        SessionStatus::Ended { .. } => locale::status_ended().into(),
     }
 }
 

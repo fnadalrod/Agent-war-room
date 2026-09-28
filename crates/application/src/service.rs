@@ -155,7 +155,7 @@ impl WarRoomService {
     /// `git show` of one commit in the session's worktree.
     pub fn commit_diff(&self, id: SessionId, hash: &str) -> PortResult<String> {
         if hash.len() < 7 || hash.len() > 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Err(PortError::Failed(locale::INVALID_COMMIT.into()));
+            return Err(PortError::Failed(locale::invalid_commit().into()));
         }
         let worktree = known(&self.room(), &id)?.workspace.worktree_path.clone();
         self.ports.git.show(&worktree, hash)
@@ -251,10 +251,10 @@ impl WarRoomService {
 
     fn decide(&self, id: SessionId, decision: ApprovalDecision) -> PortResult<()> {
         let responder =
-            self.approvals().remove(&id).ok_or_else(|| PortError::Failed(locale::NO_PENDING_PERMISSION.into()))?;
+            self.approvals().remove(&id).ok_or_else(|| PortError::Failed(locale::no_pending_permission().into()))?;
         let delivered = responder.respond(decision);
         self.publish();
-        if delivered { Ok(()) } else { Err(PortError::Failed(locale::ALREADY_ANSWERED_IN_TERMINAL.into())) }
+        if delivered { Ok(()) } else { Err(PortError::Failed(locale::already_answered_in_terminal().into())) }
     }
 
     /// Preview: the session card and its last `limit` conversation entries.
@@ -309,7 +309,7 @@ impl WarRoomService {
             let room = self.room();
             let session = known(&room, &id)?;
             if session.is_alive() {
-                return Err(PortError::Failed(locale::SESSION_STILL_OPEN.into()));
+                return Err(PortError::Failed(locale::session_still_open().into()));
             }
             let label = self
                 .summaries()
@@ -327,7 +327,7 @@ impl WarRoomService {
             let room = self.room();
             let session = known(&room, &id)?;
             if !session.is_alive() {
-                return Err(PortError::Failed(locale::SESSION_CLOSED.into()));
+                return Err(PortError::Failed(locale::session_closed().into()));
             }
             session.host.clone()
         };
@@ -340,7 +340,7 @@ impl WarRoomService {
             let room = self.room();
             let session = known(&room, &id)?;
             if !session.is_alive() {
-                return Ok(FocusOutcome::Unreachable { reason: locale::SESSION_CLOSED.into() });
+                return Ok(FocusOutcome::Unreachable { reason: locale::session_closed().into() });
             }
             let mut hints = vec![];
             if let Some(title) = self.summaries().get(&id).and_then(|s| s.title.clone()) {
@@ -495,8 +495,8 @@ impl WarRoomService {
         let place = place_of(session);
         let summary = self.summaries().get(&change.session).cloned().unwrap_or_default();
         let (title, fallback) = match change.to {
-            Attention::NeedsYou => (locale::needs_you_title(&place), locale::NEEDS_YOU_FALLBACK_BODY),
-            Attention::Finished => (locale::finished_title(&place), locale::FINISHED_FALLBACK_BODY),
+            Attention::NeedsYou => (locale::needs_you_title(&place), locale::needs_you_fallback_body()),
+            Attention::Finished => (locale::finished_title(&place), locale::finished_fallback_body()),
             _ => return None,
         };
         let body =

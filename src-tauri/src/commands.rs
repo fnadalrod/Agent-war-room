@@ -45,6 +45,12 @@ fn done(result: PortResult<()>) -> Result<(), String> {
     result.map_err(|e| e.to_string())
 }
 
+/// The language the core speaks (from the environment), so the front renders in the same one.
+#[tauri::command]
+pub fn ui_language() -> &'static str {
+    awr_i18n::language()
+}
+
 #[tauri::command]
 pub fn get_view(service: Service) -> WarRoomView {
     service.view()
@@ -178,7 +184,7 @@ pub async fn session_detail(
 #[tauri::command]
 pub fn open_external(url: String) -> Result<(), String> {
     if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err(locale::ONLY_HTTP_LINKS.into());
+        return Err(locale::only_http_links().into());
     }
     awr_infrastructure::desktop::open_url(&url);
     Ok(())

@@ -6,6 +6,7 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+awr-i18n.workspace = true
 awr-domain.workspace = true
 awr-application.workspace = true
 awr-wire.workspace = true

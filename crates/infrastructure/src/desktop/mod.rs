@@ -21,7 +21,7 @@ impl DesktopNavigator {
     fn raise(&self, pids: &[u32], hints: &[String]) -> Result<(), String> {
         match &self.kwin {
             Some(kwin) => kwin.activate(pids, hints),
-            None => Err(locale::UNSUPPORTED_DESKTOP.into()),
+            None => Err(locale::unsupported_desktop().into()),
         }
     }
 }
@@ -55,7 +55,7 @@ impl WindowNavigator for DesktopNavigator {
 
         let pids = host.pids_above_agent();
         if pids.is_empty() {
-            return Ok(FocusOutcome::Unreachable { reason: locale::UNKNOWN_SESSION_TERMINAL.into() });
+            return Ok(FocusOutcome::Unreachable { reason: locale::unknown_session_terminal().into() });
         }
         Ok(match self.raise(&pids, hints) {
             Ok(()) => FocusOutcome::Focused { via: "kwin".into() },

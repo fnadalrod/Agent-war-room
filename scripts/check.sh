@@ -42,7 +42,7 @@ front=0
 front_build=0
 docs=0
 add_crate() { [[ " ${rust_crates[*]-} " == *" $1 "* ]] || rust_crates+=("$1"); }
-all_rust() { for c in awr-domain awr-wire awr-application awr-infrastructure warroom-hook agent-war-room; do add_crate "$c"; done; }
+all_rust() { for c in awr-domain awr-wire awr-i18n awr-application awr-infrastructure warroom-hook agent-war-room; do add_crate "$c"; done; }
 
 case "$mode" in
   all) all_rust; front=1; front_build=1; docs=1 ;;
@@ -54,7 +54,7 @@ case "$mode" in
     if [ -z "$files" ]; then echo "nothing changed vs HEAD"; exit 0; fi
     while IFS= read -r f; do
       case "$f" in
-        crates/domain/*|crates/wire/*|Cargo.toml|Cargo.lock|.cargo/*) all_rust; front=1 ;;
+        crates/domain/*|crates/wire/*|crates/i18n/*|locales/*|Cargo.toml|Cargo.lock|.cargo/*) all_rust; front=1 ;;
         # view.rs feeds the generated TS types: the front must typecheck against them.
         crates/application/*) add_crate awr-application; add_crate awr-infrastructure; add_crate agent-war-room; front=1 ;;
         crates/infrastructure/*) add_crate awr-infrastructure; add_crate agent-war-room ;;

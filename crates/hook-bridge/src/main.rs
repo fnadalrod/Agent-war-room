@@ -15,9 +15,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 const MAX_PAYLOAD_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_ANCESTRY: usize = 12;
 const AGENT_PROCESS_NAMES: &[&str] = &["claude"];
-/// Deny reason shown by Claude Code in the user's terminal when the app gives none. The bridge's
-/// only user-facing string, so it lives here instead of a locale module.
-const DEFAULT_DENY_MESSAGE: &str = "Denied from Agent War Room";
 /// Below the hook timeout (600 s) so we exit on our own terms.
 const REPLY_WAIT: Duration = Duration::from_secs(590);
 
@@ -84,7 +81,7 @@ fn permission_output(reply: &HookReply) -> String {
         HookReply::Allow => serde_json::json!({ "behavior": "allow" }),
         HookReply::Deny { message } => serde_json::json!({
             "behavior": "deny",
-            "message": message.clone().unwrap_or_else(|| DEFAULT_DENY_MESSAGE.into()),
+            "message": message.clone().unwrap_or_else(|| awr_i18n::t("bridge.default_deny").into()),
         }),
     };
     serde_json::json!({

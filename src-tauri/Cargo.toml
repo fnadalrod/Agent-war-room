@@ -18,6 +18,7 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+awr-i18n.workspace = true
 awr-domain.workspace = true
 awr-application.workspace = true
 awr-infrastructure.workspace = true

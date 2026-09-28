@@ -51,7 +51,7 @@ impl ClaudeHookInstaller {
             Ok(raw) if raw.trim().is_empty() => Ok(Map::new()),
             Ok(raw) => match serde_json::from_str(&raw) {
                 Ok(Value::Object(map)) => Ok(map),
-                Ok(_) => Err(fail(locale::SETTINGS_NOT_AN_OBJECT)),
+                Ok(_) => Err(fail(locale::settings_not_an_object())),
                 Err(e) => Err(fail(locale::settings_invalid_json(e))),
             },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Map::new()),
@@ -74,7 +74,7 @@ impl ClaudeHookInstaller {
 
     fn copy_bridge(&self) -> PortResult<()> {
         let Some(source) = self.bridge_source.as_ref().filter(|s| s.exists()) else {
-            return if self.bridge_target.exists() { Ok(()) } else { Err(fail(locale::BRIDGE_NOT_FOUND)) };
+            return if self.bridge_target.exists() { Ok(()) } else { Err(fail(locale::bridge_not_found())) };
         };
         if !is_executable_binary(source) {
             return Err(fail(locale::invalid_bridge(source.display())));

@@ -23,6 +23,7 @@ changes color.
 - [Usage guide](#usage-guide)
 - [Installation](#installation)
 - [Connecting Claude Code](#connecting-claude-code)
+- [Languages](#languages)
 - [How it works](#how-it-works)
 - [Data and privacy](#data-and-privacy)
 - [Troubleshooting](#troubleshooting)
@@ -118,7 +119,7 @@ Desktop notifications come with buttons: **View**, **Go to**, **Approve** and **
 
 - Linux. Tested on Fedora with KDE Plasma (Wayland). Other desktops work, but without per-window
   "Go to": only Warp and tmux.
-- Stable Rust (2021 edition) and Node 20 or later.
+- Stable Rust (2024 edition) and Node 20 or later.
 - Tauri's system dependencies. On Fedora:
 
   ```sh
@@ -168,6 +169,17 @@ binary's path if it is not installed), and bind it to a key.
 With the app open, the shortcut jumps to the window of the session that has been waiting the longest;
 if it cannot find the window, it opens its preview. If the app is not running, it starts it.
 
+## Languages
+
+The app speaks English and Spanish, and follows your system language (`LANG`/`LC_*`); anything else
+falls back to English. To force one, start it with `AWR_LANG=es` (or `en`). The window, tray and
+notifications always use the same language.
+
+All text lives in the catalogs `locales/<lang>.json`, shared by the Rust core and the front. To add a
+language, copy `locales/en.json`, translate the values and register the code (see
+[`.cursor/rules/i18n.mdc`](.cursor/rules/i18n.mdc)); `cargo test -p awr-i18n` checks it has every key
+and the same placeholders. Preview it with `npm run shot -- /tmp/shots 1500 <code>`.
+
 ## How it works
 
 ```
@@ -198,6 +210,7 @@ The project is split like this:
 | `crates/application` | Use cases (`WarRoomService`), ports and the view the UI consumes. |
 | `crates/infrastructure` | Adapters: Claude (hooks, transcripts, prices), SQLite, socket, KWin, tmux, Warp, PTYs, git. |
 | `crates/wire` | Protocol between the bridge and the app. |
+| `crates/i18n` | Translation lookup over `locales/<lang>.json` (the front reads the same catalogs). |
 | `crates/hook-bridge` | The `warroom-hook` binary. |
 | `src-tauri` | Composition, commands and events, tray, notifications, `--next`, autostart. |
 | `src` | Layered React: domain, application, infrastructure (Tauri or demo) and UI. |
@@ -263,8 +276,9 @@ cargo test -p awr-infrastructure kwin_live -- --ignored
 AWR_TRANSCRIPT=/path/session.jsonl cargo test -p awr-infrastructure transcript_live -- --ignored --nocapture
 ```
 
-Conventions: everything in English (code, UI copy, docs, commits); user-visible text is centralized in
-`locale.rs` (Rust) and `src/domain/copy.ts` (front). Conventional commits.
+Conventions: code, docs and commits in English; conventional commits. User-visible text never lives
+in code: it is a key in the translation catalogs `locales/<lang>.json`, shared by the Rust core and the
+front.
 
 ## For coding agents
 
@@ -298,6 +312,7 @@ Issues and pull requests are welcome.
   look at the screenshots.
 - If you work with a coding agent, point it at [`AGENTS.md`](AGENTS.md): it routes it to the right
   rules and skills, and the `close-task` skill covers checks and commits.
+- New or changed text goes into every `locales/*.json`, never inline in code.
 - If you change something the agent docs cite, update them in the same PR
   (`python3 scripts/check_docs.py`).
 

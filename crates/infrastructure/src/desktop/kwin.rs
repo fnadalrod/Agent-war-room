@@ -25,7 +25,7 @@ impl Kwin {
     /// process (an IDE with several projects, several Warp windows) the one with a hint in its caption wins.
     pub fn activate(&self, pids: &[u32], hints: &[String]) -> Result<(), String> {
         if pids.is_empty() {
-            return Err(locale::NO_CANDIDATE_PROCESSES.into());
+            return Err(locale::no_candidate_processes().into());
         }
         if let Some(dir) = self.script_path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;

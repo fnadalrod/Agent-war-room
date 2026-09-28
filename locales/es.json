@@ -1,0 +1,309 @@
+{
+  "core": {
+    "status": {
+      "idle": "En espera",
+      "thinking": "Pensando",
+      "asks_permission": "Pide permiso",
+      "asks_permission_for": "Pide permiso: {tool}",
+      "asks_permission_for_detail": "Pide permiso: {tool} · {detail}",
+      "asks_question": "Te pregunta",
+      "finished": "Terminado",
+      "your_turn": "Te toca",
+      "compacting": "Compactando",
+      "ended": "Cerrada"
+    },
+    "notice": {
+      "needs_you_title": "{place} te necesita",
+      "needs_you_body": "Está esperando tu decisión",
+      "finished_title": "{place} ha terminado",
+      "finished_body": "Te toca revisar",
+      "stalled_title": "{place} parece atascada",
+      "stalled_body": "Sin actividad desde hace {minutes} min",
+      "stalled_body_doing": "Sin actividad desde hace {minutes} min · {doing}"
+    },
+    "error": {
+      "no_pending_permission": "no hay ningún permiso pendiente en esa sesión",
+      "already_answered_in_terminal": "ya se había respondido en la terminal",
+      "session_closed": "la sesión está cerrada",
+      "session_still_open": "la sesión sigue abierta: usa \"Ir a\"",
+      "unknown_session": "sesión desconocida: {id}",
+      "unknown_subagent": "subagente desconocido: {id}",
+      "nothing_waiting": "nada te está esperando",
+      "invalid_commit": "commit no válido"
+    }
+  },
+  "desktop": {
+    "external_terminal_no_input": "esta sesión vive en una terminal externa: no se puede escribir desde aquí, usa \"Ir a\"",
+    "invalid_session_id": "id de sesión no válido: {id}",
+    "unknown_terminal": "terminal desconocido: {id}",
+    "warp_tab_name": "War Room · {label}",
+    "unsupported_desktop": "escritorio no soportado (de momento solo KDE Plasma)",
+    "unknown_session_terminal": "no se conoce la terminal de esta sesión",
+    "no_candidate_processes": "sin procesos candidatos",
+    "tmux_no_client": "pane {pane} seleccionado, pero no hay ningún cliente de tmux adjunto",
+    "tmux_failed": "tmux: {error}",
+    "kwin_script_not_loaded": "KWin no cargó el script: {reply}",
+    "settings_not_an_object": "settings.json no es un objeto JSON",
+    "settings_invalid_json": "settings.json no es JSON válido: {error}",
+    "bridge_not_found": "no se encuentra el binario warroom-hook; compílalo con `cargo build -p warroom-hook`",
+    "invalid_bridge": "{path} no es un ejecutable válido del puente"
+  },
+  "shell": {
+    "tray": {
+      "open": "Abrir la war room",
+      "next": "Ir al siguiente que te necesita",
+      "quit": "Salir",
+      "needs_you": "{n} te necesitan",
+      "finished": "{n} terminadas",
+      "working": "{n} trabajando",
+      "all_quiet": "Agent War Room · todo tranquilo",
+      "summary": "Agent War Room · {parts}"
+    },
+    "notice": {
+      "open": "Ver",
+      "focus": "Ir a",
+      "approve": "Aprobar",
+      "reply": "Responder"
+    },
+    "error": {
+      "only_http_links": "solo se abren enlaces http(s)"
+    }
+  },
+  "bridge": {
+    "default_deny": "Denegado desde Agent War Room"
+  },
+  "ui": {
+    "app_name": "Agent War Room",
+    "attention": {
+      "needs_you": "Te necesita",
+      "finished": "Terminado",
+      "working": "Trabajando",
+      "idle": "En espera",
+      "offline": "Sin conexión"
+    },
+    "skill_source": {
+      "project": "Del repo",
+      "personal": "Tuyas",
+      "plugin": "De plugins",
+      "builtin": "Integradas"
+    },
+    "effort": {
+      "low": "bajo",
+      "medium": "medio",
+      "high": "alto",
+      "xhigh": "muy alto",
+      "max": "máximo"
+    },
+    "stalled": {
+      "label": "¿Atascada? {minutes} min",
+      "long": "¿Atascada? {minutes} min sin actividad",
+      "title": "Sigue trabajando pero no da señales: puede estar colgada o esperando algo que no avisa"
+    },
+    "session": {
+      "effort": "esfuerzo {name}",
+      "context": "{tokens} ctx",
+      "turns_one": "{n} turno",
+      "turns_other": "{n} turnos",
+      "in_warp": "Warp (pane exacto)",
+      "tmux": "tmux {pane}",
+      "unknown_terminal": "terminal desconocida",
+      "worktree": "worktree",
+      "subagent": "subagente",
+      "subagent_working": "trabajando",
+      "subagent_finished": "terminado"
+    },
+    "time": {
+      "now": "ahora",
+      "minutes_ago": "hace {n} min",
+      "hours_ago": "hace {n} h",
+      "days_ago": "hace {n} d"
+    },
+    "topbar": {
+      "next": "Siguiente",
+      "next_title": "Ir a lo que más lleva esperándote (también: agent-war-room --next)",
+      "nothing_waiting": "Nada te está esperando",
+      "today": "Hoy {tokens} · {cost}",
+      "today_title": "Tokens y coste estimado a precio de API de todas las sesiones de hoy",
+      "summary": "Resumen",
+      "all_seen": "Todo visto",
+      "view": "Vista",
+      "classic": "Clásica",
+      "war_room": "War Room",
+      "archived": "Despedidas"
+    },
+    "app": {
+      "close": "Cerrar",
+      "no_match": "Nada coincide con el filtro.",
+      "clear_filters": "Quitar filtros",
+      "empty_room": "Sala vacía.",
+      "empty_room_hint": "Cuando un agente arranque o haga algo, aparecerá aquí su tarjeta."
+    },
+    "actions": {
+      "approve": "Aprobar",
+      "deny": "Denegar",
+      "open_preview": "Abrir la vista previa",
+      "preview": "Vista previa",
+      "go_to_window": "Ir a su ventana",
+      "go_to_window_via": "Ir a su ventana · {where}",
+      "mark_seen": "Marcar como visto",
+      "resume": "Reanudar",
+      "in_warp": "en Warp",
+      "open_terminal": "Abrir su terminal",
+      "unmute": "Reactivar avisos",
+      "mute": "Silenciar avisos",
+      "unarchive": "Readmitir en la sala",
+      "archive": "Despedir: ocultar y dejar de avisar"
+    },
+    "queue": {
+      "title": "Requiere tu atención"
+    },
+    "card": {
+      "subagents_working": "Subagentes trabajando",
+      "muted": "Silenciada",
+      "no_branch": "sin rama",
+      "go_to": "Ir a",
+      "resume_in_app": "Reanudar en un terminal de la app",
+      "resume_in_warp": "Reanudar en una pestaña de Warp",
+      "subagents": "Subagentes",
+      "see_all_in_preview": "Ver todos en la vista previa"
+    },
+    "quick_input": {
+      "placeholder": "Escribir a la sesión… (Enter envía)",
+      "label": "Mensaje para la sesión"
+    },
+    "room": {
+      "new_agent": "Agente",
+      "new_agent_title": "Abrir claude en {cwd}",
+      "new_agent_in_warp_title": "Abrir claude en una pestaña de Warp, en {cwd}"
+    },
+    "skill": {
+      "tag_title": "{name} · {source} · la lanzó {who}",
+      "tag_times": " · {n} veces",
+      "tag_click": "Clic: filtrar por esta skill",
+      "who_you": "tú",
+      "who_agent": "el agente",
+      "who_both": "tú y el agente",
+      "launched_you": "la lanzaste tú",
+      "launched_agent": "la lanzó el agente",
+      "launched_both": "la lanzaste tú y la lanzó el agente",
+      "times_one": "{n} vez",
+      "times_other": "{n} veces"
+    },
+    "filters": {
+      "label": "Filtros",
+      "repos": "Repos",
+      "model": "Modelo",
+      "skills": "Skills",
+      "sessions_shown": "{shown} de {total} sesiones",
+      "clear": "Quitar filtros",
+      "effort_title": "Esfuerzo {value}",
+      "skill_title": "{source} · la lanzó {who}"
+    },
+    "detail": {
+      "label": "Vista previa: {title}",
+      "close": "Cerrar vista previa",
+      "close_esc": "Cerrar (Esc)",
+      "close_short": "Cerrar",
+      "answer_in_terminal": "También puedes contestar en su terminal: vale la primera respuesta.",
+      "initial_task": "Encargo inicial",
+      "last_reply": "Última respuesta",
+      "skills": "Skills",
+      "subagents": "Subagentes",
+      "recent_conversation": "Conversación reciente",
+      "loading": "Cargando…",
+      "no_transcript": "Sin transcript todavía.",
+      "go_to_session": "Ir a la sesión",
+      "terminal": "Terminal",
+      "resume_in_warp": "Reanudar en Warp",
+      "seen": "Visto",
+      "unmute": "Reactivar avisos",
+      "mute": "Silenciar",
+      "unarchive": "Readmitir",
+      "archive": "Despedir",
+      "copy": "Copiar",
+      "show_less": "Ver menos",
+      "show_all": "Ver todo",
+      "tools_one": "{n} herramienta · {digest}",
+      "tools_other": "{n} herramientas · {digest}",
+      "you": "Tú",
+      "agent": "Agente",
+      "usage": "Consumo",
+      "context_used": "Contexto {used} de {window} ({pct}%)",
+      "token_breakdown": "entrada {input} · salida {output} · caché leída {cache_read} · caché escrita {cache_write}",
+      "estimated_cost": "{cost} estimado a precio de API",
+      "partial_cost": "(algún modelo sin precio conocido)",
+      "changes": "Cambios",
+      "show_changes": "Ver ficheros y commits",
+      "changes_hint": "Ficheros que editó (también sus subagentes) y commits en su worktree desde que empezó.",
+      "files_one": "{n} fichero",
+      "files_other": "{n} ficheros",
+      "no_files": "No ha editado ficheros.",
+      "edits_one": "{n} edición",
+      "edits_other": "{n} ediciones",
+      "written": "creado/reescrito",
+      "commits_one": "{n} commit",
+      "commits_other": "{n} commits",
+      "no_commits": "Sin commits en su worktree durante la sesión.",
+      "commit_stats": "{files} · +{add} −{del}",
+      "diff_title": "Commit {short}"
+    },
+    "subagent": {
+      "label": "Subagente: {name}",
+      "back": "Volver a la sesión (Esc)",
+      "title": "Subagente",
+      "working": "Trabajando",
+      "finished": "Terminado",
+      "since": "desde {ago}",
+      "finished_ago": "terminó {ago}",
+      "task": "Encargo",
+      "last_reply": "Última respuesta",
+      "result": "Resultado",
+      "activity": "Actividad",
+      "main_agent": "Agente principal"
+    },
+    "markdown": {
+      "image": "[imagen]",
+      "image_alt": "[imagen: {alt}]"
+    },
+    "terminal": {
+      "label": "Terminal: {name}",
+      "exited": "proceso terminado",
+      "hide": "Ocultar",
+      "hide_title": "El proceso sigue vivo; reábrelo desde su pantalla",
+      "forget": "Olvidar este terminal",
+      "kill": "Termina el proceso",
+      "close": "Cerrar",
+      "terminate": "Terminar"
+    },
+    "integration": {
+      "incomplete": "La integración con Claude Code está incompleta",
+      "not_connected": "Claude Code aún no avisa a la war room",
+      "install_before_path": "Se añadirán hooks a",
+      "install_before_backup": "sin tocar los que ya tengas (queda una copia",
+      "install_end": "). Solo las sesiones que arranquen después quedan conectadas.",
+      "connect": "Conectar Claude Code",
+      "badge": "Claude Code",
+      "title": "Integración con Claude Code",
+      "hooks_in": "Hooks en",
+      "bridge": "Puente:",
+      "autostart": "Abrir al iniciar sesión (en la bandeja)",
+      "reinstall": "Reinstalar",
+      "disconnect": "Desconectar"
+    },
+    "toasts": {
+      "approved": "Permiso aprobado",
+      "denied": "Permiso denegado",
+      "opened_in": "Abierto en {via}"
+    },
+    "pixel": {
+      "title": "AGENT WAR ROOM",
+      "all_quiet": "TODO TRANQUILO",
+      "finished_bubble": "OK",
+      "muted_bubble": "ZZ",
+      "canvas_label": "Sala de control: un puesto por sesión, coloreado por su estado",
+      "subagent_of": " — subagente de {session}",
+      "subagent_of_unknown": " — subagente de la sesión",
+      "empty": "Sala vacía: los puestos aparecerán cuando un agente arranque."
+    }
+  }
+}

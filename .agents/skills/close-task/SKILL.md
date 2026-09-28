@@ -9,7 +9,8 @@ description: Close a change in Agent War Room — full check, self-review agains
 2. Review your own diff (`git diff`, `git status --short` for untracked) against the invariants — or
    delegate to the `awr-reviewer` subagent if the diff is large or your context is full:
    - layer direction (no inward crate importing an outward one; UI → application → domain);
-   - no inline user-visible text outside copy/locale modules; everything in English;
+   - no plain user-visible text in code: keys in every `locales/*.json` (`i18n.mdc`); code, docs and
+     commits in English;
    - persisted events backward compatible (`#[serde(default)]`, no renamed tags);
    - bridge invariants (exit 0, silent stdout, fast when the app is down);
    - nothing touches the user's real config in tests.

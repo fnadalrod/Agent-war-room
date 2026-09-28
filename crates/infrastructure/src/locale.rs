@@ -1,53 +1,65 @@
-//! User-facing copy. Keep every user-visible string here so wording lives in one place and the rest
-//! of the code stays free of UI text.
+//! Typed access to this crate's user-visible text. The text itself lives in `locales/<lang>.json`
+//! under `desktop.*`; see `awr-i18n`.
 
+use awr_i18n::{t, tf};
 use std::fmt::Display;
 
 // Typing into sessions and launching agents.
 
-pub const EXTERNAL_TERMINAL_NO_INPUT: &str =
-    "this session lives in an external terminal: you can't write to it from here, use \"Go to\"";
+pub fn external_terminal_no_input() -> &'static str {
+    t("desktop.external_terminal_no_input")
+}
 
 pub fn invalid_session_id(id: impl Display) -> String {
-    format!("invalid session id: {id}")
+    tf("desktop.invalid_session_id", &[("id", &id)])
 }
 
 pub fn unknown_terminal(id: &str) -> String {
-    format!("unknown terminal: {id}")
+    tf("desktop.unknown_terminal", &[("id", &id)])
 }
 
 /// Name of the Warp tab opened for an agent.
 pub fn warp_tab_name(label: &str) -> String {
-    format!("War Room · {label}")
+    tf("desktop.warp_tab_name", &[("label", &label)])
 }
 
 // "Go to" a session: reasons shown when its window cannot be reached.
 
-pub const UNSUPPORTED_DESKTOP: &str = "unsupported desktop (only KDE Plasma for now)";
-pub const UNKNOWN_SESSION_TERMINAL: &str = "this session's terminal is unknown";
-pub const NO_CANDIDATE_PROCESSES: &str = "no candidate processes";
+pub fn unsupported_desktop() -> &'static str {
+    t("desktop.unsupported_desktop")
+}
+pub fn unknown_session_terminal() -> &'static str {
+    t("desktop.unknown_session_terminal")
+}
+pub fn no_candidate_processes() -> &'static str {
+    t("desktop.no_candidate_processes")
+}
 
 pub fn tmux_no_client(pane: &str) -> String {
-    format!("pane {pane} selected, but no tmux client is attached")
+    tf("desktop.tmux_no_client", &[("pane", &pane)])
 }
 
 pub fn tmux_failed(error: &str) -> String {
-    format!("tmux: {error}")
+    tf("desktop.tmux_failed", &[("error", &error)])
 }
 
 pub fn kwin_script_not_loaded(reply: &str) -> String {
-    format!("KWin did not load the script: {reply}")
+    tf("desktop.kwin_script_not_loaded", &[("reply", &reply)])
 }
 
 // Hook installation.
 
-pub const SETTINGS_NOT_AN_OBJECT: &str = "settings.json is not a JSON object";
-pub const BRIDGE_NOT_FOUND: &str = "the warroom-hook binary was not found; build it with `cargo build -p warroom-hook`";
+pub fn settings_not_an_object() -> &'static str {
+    t("desktop.settings_not_an_object")
+}
+pub fn bridge_not_found() -> &'static str {
+    t("desktop.bridge_not_found")
+}
 
 pub fn settings_invalid_json(error: impl Display) -> String {
-    format!("settings.json is not valid JSON: {error}")
+    tf("desktop.settings_invalid_json", &[("error", &error)])
 }
 
 pub fn invalid_bridge(path: impl Display) -> String {
-    format!("{path} is not a valid bridge executable")
+    tf("desktop.invalid_bridge", &[("path", &path)])
 }

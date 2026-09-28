@@ -1,6 +1,6 @@
 // Screenshots of the demo UI (no Tauri needed) so a human or an agent can *look* at changes.
 //
-//   npm run shot -- <out-dir> [width]
+//   npm run shot -- <out-dir> [width] [lang]     (lang: en, es…; default en)
 //
 // Builds nothing: run `npm run build` first if the source changed (npm run shot does it for you).
 // Writes classic.png (full page), detail.png, changes.png, diff.png, subagent.png, filtered.png and
@@ -12,6 +12,7 @@ import { chromium } from "playwright-core";
 
 const out = resolve(process.argv[2] ?? "shots");
 const width = Number(process.argv[3] ?? 1500);
+const lang = process.argv[4] ?? "en";
 const port = 4179;
 mkdirSync(out, { recursive: true });
 
@@ -42,7 +43,7 @@ try {
     console.log(`${out}/${name}.png`);
   };
 
-  await page.goto(`http://localhost:${port}/`);
+  await page.goto(`http://localhost:${port}/?lang=${lang}`);
   await shot("classic", true);
   // Subagent first: the detail panel would cover the chips. Esc goes back to its session's
   // detail (which has subagents), a second Esc closes it.

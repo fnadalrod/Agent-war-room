@@ -1,60 +1,94 @@
-//! User-facing copy. Keep every user-visible string here so wording lives in one place and the rest
-//! of the code stays free of UI text.
+//! Typed access to this crate's user-visible text. The text itself lives in `locales/<lang>.json`
+//! under `core.*`; see `awr-i18n`.
+
+use awr_i18n::{t, tf};
+use std::fmt::Display;
 
 // Session status labels shown on the cards.
-pub const STATUS_IDLE: &str = "Idle";
-pub const STATUS_THINKING: &str = "Thinking";
-pub const STATUS_ASKS_PERMISSION: &str = "Asks permission";
-pub const STATUS_ASKS_QUESTION: &str = "Asks you";
-pub const STATUS_FINISHED: &str = "Finished";
-pub const STATUS_YOUR_TURN: &str = "Your turn";
-pub const STATUS_COMPACTING: &str = "Compacting";
-pub const STATUS_ENDED: &str = "Closed";
+pub fn status_idle() -> &'static str {
+    t("core.status.idle")
+}
+pub fn status_thinking() -> &'static str {
+    t("core.status.thinking")
+}
+pub fn status_asks_permission() -> &'static str {
+    t("core.status.asks_permission")
+}
+pub fn status_asks_question() -> &'static str {
+    t("core.status.asks_question")
+}
+pub fn status_finished() -> &'static str {
+    t("core.status.finished")
+}
+pub fn status_your_turn() -> &'static str {
+    t("core.status.your_turn")
+}
+pub fn status_compacting() -> &'static str {
+    t("core.status.compacting")
+}
+pub fn status_ended() -> &'static str {
+    t("core.status.ended")
+}
 
 pub fn asks_permission_for(tool: &str) -> String {
-    format!("{STATUS_ASKS_PERMISSION}: {tool}")
+    tf("core.status.asks_permission_for", &[("tool", &tool)])
 }
 
 pub fn asks_permission_for_detail(tool: &str, detail: &str) -> String {
-    format!("{STATUS_ASKS_PERMISSION}: {tool} · {detail}")
+    tf("core.status.asks_permission_for_detail", &[("tool", &tool), ("detail", &detail)])
 }
 
 // Desktop notices.
 pub fn needs_you_title(place: &str) -> String {
-    format!("{place} needs you")
+    tf("core.notice.needs_you_title", &[("place", &place)])
 }
 
 pub fn finished_title(place: &str) -> String {
-    format!("{place} has finished")
+    tf("core.notice.finished_title", &[("place", &place)])
 }
 
-pub const NEEDS_YOU_FALLBACK_BODY: &str = "Waiting for your decision";
-pub const FINISHED_FALLBACK_BODY: &str = "Your turn to review";
-
-// Errors returned to the UI.
-pub const NO_PENDING_PERMISSION: &str = "there is no pending permission in that session";
-pub const ALREADY_ANSWERED_IN_TERMINAL: &str = "it was already answered in the terminal";
-pub const SESSION_CLOSED: &str = "the session is closed";
-pub const SESSION_STILL_OPEN: &str = "the session is still open: use \"Go to\"";
-
-pub fn unknown_session(id: impl std::fmt::Display) -> String {
-    format!("unknown session: {id}")
+pub fn needs_you_fallback_body() -> &'static str {
+    t("core.notice.needs_you_body")
 }
-
-pub fn unknown_subagent(id: &str) -> String {
-    format!("unknown subagent: {id}")
+pub fn finished_fallback_body() -> &'static str {
+    t("core.notice.finished_body")
 }
 
 pub fn stalled_title(place: &str) -> String {
-    format!("{place} looks stuck")
+    tf("core.notice.stalled_title", &[("place", &place)])
 }
 
 pub fn stalled_body(minutes: i64, doing: Option<&str>) -> String {
     match doing {
-        Some(doing) => format!("No activity for {minutes} min · {doing}"),
-        None => format!("No activity for {minutes} min"),
+        Some(doing) => tf("core.notice.stalled_body_doing", &[("minutes", &minutes), ("doing", &doing)]),
+        None => tf("core.notice.stalled_body", &[("minutes", &minutes)]),
     }
 }
 
-pub const NOTHING_WAITING: &str = "nothing is waiting for you";
-pub const INVALID_COMMIT: &str = "invalid commit";
+// Errors returned to the UI.
+pub fn no_pending_permission() -> &'static str {
+    t("core.error.no_pending_permission")
+}
+pub fn already_answered_in_terminal() -> &'static str {
+    t("core.error.already_answered_in_terminal")
+}
+pub fn session_closed() -> &'static str {
+    t("core.error.session_closed")
+}
+pub fn session_still_open() -> &'static str {
+    t("core.error.session_still_open")
+}
+pub fn nothing_waiting() -> &'static str {
+    t("core.error.nothing_waiting")
+}
+pub fn invalid_commit() -> &'static str {
+    t("core.error.invalid_commit")
+}
+
+pub fn unknown_session(id: impl Display) -> String {
+    tf("core.error.unknown_session", &[("id", &id)])
+}
+
+pub fn unknown_subagent(id: &str) -> String {
+    tf("core.error.unknown_subagent", &[("id", &id)])
+}

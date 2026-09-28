@@ -1,0 +1,40 @@
+---
+description: Translations — every user-visible string lives in locales/<lang>.json, shared by the Rust core and the front; code only names keys. Read before adding or changing any text the user sees, or a language.
+globs: locales/*.json, crates/i18n/**, crates/*/src/locale.rs, src-tauri/src/locale.rs, src/domain/i18n.ts, src/domain/copy.ts, src/main.tsx
+alwaysApply: false
+---
+
+# Translations (i18n)
+
+**No plain text in code.** Every string a user can see (UI, tray, notifications, errors returned to
+the UI, the bridge's deny message) is a key in `locales/en.json` + every other catalog. English is the
+reference catalog and the fallback.
+
+## Layout
+
+| Piece | Role |
+|---|---|
+| `locales/<lang>.json` | the text. Namespaces: `core.*` (application), `desktop.*` (infrastructure), `shell.*` (Tauri), `bridge.*` (hook bridge), `ui.*` (front) |
+| `crates/i18n` (`awr-i18n`) | embeds the catalogs (`include_str!`); `t(key)`, `tf(key, &[("name", &v)])`, `tn(key, n, …)`; language from `AWR_LANG` → `LC_ALL` → `LC_MESSAGES` → `LANG`, else `en` |
+| `crates/*/src/locale.rs`, `src-tauri/src/locale.rs` | typed wrappers (`locale::status_idle()`), one per string: call sites never spell keys |
+| `src/domain/i18n.ts` | front lookup; keys are typed from `en.json` (`Key`, `PluralKey`), relative to `ui.` |
+| `src/domain/copy.ts` | typed API the components use (`copy.detail.close`, `copy.detail.files(n)`); no text of its own |
+| `src/main.tsx` | sets the language **before** loading the app (`copy` reads plain strings at import): Tauri asks the core (`ui_language` command) so UI, tray and notices agree; the browser demo uses `?lang=` or the browser's |
+
+## Format
+
+- Placeholders `{name}` (same set in every catalog). Plurals: `<key>_one` / `<key>_other`, picked by
+  `tn` with `{n}` filled in. Don't glue sentences from fragments; add a whole string per variant
+  (see `skill.who_*`, `launched_*`).
+- The demo fakes core status labels with `coreStatus()` (from `core.status.*`), so it matches the app.
+
+## Adding text or a language
+
+1. Add the key to **every** `locales/*.json` (English first), then a wrapper in the crate's
+   `locale.rs` or an entry in `copy.ts`.
+2. New language: a `locales/<code>.json` with exactly the English keys, then register it in
+   `LANGUAGES` (`crates/i18n/src/lib.rs`) and `catalogs`/`statuses` (`src/domain/i18n.ts`).
+3. `cargo test -p awr-i18n` fails on: keys missing in a catalog, extra keys, placeholder mismatch, a
+   key named in code (`t("…")`, `tf("…"`, `tn("…"` in Rust or TS) that doesn't exist, and a key no code
+   uses. `npx tsc` fails on unknown front keys.
+4. Look at it: `npm run shot -- <dir> 1500 es` renders the demo in another language (default `en`).

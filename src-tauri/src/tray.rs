@@ -10,9 +10,9 @@ use tauri::tray::{TrayIcon, TrayIconBuilder};
 const SIZE: u32 = 32;
 
 pub fn create(app: &AppHandle) -> tauri::Result<TrayIcon> {
-    let next = MenuItem::with_id(app, "next", locale::TRAY_NEXT, true, None::<&str>)?;
-    let open = MenuItem::with_id(app, "open", locale::TRAY_OPEN, true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", locale::TRAY_QUIT, true, None::<&str>)?;
+    let next = MenuItem::with_id(app, "next", locale::tray_next(), true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", locale::tray_open(), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", locale::tray_quit(), true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&next, &open, &quit])?;
 
     TrayIconBuilder::with_id("war-room")
@@ -38,17 +38,17 @@ fn tooltip(view: &WarRoomView) -> String {
         view.rooms.iter().flat_map(|r| &r.sessions).filter(|s| !s.archived && !s.muted && s.attention == a).count()
     };
     let parts: Vec<String> = [
-        (AttentionView::NeedsYou, locale::TRAY_NEEDS_YOU),
-        (AttentionView::Finished, locale::TRAY_FINISHED),
-        (AttentionView::Working, locale::TRAY_WORKING),
+        (AttentionView::NeedsYou, locale::tray_needs_you as fn(usize) -> String),
+        (AttentionView::Finished, locale::tray_finished),
+        (AttentionView::Working, locale::tray_working),
     ]
     .into_iter()
     .filter_map(|(a, label)| match count(a) {
         0 => None,
-        n => Some(format!("{n} {label}")),
+        n => Some(label(n)),
     })
     .collect();
-    if parts.is_empty() { locale::TRAY_ALL_QUIET.into() } else { locale::tray_summary(&parts) }
+    if parts.is_empty() { locale::tray_all_quiet().into() } else { locale::tray_summary(&parts) }
 }
 
 pub fn color(a: AttentionView) -> [u8; 3] {

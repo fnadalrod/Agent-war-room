@@ -19,17 +19,18 @@ import type {
   UsageView,
   WarRoomView,
 } from "../domain/attention";
+import { coreStatus } from "../domain/i18n";
 
 const minutes = (m: number) => Date.now() - m * 60_000;
 
-/** Status labels come from the core (crates/application/src/locale.rs); mirror them. */
+/** Status labels come from the core (`core.status.*` in the catalogs); fake them the same way. */
 const STATUS = {
-  thinking: "Thinking",
-  asksQuestion: "Asks you",
-  asksPermission: "Asks permission",
-  finished: "Finished",
-  yourTurn: "Your turn",
-  ended: "Closed",
+  thinking: coreStatus("thinking"),
+  asksQuestion: coreStatus("asks_question"),
+  asksPermission: coreStatus("asks_permission"),
+  finished: coreStatus("finished"),
+  yourTurn: coreStatus("your_turn"),
+  ended: coreStatus("ended"),
 };
 
 const DEMO_REPLY = `## Done

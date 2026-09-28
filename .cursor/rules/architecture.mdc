@@ -1,6 +1,6 @@
 ---
 description: Layers, crates and ports of Agent War Room — where each thing goes and which direction dependencies go. Read before adding a module, a port or a dependency.
-globs: Cargo.toml, crates/*/Cargo.toml, crates/application/src/ports.rs, crates/application/src/lib.rs, src-tauri/Cargo.toml, src/main.tsx, src/application/ports.ts
+globs: Cargo.toml, crates/*/Cargo.toml, crates/application/src/ports.rs, crates/application/src/lib.rs, src-tauri/Cargo.toml, src/main.tsx, src/bootstrap.tsx, src/application/ports.ts
 alwaysApply: false
 ---
 
@@ -15,6 +15,8 @@ crates/application     use cases (WarRoomService), ports (traits), read model (v
 crates/infrastructure  adapters: claude/ (provider, transcripts, installer, pricing, skills), ingress,
                        sqlite, git, system, desktop/ (KWin, tmux, Warp), pty, launch
 crates/wire            socket contract bridge ↔ app (serde only)
+crates/i18n            translation lookup over locales/<lang>.json (serde_json only); used by every
+                       crate that shows text, the front reads the same catalogs
 crates/hook-bridge     `warroom-hook`, the binary Claude runs on every hook
 src-tauri              composition root + driving adapters (commands) + tray/notifications
 src/                   React: domain · application · infrastructure · ui (same rule inside)
@@ -32,7 +34,7 @@ domain`; `infrastructure/` implements the ports in `application/ports.ts`.
 | What the UI receives | `crates/application/src/view.rs` (TS types regenerate from it) |
 | Derived data that must not be persisted (transcript facts, pending approvals, stall notices) | fields of `WarRoomService`, never the domain |
 | Claude-specific knowledge (hook names, transcript shape, prices) | `crates/infrastructure/src/claude/` — the domain must not know Claude |
-| User-visible text | the crate's `locale.rs` / `src/domain/copy.ts` |
+| User-visible text | a key in every `locales/*.json`, exposed by the crate's `locale.rs` / `src/domain/copy.ts` (`i18n.mdc`) |
 | A Tauri command or event | `src-tauri/src/commands.rs` / `adapters.rs`, mirrored in `src/infrastructure/tauriGateway.ts` |
 
 ## Ports (crates/application/src/ports.rs)

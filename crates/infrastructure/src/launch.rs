@@ -146,7 +146,7 @@ impl SessionInput for TerminalInput {
         if let Some(pane) = &host.tmux_pane {
             return tmux::send_text(host.tmux_socket.as_deref(), pane, text, true).map_err(PortError::Failed);
         }
-        Err(PortError::Failed(locale::EXTERNAL_TERMINAL_NO_INPUT.into()))
+        Err(PortError::Failed(locale::external_terminal_no_input().into()))
     }
 }
 

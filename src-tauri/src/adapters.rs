@@ -92,13 +92,13 @@ impl Notifier for DesktopNotifier {
                 .id(notification_id(&notice.session))
                 .urgency(if urgent { Urgency::Critical } else { Urgency::Normal })
                 .timeout(if urgent { Timeout::Never } else { Timeout::Milliseconds(10_000) })
-                .action("default", locale::NOTICE_OPEN)
-                .action("focus", locale::NOTICE_FOCUS);
+                .action("default", locale::notice_open())
+                .action("focus", locale::notice_focus());
             if notice.approvable {
-                n.action("approve", locale::NOTICE_APPROVE);
+                n.action("approve", locale::notice_approve());
             }
             if notice.attention != Attention::Working {
-                n.action("reply", locale::NOTICE_REPLY);
+                n.action("reply", locale::notice_reply());
             }
             match n.show() {
                 Ok(handle) => handle.wait_for_action(|action| {

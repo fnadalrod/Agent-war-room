@@ -1,0 +1,309 @@
+{
+  "core": {
+    "status": {
+      "idle": "Idle",
+      "thinking": "Thinking",
+      "asks_permission": "Asks permission",
+      "asks_permission_for": "Asks permission: {tool}",
+      "asks_permission_for_detail": "Asks permission: {tool} · {detail}",
+      "asks_question": "Asks you",
+      "finished": "Finished",
+      "your_turn": "Your turn",
+      "compacting": "Compacting",
+      "ended": "Closed"
+    },
+    "notice": {
+      "needs_you_title": "{place} needs you",
+      "needs_you_body": "Waiting for your decision",
+      "finished_title": "{place} has finished",
+      "finished_body": "Your turn to review",
+      "stalled_title": "{place} looks stuck",
+      "stalled_body": "No activity for {minutes} min",
+      "stalled_body_doing": "No activity for {minutes} min · {doing}"
+    },
+    "error": {
+      "no_pending_permission": "there is no pending permission in that session",
+      "already_answered_in_terminal": "it was already answered in the terminal",
+      "session_closed": "the session is closed",
+      "session_still_open": "the session is still open: use \"Go to\"",
+      "unknown_session": "unknown session: {id}",
+      "unknown_subagent": "unknown subagent: {id}",
+      "nothing_waiting": "nothing is waiting for you",
+      "invalid_commit": "invalid commit"
+    }
+  },
+  "desktop": {
+    "external_terminal_no_input": "this session lives in an external terminal: you can't write to it from here, use \"Go to\"",
+    "invalid_session_id": "invalid session id: {id}",
+    "unknown_terminal": "unknown terminal: {id}",
+    "warp_tab_name": "War Room · {label}",
+    "unsupported_desktop": "unsupported desktop (only KDE Plasma for now)",
+    "unknown_session_terminal": "this session's terminal is unknown",
+    "no_candidate_processes": "no candidate processes",
+    "tmux_no_client": "pane {pane} selected, but no tmux client is attached",
+    "tmux_failed": "tmux: {error}",
+    "kwin_script_not_loaded": "KWin did not load the script: {reply}",
+    "settings_not_an_object": "settings.json is not a JSON object",
+    "settings_invalid_json": "settings.json is not valid JSON: {error}",
+    "bridge_not_found": "the warroom-hook binary was not found; build it with `cargo build -p warroom-hook`",
+    "invalid_bridge": "{path} is not a valid bridge executable"
+  },
+  "shell": {
+    "tray": {
+      "open": "Open the war room",
+      "next": "Go to the next one that needs you",
+      "quit": "Quit",
+      "needs_you": "{n} need you",
+      "finished": "{n} finished",
+      "working": "{n} working",
+      "all_quiet": "Agent War Room · all quiet",
+      "summary": "Agent War Room · {parts}"
+    },
+    "notice": {
+      "open": "View",
+      "focus": "Go to",
+      "approve": "Approve",
+      "reply": "Reply"
+    },
+    "error": {
+      "only_http_links": "only http(s) links are opened"
+    }
+  },
+  "bridge": {
+    "default_deny": "Denied from Agent War Room"
+  },
+  "ui": {
+    "app_name": "Agent War Room",
+    "attention": {
+      "needs_you": "Needs you",
+      "finished": "Finished",
+      "working": "Working",
+      "idle": "Idle",
+      "offline": "Offline"
+    },
+    "skill_source": {
+      "project": "From the repo",
+      "personal": "Yours",
+      "plugin": "From plugins",
+      "builtin": "Built-in"
+    },
+    "effort": {
+      "low": "low",
+      "medium": "medium",
+      "high": "high",
+      "xhigh": "extra high",
+      "max": "max"
+    },
+    "stalled": {
+      "label": "Stuck? {minutes} min",
+      "long": "Stuck? {minutes} min without activity",
+      "title": "Still working but silent: it may be hung or waiting on something that doesn't notify"
+    },
+    "session": {
+      "effort": "{name} effort",
+      "context": "{tokens} ctx",
+      "turns_one": "{n} turn",
+      "turns_other": "{n} turns",
+      "in_warp": "Warp (exact pane)",
+      "tmux": "tmux {pane}",
+      "unknown_terminal": "unknown terminal",
+      "worktree": "worktree",
+      "subagent": "subagent",
+      "subagent_working": "working",
+      "subagent_finished": "finished"
+    },
+    "time": {
+      "now": "now",
+      "minutes_ago": "{n} min ago",
+      "hours_ago": "{n} h ago",
+      "days_ago": "{n} d ago"
+    },
+    "topbar": {
+      "next": "Next",
+      "next_title": "Go to whatever has waited for you longest (also: agent-war-room --next)",
+      "nothing_waiting": "Nothing is waiting for you",
+      "today": "Today {tokens} · {cost}",
+      "today_title": "Tokens and estimated cost at API prices across today's sessions",
+      "summary": "Summary",
+      "all_seen": "All seen",
+      "view": "View",
+      "classic": "Classic",
+      "war_room": "War Room",
+      "archived": "Dismissed"
+    },
+    "app": {
+      "close": "Close",
+      "no_match": "Nothing matches the filter.",
+      "clear_filters": "Clear filters",
+      "empty_room": "Empty room.",
+      "empty_room_hint": "When an agent starts or does something, its card will show up here."
+    },
+    "actions": {
+      "approve": "Approve",
+      "deny": "Deny",
+      "open_preview": "Open the preview",
+      "preview": "Preview",
+      "go_to_window": "Go to its window",
+      "go_to_window_via": "Go to its window · {where}",
+      "mark_seen": "Mark as seen",
+      "resume": "Resume",
+      "in_warp": "in Warp",
+      "open_terminal": "Open its terminal",
+      "unmute": "Unmute notifications",
+      "mute": "Mute notifications",
+      "unarchive": "Bring back to the room",
+      "archive": "Dismiss: hide and stop notifying"
+    },
+    "queue": {
+      "title": "Needs your attention"
+    },
+    "card": {
+      "subagents_working": "Subagents working",
+      "muted": "Muted",
+      "no_branch": "no branch",
+      "go_to": "Go to",
+      "resume_in_app": "Resume in an app terminal",
+      "resume_in_warp": "Resume in a Warp tab",
+      "subagents": "Subagents",
+      "see_all_in_preview": "See all in the preview"
+    },
+    "quick_input": {
+      "placeholder": "Write to the session… (Enter sends)",
+      "label": "Message for the session"
+    },
+    "room": {
+      "new_agent": "Agent",
+      "new_agent_title": "Open claude in {cwd}",
+      "new_agent_in_warp_title": "Open claude in a Warp tab, in {cwd}"
+    },
+    "skill": {
+      "tag_title": "{name} · {source} · launched by {who}",
+      "tag_times": " · {n} times",
+      "tag_click": "Click: filter by this skill",
+      "who_you": "you",
+      "who_agent": "the agent",
+      "who_both": "you and the agent",
+      "launched_you": "you launched it",
+      "launched_agent": "the agent launched it",
+      "launched_both": "you and the agent launched it",
+      "times_one": "{n} time",
+      "times_other": "{n} times"
+    },
+    "filters": {
+      "label": "Filters",
+      "repos": "Repos",
+      "model": "Model",
+      "skills": "Skills",
+      "sessions_shown": "{shown} of {total} sessions",
+      "clear": "Clear filters",
+      "effort_title": "Effort {value}",
+      "skill_title": "{source} · launched by {who}"
+    },
+    "detail": {
+      "label": "Preview: {title}",
+      "close": "Close preview",
+      "close_esc": "Close (Esc)",
+      "close_short": "Close",
+      "answer_in_terminal": "You can also answer in its terminal: the first answer wins.",
+      "initial_task": "Initial task",
+      "last_reply": "Last reply",
+      "skills": "Skills",
+      "subagents": "Subagents",
+      "recent_conversation": "Recent conversation",
+      "loading": "Loading…",
+      "no_transcript": "No transcript yet.",
+      "go_to_session": "Go to the session",
+      "terminal": "Terminal",
+      "resume_in_warp": "Resume in Warp",
+      "seen": "Seen",
+      "unmute": "Unmute",
+      "mute": "Mute",
+      "unarchive": "Bring back",
+      "archive": "Dismiss",
+      "copy": "Copy",
+      "show_less": "Show less",
+      "show_all": "Show all",
+      "tools_one": "{n} tool · {digest}",
+      "tools_other": "{n} tools · {digest}",
+      "you": "You",
+      "agent": "Agent",
+      "usage": "Usage",
+      "context_used": "Context {used} of {window} ({pct}%)",
+      "token_breakdown": "input {input} · output {output} · cache read {cache_read} · cache write {cache_write}",
+      "estimated_cost": "{cost} estimated at API prices",
+      "partial_cost": "(some model has no known price)",
+      "changes": "Changes",
+      "show_changes": "Show files and commits",
+      "changes_hint": "Files it edited (its subagents too) and commits in its worktree since it started.",
+      "files_one": "{n} file",
+      "files_other": "{n} files",
+      "no_files": "It hasn't edited any files.",
+      "edits_one": "{n} edit",
+      "edits_other": "{n} edits",
+      "written": "created/rewritten",
+      "commits_one": "{n} commit",
+      "commits_other": "{n} commits",
+      "no_commits": "No commits in its worktree during the session.",
+      "commit_stats": "{files} · +{add} −{del}",
+      "diff_title": "Commit {short}"
+    },
+    "subagent": {
+      "label": "Subagent: {name}",
+      "back": "Back to the session (Esc)",
+      "title": "Subagent",
+      "working": "Working",
+      "finished": "Finished",
+      "since": "since {ago}",
+      "finished_ago": "finished {ago}",
+      "task": "Task",
+      "last_reply": "Last reply",
+      "result": "Result",
+      "activity": "Activity",
+      "main_agent": "Main agent"
+    },
+    "markdown": {
+      "image": "[image]",
+      "image_alt": "[image: {alt}]"
+    },
+    "terminal": {
+      "label": "Terminal: {name}",
+      "exited": "process exited",
+      "hide": "Hide",
+      "hide_title": "The process keeps running; reopen it from its screen",
+      "forget": "Forget this terminal",
+      "kill": "Kill the process",
+      "close": "Close",
+      "terminate": "Terminate"
+    },
+    "integration": {
+      "incomplete": "The Claude Code integration is incomplete",
+      "not_connected": "Claude Code doesn't notify the war room yet",
+      "install_before_path": "Hooks will be added to",
+      "install_before_backup": "without touching the ones you already have (a copy is kept as",
+      "install_end": "). Only sessions started afterwards get connected.",
+      "connect": "Connect Claude Code",
+      "badge": "Claude Code",
+      "title": "Claude Code integration",
+      "hooks_in": "Hooks in",
+      "bridge": "Bridge:",
+      "autostart": "Open at login (in the tray)",
+      "reinstall": "Reinstall",
+      "disconnect": "Disconnect"
+    },
+    "toasts": {
+      "approved": "Permission approved",
+      "denied": "Permission denied",
+      "opened_in": "Opened in {via}"
+    },
+    "pixel": {
+      "title": "AGENT WAR ROOM",
+      "all_quiet": "ALL QUIET",
+      "finished_bubble": "OK",
+      "muted_bubble": "ZZ",
+      "canvas_label": "Control room: one desk per session, colored by its state",
+      "subagent_of": " — subagent of {session}",
+      "subagent_of_unknown": " — subagent of the session",
+      "empty": "Empty room: desks will appear when an agent starts."
+    }
+  }
+}

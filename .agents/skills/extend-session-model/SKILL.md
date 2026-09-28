@@ -26,7 +26,7 @@ Transcript fact path:
 
 Then, for all:
 5. `crates/application/src/view.rs`: expose it; `cargo test -p awr-application` regenerates TS.
-6. Front: helper in `src/domain/attention.ts` (+ test), text in `src/domain/copy.ts`, render in `src/ui`
+6. Front: helper in `src/domain/attention.ts` (+ test), text as a key in every `locales/*.json` exposed through `src/domain/copy.ts`, render in `src/ui`
    (card, detail, queue, pixel), fixtures (`src/test/fixtures.ts`) and demo data (`demoGateway.ts`).
 7. Optional filter: `Filter` + `applyFilter` + `filterOptions` + `FilterBar` + `localFilterStorage`.
 8. Skill `verify` (check + screenshots). Update the area rule if the mechanism is non-obvious.

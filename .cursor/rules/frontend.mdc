@@ -9,7 +9,7 @@ alwaysApply: false
 ## Layers
 
 - `domain/` — pure presentation rules (`attention.ts`: labels logic, filters, usage formatting),
-  `copy.ts` (**all** UI text), `generated/` (ts-rs types from `crates/application/src/view.rs`
+  `copy.ts` (typed access to **all** UI text; the text is in `locales/`), `generated/` (ts-rs types from `crates/application/src/view.rs`
   — never edit; regenerate with `cargo test -p awr-application`).
 - `application/` — `WarRoomStore` (framework-free; components subscribe with `useWarRoom(store)`)
   and `ports.ts` (WarRoomGateway, TerminalGateway, IntegrationGateway, FilterStorage).
@@ -21,9 +21,9 @@ alwaysApply: false
 
 ## Rules
 
-- Components never inline user-visible text: `copy.<area>.<key>` (functions for parametrised text).
-  Status labels arrive already translated from Rust (`crates/application/src/locale.rs`); the demo
-  mirrors them in its `STATUS` constant — keep them identical (`extraActivity` compares text).
+- Components never inline user-visible text: `copy.<area>.<key>` (functions for parametrised text),
+  backed by `locales/*.json` (`i18n.mdc`). Status labels arrive already translated from Rust; the demo
+  builds its `STATUS` from the same catalog (`coreStatus`) — `extraActivity` compares text.
 - New data from the core: add it in `view.rs`, regenerate, then fixtures (`src/test/fixtures.ts`) and
   the demo (`demoGateway.ts`) — the demo is what screenshots show.
 - Styling: one `ui/styles.css` on tokens. `--c` = attention color via `data-attention`; `--k` = skill

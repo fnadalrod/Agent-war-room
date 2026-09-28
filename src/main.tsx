@@ -1,26 +1,19 @@
-// Front-end composition root: wires the store to the Tauri adapters, or to the demo ones when the UI
-// is opened outside the app (browser, screenshots, design).
-import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
-import { WarRoomStore } from "./application/warRoomStore";
-import { createDemo } from "./infrastructure/demoGateway";
-import { localFilterStorage } from "./infrastructure/localFilterStorage";
-import { tauriIntegrationGateway, tauriTerminalGateway, tauriWarRoomGateway } from "./infrastructure/tauriGateway";
-import { App } from "./ui/App";
+// Entry point: picks the language first, because `copy` reads its strings when it loads; then loads
+// the app. Inside Tauri the core decides (same language as notifications and the tray); in the
+// browser demo it is `?lang=` or the browser's.
+import { invoke } from "@tauri-apps/api/core";
+import { setLanguage } from "./domain/i18n";
 import "@fontsource-variable/inter";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/600.css";
 import "./ui/styles.css";
 
-const insideTauri = "__TAURI_INTERNALS__" in window;
-const demo = insideTauri ? null : createDemo();
-const store = demo
-  ? new WarRoomStore(demo.rooms, demo.integration, demo.terminals, localFilterStorage)
-  : new WarRoomStore(tauriWarRoomGateway, tauriIntegrationGateway, tauriTerminalGateway, localFilterStorage);
-void store.start();
+async function pickLanguage(): Promise<string | null> {
+  if ("__TAURI_INTERNALS__" in window) return invoke<string>("ui_language").catch(() => null);
+  return new URLSearchParams(location.search).get("lang") ?? navigator.language;
+}
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App store={store} />
-  </StrictMode>,
-);
+void pickLanguage().then((locale) => {
+  document.documentElement.lang = setLanguage(locale);
+  return import("./bootstrap");
+});
