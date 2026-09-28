@@ -43,11 +43,19 @@ export type Prop = { kind: "plant" | "sofa" | "coffee" | "cooler" | "shelf" | "t
 /** A lounge spot, what the agent does there and where it looks. */
 export type Spot = { tile: Point; pose: "stand" | "sit"; face: "down" | "up" | "left" | "right" };
 
+/** Rows of the office one view shows (tiles). */
+export type RoomBand = { y: number; h: number };
+export type RoomName = "war" | "lobby";
+
 export type Office = {
   width: number;
   height: number;
   cols: number;
   rows: number;
+  /** The war room on top, the lobby below its bottom wall; the scene shows one at a time. */
+  bands: Record<RoomName, RoomBand>;
+  /** The doorway between them: a tile of the war room's bottom wall (walkable down into the lobby). */
+  lobbyDoor: Point;
   aggregate: AttentionView;
   zones: Zone[];
   lounge: Rect;
@@ -59,8 +67,9 @@ export type Office = {
 };
 
 /**
- * Lays out the office for `width` logical pixels: repo zones packed in shelves under the wall
- * (keeping the core's order, most urgent first), then a lounge along the bottom.
+ * Lays out the office for `width` logical pixels: the war room (repo zones packed in shelves under
+ * the wall, keeping the core's order, most urgent first) and, through a door in its bottom wall, the
+ * lobby with the crew lounge. Each fills at least `minHeight`.
  */
 export function layoutOffice(view: WarRoomView, width: number, showArchived: boolean, minHeight = 0): Office {
   const cols = Math.max(CELL_W + 2, Math.floor(width / TILE));
@@ -116,11 +125,23 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
   const perMingleRow = Math.floor((cols - 4) / 3) * 2;
   const mingleRows = Math.max(1, Math.ceil(Math.max(0, idle - furnitureSpots) / Math.max(1, perMingleRow)));
   const loungeRows = LOUNGE_ROWS + mingleRows - 1;
-  const rows = Math.max(contentRows + loungeRows, Math.floor(minHeight / TILE));
-  const lounge = { x: 1, y: rows - loungeRows, w: cols - 2, h: loungeRows - 1 };
+  const minRows = Math.floor(minHeight / TILE);
+  // The war room ends in a wall row; the lobby starts under it with its own wall.
+  const war = { y: 0, h: Math.max(contentRows + 1, minRows) };
+  // A free row under the lobby's wall, so the doorway always opens onto floor.
+  const lobby = { y: war.h, h: Math.max(WALL_ROWS + 1 + loungeRows, minRows) };
+  const rows = war.h + lobby.h;
+  const loungeTop = lobby.y + WALL_ROWS + 1;
+  const lounge = { x: 1, y: loungeTop, w: cols - 2, h: rows - 1 - loungeTop };
+  const lobbyDoor = { x: Math.floor(cols / 2), y: war.h - 1 };
 
+  const floorOf = (band: RoomBand, r: number) => r >= band.y + WALL_ROWS && r < band.y + band.h - 1;
   const walkable = Array.from({ length: rows }, (_, r) =>
-    Array.from({ length: cols }, (_, c) => r >= WALL_ROWS && r < rows - 1 && c > 0 && c < cols - 1),
+    Array.from({ length: cols }, (_, c) => {
+      // The doorway: through the war room's bottom wall and the lobby's wall.
+      if (c === lobbyDoor.x && r >= lobbyDoor.y && r < lobby.y + WALL_ROWS) return true;
+      return (r < war.h ? floorOf(war, r) : floorOf(lobby, r)) && c > 0 && c < cols - 1;
+    }),
   );
   const block = (c: number, r: number) => {
     if (walkable[r]?.[c] !== undefined) walkable[r][c] = false;
@@ -143,6 +164,8 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
     height: rows * TILE,
     cols,
     rows,
+    bands: { war, lobby },
+    lobbyDoor,
     aggregate: view.aggregate,
     zones,
     lounge,
@@ -277,6 +300,13 @@ export function cabinetAtPoint(office: Office, p: Point): Zone | null {
     if (zone.cabinet && inside(p, { x: zone.cabinet.x * TILE, y: zone.cabinet.y * TILE - 8, w: TILE, h: TILE + 8 })) return zone;
   }
   return null;
+}
+
+/** The doorway between the rooms, as the view of `room` shows it (a click there switches rooms). */
+export function doorwayAtPoint(office: Office, room: RoomName, p: Point): boolean {
+  const x = office.lobbyDoor.x * TILE;
+  const y = room === "war" ? office.lobbyDoor.y * TILE - TILE : office.bands.lobby.y * TILE;
+  return inside(p, { x: x - 4, y, w: TILE + 8, h: room === "war" ? 2 * TILE : WALL_ROWS * TILE });
 }
 
 /** Integer scale giving a reasonable logical width (about 360–520 art pixels). */

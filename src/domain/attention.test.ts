@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { aRoom, aSession } from "../test/fixtures";
+import { aRoom, aSession, aView } from "../test/fixtures";
 import { copy } from "./copy";
-import { activity, contextLabel, extraActivity, isWritable, modelName, plainText, roomHome, toolDigest } from "./attention";
+import { activity, contextLabel, extraActivity, isWritable, modelName, neighbourSession, plainText, roomHome, toolDigest } from "./attention";
 
 describe("presentation rules", () => {
   it("summarises model and context", () => {
@@ -45,5 +45,24 @@ describe("presentation rules", () => {
       aSession({ worktree_path: "/code/app" }),
     ]);
     expect(roomHome(room)).toBe("/code/app");
+  });
+});
+
+describe("moving between sessions from the keyboard", () => {
+  const view = aView([
+    aRoom("a", [aSession({ id: "a1" }), aSession({ id: "a2", archived: true })]),
+    aRoom("b", [aSession({ id: "b1" }), aSession({ id: "b2" })]),
+  ]);
+  const ids = (from: string | null, step: 1 | -1, archived = false) => neighbourSession(view, from, step, archived)?.id;
+
+  it("follows the room's order, repo by repo, and wraps around", () => {
+    expect([ids("a1", 1), ids("b1", 1), ids("b2", 1)]).toEqual(["b1", "b2", "a1"]);
+    expect([ids("b1", -1), ids("a1", -1)]).toEqual(["a1", "b2"]);
+  });
+
+  it("starts at an end when nothing is open and skips dismissed sessions unless shown", () => {
+    expect([ids(null, 1), ids(null, -1)]).toEqual(["a1", "b2"]);
+    expect(ids("a1", 1, true)).toBe("a2");
+    expect(neighbourSession(aView([]), null, 1, false)).toBeNull();
   });
 });

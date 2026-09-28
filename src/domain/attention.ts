@@ -286,3 +286,15 @@ export function contextLevel(ratio: number): "ok" | "warn" | "full" {
 export function stalledMinutes(s: SessionView, now: number): number | null {
   return s.stalled_since == null ? null : Math.max(0, Math.round((now - s.stalled_since) / 60_000));
 }
+
+/**
+ * The session `step` places after (1) or before (-1) `current` in the order the room shows them
+ * (repo by repo, dismissed ones only when shown); wraps around. With nothing open: the first (or last).
+ */
+export function neighbourSession(view: WarRoomView, current: string | null, step: 1 | -1, showArchived: boolean): SessionView | null {
+  const shown = view.rooms.flatMap((r) => r.sessions).filter((s) => showArchived || !s.archived);
+  if (shown.length === 0) return null;
+  const at = shown.findIndex((s) => s.id === current);
+  if (at < 0) return step === 1 ? shown[0] : shown[shown.length - 1];
+  return shown[(at + step + shown.length) % shown.length];
+}

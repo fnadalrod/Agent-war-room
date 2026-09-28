@@ -50,6 +50,8 @@ export type PaintState = {
   today: string | null;
   /** The cabinet under the cursor, to highlight it. */
   hoveredCabinet: string | null;
+  /** The doorway between the rooms is under the cursor. */
+  hoveredDoor: boolean;
   actors: Map<string, Actor>;
 };
 
@@ -84,6 +86,8 @@ export function paintOffice(ctx: CanvasRenderingContext2D, office: Office, st: P
   ctx.imageSmoothingEnabled = false;
   floor(ctx, office);
   wall(ctx, office, st);
+  warRoomBottom(ctx, office, st);
+  lobbyWall(ctx, office, st);
   for (const zone of office.zones) rug(ctx, zone, TIERS[hash(zone.room.repo_id) % TIERS.length]);
   loungeRug(ctx, office);
 
@@ -266,6 +270,68 @@ function door(ctx: CanvasRenderingContext2D, x: number, wallBottom: number, fram
   rect(ctx, x + 2, wallBottom - 28, 12, 27, "#1a2335");
   rect(ctx, x + 7, wallBottom - 28, 1, 27, "#0a0f1a");
   rect(ctx, x + 2, wallBottom - 30, 12, 1, frame % 20 < 10 ? UI.cyan : UI.cyanDim);
+}
+
+/** Agents resting in the lobby (idle, visible sessions). */
+export function lobbyCount(office: Office): number {
+  return office.zones.reduce((n, z) => n + z.desks.filter((d) => d.session.attention === "idle" && !d.session.archived).length, 0);
+}
+
+/** The war room's bottom wall, with the doorway to the lobby and how many are resting there. */
+function warRoomBottom(ctx: CanvasRenderingContext2D, office: Office, st: PaintState) {
+  const y = (office.bands.war.h - 1) * TILE;
+  rect(ctx, 0, y, office.width, TILE, UI.wall);
+  rect(ctx, 0, y, office.width, 3, UI.metalDark);
+  withAlpha(ctx, 0.6, () => rect(ctx, 0, y, office.width, 1, UI.cyanDim));
+  const dx = office.lobbyDoor.x * TILE;
+  // The open doorway, with the lobby's warmer light spilling in.
+  rect(ctx, dx - 2, y, TILE + 4, TILE, UI.metalEdge);
+  rect(ctx, dx, y, TILE, TILE, "#1a2335");
+  withAlpha(ctx, 0.25, () => rect(ctx, dx, y - 6, TILE, 6, "#fbbf24"));
+  rect(ctx, dx, y, TILE, 1, st.frame % 20 < 10 ? "#fbbf24" : "#b7832a");
+  const label = `${copy.pixel.lobbySign} ${lobbyCount(office)}`;
+  const lx = dx + TILE + 6;
+  rect(ctx, lx - 2, y + 5, textWidth(label) + 4, 8, "#050a14");
+  drawText(ctx, label, lx, y + 7, "#fcd34d");
+  if (st.hoveredDoor) frameRect(ctx, dx - 4, y - TILE, TILE + 8, 2 * TILE, "#ffffffaa");
+}
+
+/** The lobby's wall: windows on the night, its sign and the doorway back to the war room. */
+function lobbyWall(ctx: CanvasRenderingContext2D, office: Office, st: PaintState) {
+  const top = office.bands.lobby.y * TILE;
+  const h = WALL_ROWS * TILE;
+  rect(ctx, 0, top, office.width, h, "#0b0f1c");
+  for (let x = 0; x < office.width; x += 24) rect(ctx, x, top, 1, h, "#11172a");
+  // The sign, then windows with a few stars.
+  const sign = copy.pixel.lobbySign;
+  const sw = textWidth(sign) + 8;
+  const dx = office.lobbyDoor.x * TILE;
+  const back = copy.pixel.warSign;
+  // Keep clear of the doorway and its sign over it.
+  const clearFrom = Math.min(dx - 4, dx + TILE / 2 - Math.floor(textWidth(back) / 2) - 4);
+  const clearTo = Math.max(dx + TILE + 4, dx + TILE / 2 + Math.ceil(textWidth(back) / 2) + 4);
+  for (let x = sw + 24; x + 40 < office.width; x += 72) {
+    if (x + 42 > clearFrom && x - 2 < clearTo) continue;
+    rect(ctx, x - 2, top + 8, 44, 26, "#1a2234");
+    rect(ctx, x, top + 10, 40, 22, "#0a1330");
+    rect(ctx, x + 19, top + 10, 2, 22, "#1a2234");
+    for (let i = 0; i < 5; i++) {
+      const seed = x * 7 + i;
+      if ((st.frame + seed) % 30 < 26) rect(ctx, x + 2 + Math.floor(rand(seed) * 36), top + 12 + Math.floor(rand(seed + 1) * 18), 1, 1, "#e0f2fe");
+    }
+  }
+  rect(ctx, 8, top + 4, sw, 9, "#050a14");
+  frameRect(ctx, 8, top + 4, sw, 9, "#fbbf24");
+  drawText(ctx, sign, 12, top + 6, "#fbbf24");
+  // The doorway up to the war room.
+  rect(ctx, dx - 2, top + h - 30, TILE + 4, 30, UI.metalDark);
+  rect(ctx, dx, top + h - 28, TILE, 28, UI.floor);
+  rect(ctx, dx, top + h - 28, TILE, 1, st.frame % 20 < 10 ? UI.cyan : UI.cyanDim);
+  rect(ctx, dx + TILE / 2 - Math.floor(textWidth(back) / 2) - 2, top + 3, textWidth(back) + 4, 8, "#050a14");
+  drawText(ctx, back, dx + TILE / 2 - Math.floor(textWidth(back) / 2), top + 4, UI.cyan);
+  rect(ctx, 0, top + h - 3, office.width, 3, UI.metalDark);
+  withAlpha(ctx, 0.6, () => rect(ctx, 0, top + h - 3, office.width, 1, "#b7832a"));
+  if (st.hoveredDoor) frameRect(ctx, dx - 4, top + h - 32, TILE + 8, 34, "#ffffffaa");
 }
 
 /** Each repo is a raised tier with a lit front edge and an illuminated sign. */

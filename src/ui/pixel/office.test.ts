@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { aRoom, aSession, aSubagent, aView } from "../../test/fixtures";
-import { cabinetAtPoint, deskAtPoint, FOLD_AFTER, feetOf, findPath, layoutOffice, pixelScale, TILE, WALL_ROWS } from "./office";
+import { cabinetAtPoint, deskAtPoint, doorwayAtPoint, FOLD_AFTER, feetOf, findPath, layoutOffice, pixelScale, TILE, WALL_ROWS } from "./office";
 import { type Actor, goals, step, subagentKey } from "./sim";
 
 const sessions = (prefix: string, n: number, attention: "working" | "idle" = "working") =>
@@ -66,6 +66,30 @@ describe("layoutOffice", () => {
     const taken = new Set([...goals(office, 0).values()].map((g) => g.key));
     expect(taken.size).toBe(30);
     for (const s of office.spots) expect(findPath(office, office.door, s.tile).length).toBeGreaterThan(0);
+  });
+
+  it("puts the lounge in a lobby under the war room, behind a wall with one doorway", () => {
+    const office = layoutOffice(aView([aRoom("a", sessions("a", 3)), aRoom("b", sessions("b", 2, "idle"))]), 400, false, 300);
+    const { war, lobby } = office.bands;
+    expect(lobby.y).toBe(war.y + war.h);
+    expect(lobby.y + lobby.h).toBe(office.rows);
+    expect(Math.min(war.h, lobby.h), "each room fills the window").toBeGreaterThanOrEqual(Math.floor(300 / TILE));
+    for (const d of office.zones.flatMap((z) => z.desks)) expect(d.seat.y).toBeLessThan(war.h);
+    for (const s of office.spots) expect(s.tile.y).toBeGreaterThanOrEqual(lobby.y + WALL_ROWS);
+    // The only way between the rooms is the doorway.
+    const crossings = [...Array(office.cols).keys()].filter((c) => office.walkable[war.h - 1][c]);
+    expect(crossings).toEqual([office.lobbyDoor.x]);
+    for (let r = lobby.y; r < lobby.y + WALL_ROWS; r++) expect(office.walkable[r].filter(Boolean)).toHaveLength(1);
+    const through = findPath(office, office.door, office.spots[0].tile);
+    expect(through).toContainEqual(office.lobbyDoor);
+  });
+
+  it("clicks the doorway from either room", () => {
+    const office = layoutOffice(aView([aRoom("a", sessions("a", 2))]), 400, false, 300);
+    const doorway = feetOf(office.lobbyDoor);
+    expect(doorwayAtPoint(office, "war", { x: doorway.x, y: doorway.y - TILE })).toBe(true);
+    expect(doorwayAtPoint(office, "lobby", { x: doorway.x, y: (office.bands.lobby.y + WALL_ROWS) * TILE - 4 })).toBe(true);
+    expect(doorwayAtPoint(office, "war", { x: doorway.x + 3 * TILE, y: doorway.y })).toBe(false);
   });
 
   it("picks a comfortable scale", () => {

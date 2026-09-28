@@ -1206,6 +1206,45 @@ button.small {
   font-size: 13px;
 }
 
+.reader.shortcuts {
+  width: min(440px, 100%);
+}
+
+.shortcuts dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 18px 24px 22px;
+}
+
+.shortcuts dl > div {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+}
+
+.shortcuts dd {
+  margin: 0;
+  color: var(--text-2);
+}
+
+kbd {
+  display: inline-block;
+  min-width: 26px;
+  padding: 2px 7px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: center;
+}
+
+button.icon.help {
+  font-weight: 650;
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -1339,9 +1378,53 @@ button.small {
   cursor: pointer;
 }
 
+.pixel-rooms {
+  margin-bottom: 8px;
+}
+
+.pixel-rooms .muted {
+  font-variant-numeric: tabular-nums;
+}
+
+.desk-menu {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+}
+
+.desk-menu-title {
+  overflow: hidden;
+  max-width: 280px;
+  margin: 0;
+  padding: 6px 10px 4px;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desk-menu button {
+  justify-content: flex-start;
+  border-color: transparent;
+  background: transparent;
+  text-align: left;
+}
+
+.desk-menu button:hover:not(:disabled),
+.desk-menu button:focus-visible {
+  background: var(--surface-3);
+}
+
 .pixel-tip {
   position: absolute;
-  top: 10px;
+  top: 52px;
   left: 10px;
   max-width: 70%;
   padding: 6px 10px;

@@ -4,16 +4,23 @@
 
 A top-down mission control in the spirit of pixel-agents: a screen wall at the front, one raised tier
 per repo with a bank of consoles (one per session), operators with headsets who walk between their
-console and the crew lounge. Classic and pixel views show the same state; the pixel one adds movement.
+console and the lobby next door. Classic and pixel views show the same state; the pixel one adds movement.
+
+- **Two rooms, one office.** `layoutOffice` stacks the war room (`bands.war`) and, under its bottom
+  wall, the lobby (`bands.lobby`, its own wall, then the crew lounge); each fills the window. The only
+  way between them is `lobbyDoor`, a walkable tile of the war room's bottom wall. The scene shows one
+  band at a time (tabs "War room | Lobby n", remembered in `awr.pixelRoom`; clicking the doorway,
+  `doorwayAtPoint`, switches): the canvas is the band's height and the transform shifts it up, so the
+  sim and hit tests keep working in office coordinates. Idle agents walk down through the doorway.
 
 - **Logical pixels.** The art is drawn in low-resolution logical pixels (office width = CSS width /
   scale, scale 2–4 from `pixelScale`); the canvas has one pixel per CSS pixel and `setTransform(scale)`
   blows the art up. Integer rects only; no smoothing. Names under the chairs use a finer font pixel
   (`nameDot`: two CSS pixels, so half the art's size at scale 4) to fit twice the letters.
-- **`office.ts` is pure and tested**: 16 px tiles, `WALL_ROWS` of wall, zones packed in shelves and
-  centered, each desk cell 3×3 tiles (console row, seat row, aisle). A repo with more than
+- **`office.ts` is pure and tested**: 16 px tiles, `WALL_ROWS` of wall on top of each room, zones packed
+  in shelves and centered, each desk cell 3×3 tiles (console row, seat row, aisle). A repo with more than
   `FOLD_AFTER` sessions keeps consoles only for live ones; closed ones go into a cabinet ("+N",
-  click → classic view filtered to that repo). Lounge along the bottom: furniture on its top row,
+  click → classic view filtered to that repo). Lounge in the lobby, a row under its wall: furniture on its top row,
   spots in front of it, on the sofas, and chatting pairs in mingle rows it adds until every idle agent
   has a spot. Door at the top left, `walkable` grid and 4-way BFS `findPath`. Chairs are not walkable
   (only a goal), so nobody walks through a seated agent. Each desk has a ring of `slots` round the
@@ -42,7 +49,9 @@ console and the crew lounge. Classic and pixel views show the same state; the pi
   floor under each chair. Decoration is seeded (`hash`, `rand`) so nothing flickers.
 - **`font.ts`** is a 3×5 bitmap font: uppercase, no accents, unknown glyphs → "?". Add glyphs when
   copy needs them.
-- 20 fps; the loop reads live state from a ref and is never restarted. Hit test: subagent, then the
-  agent wherever it is (both where their actor is), then the desk cell.
+- 20 fps; the loop reads live state from a ref and is never restarted; a new width or a lobby pushed
+  down re-seats everyone. Hit test: doorway, cabinet, subagent, then the agent wherever it is (both
+  where their actor is), then the desk cell. Right click on a desk or agent opens `DeskMenu` (preview,
+  go to / resume, read the answer, seen, mute, dismiss).
 - Always check with screenshots (`npm run shot` takes `pixel` and, 2.5 s later, `pixel-later`):
   overlap, depth and colour bugs only show up there.

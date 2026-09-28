@@ -4,7 +4,7 @@
 //
 // Builds nothing: run `npm run build` first if the source changed (npm run shot does it for you).
 // Writes classic.png (full page), detail.png, reader.png, changes.png, diff.png, subagent.png, filtered.png,
-// agents.png, pixel.png and pixel-later.png to <out-dir>.
+// agents.png, shortcuts.png, pixel.png, pixel-later.png, pixel-menu.png and lobby.png to <out-dir>.
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
@@ -62,7 +62,7 @@ try {
   await page.keyboard.press("Escape");
   // A finished session's answer at reading size; Esc closes only the reader, then the panel.
   await page.getByText("Document the test bench").first().click();
-  await page.locator(".read-answer").click();
+  await page.locator(".detail .read-answer").click();
   await shot("reader");
   await page.keyboard.press("Escape");
   await page.locator(".detail").waitFor({ timeout: 2000 });
@@ -79,11 +79,25 @@ try {
   await page.locator(".agents-menu > button").click();
   await shot("agents");
   await page.locator(".agents-menu > button").click();
+  await page.keyboard.press("?");
+  await shot("shortcuts");
+  await page.keyboard.press("Escape");
   await page.locator(".segmented button").nth(1).click();
   await shot("pixel", true);
   // A few seconds later, to see agents on the move.
   await page.waitForTimeout(2500);
   await shot("pixel-later", true);
+  // Right click on a desk: its quick menu.
+  const stage = page.locator(".pixel-stage canvas");
+  const box = await stage.boundingBox();
+  await page.mouse.click(box.x + box.width * 0.28, box.y + box.height * 0.3, { button: "right" });
+  await shot("pixel-menu");
+  await page.keyboard.press("Escape");
+  // Through the door: the lobby, where idle agents rest.
+  await page.locator(".pixel-rooms button").nth(1).click();
+  await page.waitForTimeout(1500);
+  await shot("lobby", true);
+  await page.locator(".pixel-rooms button").nth(0).click();
   await page.locator(".segmented button").nth(0).click();
   await browser.close();
 } finally {

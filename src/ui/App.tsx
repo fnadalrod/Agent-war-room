@@ -1,8 +1,10 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useCallback, useState } from "react";
 import type { WarRoomStore } from "../application/warRoomStore";
-import { money, tokenCount } from "../domain/attention";
+import { agentName, deskName, money, tokenCount, type WarRoomView } from "../domain/attention";
+import type { WarRoomState } from "../application/warRoomStore";
 import { applyFilter, archivedCount, countBy, launchableAgents, mixesAgents } from "../domain/attention";
 import { copy } from "../domain/copy";
+import { AnswerReader } from "./AnswerReader";
 import { AttentionQueue } from "./AttentionQueue";
 import { DetailPanel } from "./DetailPanel";
 import { FilterBar } from "./FilterBar";
@@ -10,6 +12,8 @@ import { GoIcon } from "./icons";
 import { AgentsMenu, IntegrationBar } from "./IntegrationBar";
 import { WarRoomScene } from "./pixel/WarRoomScene";
 import { RoomPanel } from "./RoomPanel";
+import { ShortcutHelp } from "./ShortcutHelp";
+import { useShortcuts } from "./useShortcuts";
 import { useNow, usePreference, useWarRoom } from "./useStore";
 
 // xterm is heavy: load it only when a terminal is opened.
@@ -29,6 +33,10 @@ export function App({ store }: { store: WarRoomStore }) {
   const detailFallback =
     state.detail && view ? (view.rooms.flatMap((r) => r.sessions).find((x) => x.id === state.detail!.id) ?? null) : null;
   const aggregate = fullView?.aggregate ?? "offline";
+  const [help, setHelp] = useState(false);
+  const toggleHelp = useCallback(() => setHelp((h) => !h), []);
+  useShortcuts(store, { view, showArchived, onHelp: toggleHelp });
+  const reader = fullView ? readerContent(state, fullView) : null;
 
   return (
     <div className="app" data-terminal={state.terminal != null} data-detail={state.detail != null}>
@@ -77,6 +85,9 @@ export function App({ store }: { store: WarRoomStore }) {
             </label>
           )}
           <AgentsMenu integrations={state.integrations} busy={state.busy} store={store} autostart={state.autostart} />
+          <button className="icon help" onClick={toggleHelp} title={copy.shortcuts.button} aria-label={copy.shortcuts.button}>
+            ?
+          </button>
         </div>
       </header>
 
@@ -149,6 +160,17 @@ export function App({ store }: { store: WarRoomStore }) {
 
       {state.detail && <DetailPanel detail={state.detail} fallback={detailFallback} store={store} now={now} />}
 
+      {reader && (
+        <AnswerReader
+          heading={reader.heading}
+          title={reader.title}
+          text={reader.text}
+          onLink={(url) => store.openExternal(url)}
+          onClose={() => store.closeReader()}
+        />
+      )}
+      {help && <ShortcutHelp onClose={() => setHelp(false)} />}
+
       {state.terminal && (
         <Suspense fallback={null}>
           <TerminalPanel key={state.terminal.id} terminal={state.terminal} store={store} />
@@ -156,4 +178,21 @@ export function App({ store }: { store: WarRoomStore }) {
       )}
     </div>
   );
+}
+
+/** What the open reader shows: a session's final answer, or its subagent's (once its preview loaded). */
+function readerContent(state: WarRoomState, view: WarRoomView): { heading: string; title: string; text: string } | null {
+  const open = state.reading;
+  if (!open) return null;
+  const s = view.rooms.flatMap((r) => r.sessions).find((x) => x.id === open.id);
+  if (!s) return null;
+  if (open.agent == null) return s.last_reply ? { heading: copy.detail.finalAnswer, title: s.title ?? deskName(s), text: s.last_reply } : null;
+  const sub = state.detail?.id === open.id && state.detail.agent?.id === open.agent ? state.detail.agent.data : null;
+  if (!sub?.last_reply) return null;
+  const agent = sub.agent ?? s.subagents.find((a) => a.id === open.agent);
+  return {
+    heading: agent?.running ? copy.subagent.lastReply : copy.subagent.result,
+    title: agent ? agentName(agent) : copy.subagent.title,
+    text: sub.last_reply,
+  };
 }

@@ -21,6 +21,7 @@ import {
   CheckIcon,
   GoIcon,
   PlayIcon,
+  ReadIcon,
   RestoreIcon,
   RobotIcon,
   TerminalIcon,
@@ -126,6 +127,11 @@ export function SessionScreen({ session: s, store, now, showProvider = false }: 
             </button>
           )}
           <span className="spacer" />
+          {excerpt && (
+            <button className="icon read-answer" onClick={() => store.readAnswer(s.id)} title={copy.actions.readAnswer}>
+              <ReadIcon />
+            </button>
+          )}
           {s.attention === "finished" && (
             <button className="icon" onClick={() => store.acknowledge(s)} title={copy.actions.markSeen}>
               <CheckIcon />

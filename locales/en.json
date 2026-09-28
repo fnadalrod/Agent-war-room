@@ -155,7 +155,8 @@
       "unmute": "Unmute notifications",
       "mute": "Mute notifications",
       "unarchive": "Bring back to the room",
-      "archive": "Dismiss: hide and stop notifying"
+      "archive": "Dismiss: hide and stop notifying",
+      "read_answer": "Read the final answer (R)"
     },
     "queue": {
       "title": "Needs your attention"
@@ -322,7 +323,16 @@
       "subagent_of_unknown": " — subagent of the session",
       "empty": "Empty room: desks will appear when an agent starts.",
       "today": "TODAY",
-      "cabinet_tip": "{n} closed sessions · click to list them"
+      "cabinet_tip": "{n} closed sessions · click to list them",
+      "lobby_sign": "LOBBY",
+      "war_sign": "WAR ROOM",
+      "rooms": "Rooms",
+      "war_room": "War room",
+      "lobby": "Lobby",
+      "lobby_title": "Idle agents rest here",
+      "to_lobby_tip": "Door to the lobby · click to go in",
+      "to_war_tip": "Door to the war room · click to go back",
+      "menu_label": "Actions for {title}"
     },
     "provider": {
       "claude": "Claude Code",
@@ -335,6 +345,18 @@
       "codex": "Codex",
       "cursor": "Cursor",
       "antigravity": "Antigravity"
+    },
+    "shortcuts": {
+      "title": "Keyboard shortcuts",
+      "button": "Keyboard shortcuts (?)",
+      "next": "Next session",
+      "prev": "Previous session",
+      "go": "Go to the open session",
+      "read": "Read its final answer",
+      "close": "Close the reader, the subagent, then the preview",
+      "help": "Show or hide this help",
+      "key_enter": "Enter",
+      "key_esc": "Esc"
     }
   }
 }

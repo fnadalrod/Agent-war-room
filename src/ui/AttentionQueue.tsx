@@ -1,7 +1,7 @@
 import type { WarRoomStore } from "../application/warRoomStore";
 import { deskName, isOnWatch, plainText, type SessionView, stalledMinutes, type WarRoomView } from "../domain/attention";
 import { copy } from "../domain/copy";
-import { CheckIcon, EyeIcon, GoIcon } from "./icons";
+import { CheckIcon, EyeIcon, GoIcon, ReadIcon } from "./icons";
 import { since } from "./useStore";
 
 type Props = { view: WarRoomView; store: WarRoomStore; now: number };
@@ -45,6 +45,11 @@ export function AttentionQueue({ view, store, now }: Props) {
                   </button>
                   <button onClick={() => store.deny(s)}>{copy.actions.deny}</button>
                 </>
+              )}
+              {s.attention === "finished" && s.last_reply && (
+                <button className="icon read-answer" onClick={() => store.readAnswer(s.id)} title={copy.actions.readAnswer}>
+                  <ReadIcon />
+                </button>
               )}
               <button className="icon" onClick={() => store.openDetail(s.id)} title={copy.actions.preview}>
                 <EyeIcon />

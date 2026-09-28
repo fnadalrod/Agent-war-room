@@ -1,9 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WarRoomStore } from "../../application/warRoomStore";
 import { agentName, deskName, money, providerName, tokenCount, unpriced, usageLabel, type WarRoomView } from "../../domain/attention";
 import { copy } from "../../domain/copy";
-import { type Hit, type Office, type Point, type Zone, cabinetAtPoint, deskAtPoint, layoutOffice, pixelScale } from "./office";
-import { paintOffice, subagentOf } from "./paint";
+import { usePreference } from "../useStore";
+import { DeskMenu } from "./DeskMenu";
+import {
+  type Hit,
+  type Office,
+  type Point,
+  type RoomName,
+  type Zone,
+  TILE,
+  cabinetAtPoint,
+  deskAtPoint,
+  doorwayAtPoint,
+  layoutOffice,
+  pixelScale,
+} from "./office";
+import { lobbyCount, paintOffice, subagentOf } from "./paint";
 import { type Actor, goals, step } from "./sim";
 
 type Props = {
@@ -18,10 +32,13 @@ type Props = {
 
 const FPS = 20;
 
-type SceneHit = { kind: "session"; hit: Hit } | { kind: "cabinet"; zone: Zone };
+const ROOMS = ["war", "lobby"] as const;
 
-/** What is under a point: a cabinet, a subagent, an agent wherever it walks, then a desk. */
-function sceneHit(office: Office, actors: Map<string, Actor>, p: Point): SceneHit | null {
+type SceneHit = { kind: "session"; hit: Hit } | { kind: "cabinet"; zone: Zone } | { kind: "door" };
+
+/** What is under a point: the doorway, a cabinet, a subagent, an agent wherever it walks, then a desk. */
+function sceneHit(office: Office, room: RoomName, actors: Map<string, Actor>, p: Point): SceneHit | null {
+  if (doorwayAtPoint(office, room, p)) return { kind: "door" };
   const zone = cabinetAtPoint(office, p);
   if (zone) return { kind: "cabinet", zone };
   const hit = hitTest(office, actors, p);
@@ -56,6 +73,9 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
   const hovered = hoveredAt?.kind === "session" ? hoveredAt.hit : null;
   const hoveredZone = hoveredAt?.kind === "cabinet" ? hoveredAt.zone : null;
   const actors = useRef(new Map<string, Actor>());
+  const [room, setRoom] = usePreference<RoomName>("awr.pixelRoom", "war", ROOMS);
+  const [menu, setMenu] = useState<{ x: number; y: number; hit: Hit } | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
 
   const scale = pixelScale(cssWidth);
   const [viewportH, setViewportH] = useState(() => window.innerHeight);
@@ -64,8 +84,8 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
-  // Fill the window below the header, not just the height of the zones.
-  const minHeight = Math.max(0, (viewportH - 130) / scale);
+  // Fill the window below the header and the room tabs, not just the height of the zones.
+  const minHeight = Math.max(0, (viewportH - 176) / scale);
   const office = useMemo(
     () => layoutOffice(view, Math.floor(cssWidth / scale), showArchived, minHeight),
     [view, cssWidth, scale, showArchived, minHeight],
@@ -83,8 +103,20 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
     ? `${tokenCount(view.today.total_tokens).toUpperCase()}${unpriced(view.today) ? "" : ` ${money(view.today.cost_usd)}`}`
     : null;
   // Live state for the paint loop, so it is not restarted on every render.
-  const live = useRef({ office, scale, selectedId, selectedAgent, alerts, today, hovered: null as Hit | null, cabinet: null as string | null });
-  live.current = { office, scale, selectedId, selectedAgent, alerts, today, hovered, cabinet: hoveredZone?.room.repo_id ?? null };
+  const band = office.bands[room];
+  const live = useRef({ office, scale, band, selectedId, selectedAgent, alerts, today, hovered: null as Hit | null, cabinet: null as string | null, door: false });
+  live.current = {
+    office,
+    scale,
+    band,
+    selectedId,
+    selectedAgent,
+    alerts,
+    today,
+    hovered,
+    cabinet: hoveredZone?.room.repo_id ?? null,
+    door: hoveredAt?.kind === "door",
+  };
 
   useEffect(() => {
     const el = box.current;
@@ -98,7 +130,7 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
     let frame = 0;
     let raf = 0;
     let last = 0;
-    let laidOutFor = 0;
+    let laidOutFor = "";
     const tick = (t: number) => {
       raf = requestAnimationFrame(tick);
       if (t - last < 1000 / FPS) return;
@@ -107,20 +139,23 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
       const c = canvas.current;
       const ctx = c?.getContext("2d");
       if (!c || !ctx) return;
-      const { office, scale, selectedId, selectedAgent, hovered, alerts, today, cabinet } = live.current;
+      const { office, scale, band, selectedId, selectedAgent, hovered, alerts, today, cabinet, door } = live.current;
       // Agents already there when the room opens are in place; later ones come through the door.
-      // A new width moves every desk: re-seat everyone rather than have them all walk.
-      const relaid = laidOutFor !== office.width;
-      laidOutFor = office.width;
+      // A new width (or a lobby pushed down by a new shelf of desks) moves everything: re-seat
+      // everyone rather than have them all walk.
+      const layout = `${office.width}:${office.bands.lobby.y}`;
+      const relaid = laidOutFor !== layout;
+      laidOutFor = layout;
       if (relaid) actors.current.clear();
       step(actors.current, office, goals(office, Date.now()), dt, !relaid);
       // One canvas pixel per screen (CSS) pixel: the art is scaled up by the transform, and names
-      // can be drawn finer than the art.
-      if (c.width !== office.width * scale || c.height !== office.height * scale) {
+      // can be drawn finer than the art. The canvas shows one room: its band of the office.
+      const height = band.h * TILE * scale;
+      if (c.width !== office.width * scale || c.height !== height) {
         c.width = office.width * scale;
-        c.height = office.height * scale;
+        c.height = height;
       }
-      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      ctx.setTransform(scale, 0, 0, scale, 0, -band.y * TILE * scale);
       paintOffice(ctx, office, {
         frame: Math.floor(frame++ / 2),
         scale,
@@ -132,6 +167,7 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
         alerts,
         today,
         hoveredCabinet: cabinet,
+        hoveredDoor: door,
         actors: actors.current,
       });
     };
@@ -141,20 +177,46 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
 
   const at = (e: React.MouseEvent) => {
     const r = e.currentTarget.getBoundingClientRect();
-    const p = { x: ((e.clientX - r.left) / r.width) * office.width, y: ((e.clientY - r.top) / r.height) * office.height };
-    return sceneHit(office, actors.current, p);
+    const p = { x: ((e.clientX - r.left) / r.width) * office.width, y: band.y * TILE + ((e.clientY - r.top) / r.height) * band.h * TILE };
+    return sceneHit(office, room, actors.current, p);
   };
+  const switchRoom = (to: RoomName) => {
+    setRoom(to);
+    setHovered(null);
+    setMenu(null);
+  };
+  const resting = lobbyCount(office);
 
   return (
     <div className="pixel-room">
       <div className="pixel-stage" ref={box}>
+        <div className="segmented pixel-rooms" role="group" aria-label={copy.pixel.rooms}>
+          <button aria-pressed={room === "war"} onClick={() => switchRoom("war")}>
+            {copy.pixel.warRoom}
+          </button>
+          <button aria-pressed={room === "lobby"} onClick={() => switchRoom("lobby")} title={copy.pixel.lobbyTitle}>
+            {copy.pixel.lobby} <span className="muted">{resting}</span>
+          </button>
+        </div>
         <canvas
           ref={canvas}
-          style={{ width: office.width * scale, height: office.height * scale, cursor: hoveredAt ? "pointer" : "default" }}
-          onMouseMove={(e) => setHovered(at(e))}
+          style={{ width: office.width * scale, height: band.h * TILE * scale, cursor: hoveredAt ? "pointer" : "default" }}
+          onMouseMove={(e) => setHovered(menu ? null : at(e))}
           onMouseLeave={() => setHovered(null)}
+          onContextMenu={(e) => {
+            const found = at(e);
+            if (found?.kind !== "session") return setMenu(null);
+            e.preventDefault();
+            setHovered(null);
+            const r = e.currentTarget.getBoundingClientRect();
+            // Inside the stage, clear of its right and bottom edges.
+            const x = Math.max(0, Math.min(e.clientX - r.left, r.width - 250));
+            const y = Math.max(0, Math.min(e.clientY - r.top, r.height - 270)) + e.currentTarget.offsetTop;
+            setMenu({ x, y, hit: found.hit });
+          }}
           onClick={(e) => {
             const found = at(e);
+            if (found?.kind === "door") return switchRoom(room === "war" ? "lobby" : "war");
             if (found?.kind === "cabinet") return onShowRepo(found.zone.room.repo_id);
             const hit = found?.hit ?? null;
             if (!hit) store.closeDetail();
@@ -170,6 +232,8 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
           aria-label={copy.pixel.canvasLabel}
         />
         {hoveredZone && <div className="pixel-tip">{copy.pixel.cabinetTip(hoveredZone.folded.length)}</div>}
+        {hoveredAt?.kind === "door" && <div className="pixel-tip">{room === "war" ? copy.pixel.toLobbyTip : copy.pixel.toWarTip}</div>}
+        {menu && <DeskMenu at={menu} hit={menu.hit} store={store} onClose={closeMenu} />}
         {hovered && (
           <div className="pixel-tip">
             {hovered.agent ? (

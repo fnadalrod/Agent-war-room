@@ -35,6 +35,9 @@ export type OpenDetail = {
   diff?: { hash: string; short: string; text: string | null } | null;
 };
 
+/** An agent's final answer open at reading size: the session's, or one of its subagents'. */
+export type OpenReader = { id: string; agent: string | null };
+
 /** In-app terminal open in the panel. */
 export type OpenTerminal = { id: string; label: string };
 
@@ -43,6 +46,7 @@ export type WarRoomState = {
   filter: Filter;
   detail: OpenDetail | null;
   terminal: OpenTerminal | null;
+  reading: OpenReader | null;
   /** One per supported agent; empty until loaded. */
   integrations: IntegrationStatus[];
   autostart: boolean | null;
@@ -55,7 +59,7 @@ const TOAST_MS = 3500;
 
 /** Framework-free store: the UI subscribes with `useSyncExternalStore`. */
 export class WarRoomStore {
-  private state: WarRoomState = { view: null, filter: NO_FILTER, detail: null, terminal: null, integrations: [], autostart: null, error: null, toast: null, busy: false };
+  private state: WarRoomState = { view: null, filter: NO_FILTER, detail: null, terminal: null, reading: null, integrations: [], autostart: null, error: null, toast: null, busy: false };
   private readonly listeners = new Set<() => void>();
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly rooms: WarRoomGateway;
@@ -268,6 +272,15 @@ export class WarRoomStore {
 
   closeDetail() {
     this.set({ detail: null });
+  }
+
+  /** Opens a final answer at reading size (a subagent's result when `agent` is given). */
+  readAnswer(id: string, agent: string | null = null) {
+    this.set({ reading: { id, agent } });
+  }
+
+  closeReader() {
+    this.set({ reading: null });
   }
 
   openExternal(url: string) {

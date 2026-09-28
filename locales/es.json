@@ -155,7 +155,8 @@
       "unmute": "Reactivar avisos",
       "mute": "Silenciar avisos",
       "unarchive": "Readmitir en la sala",
-      "archive": "Despedir: ocultar y dejar de avisar"
+      "archive": "Despedir: ocultar y dejar de avisar",
+      "read_answer": "Ver la respuesta final (R)"
     },
     "queue": {
       "title": "Requiere tu atención"
@@ -322,7 +323,16 @@
       "subagent_of_unknown": " — subagente de la sesión",
       "empty": "Sala vacía: los puestos aparecerán cuando un agente arranque.",
       "today": "HOY",
-      "cabinet_tip": "{n} sesiones cerradas · clic para verlas"
+      "cabinet_tip": "{n} sesiones cerradas · clic para verlas",
+      "lobby_sign": "LOBBY",
+      "war_sign": "SALA DE GUERRA",
+      "rooms": "Salas",
+      "war_room": "Sala de guerra",
+      "lobby": "Lobby",
+      "lobby_title": "Aquí descansan los agentes desocupados",
+      "to_lobby_tip": "Puerta al lobby · clic para entrar",
+      "to_war_tip": "Puerta a la sala de guerra · clic para volver",
+      "menu_label": "Acciones de {title}"
     },
     "provider": {
       "claude": "Claude Code",
@@ -335,6 +345,18 @@
       "codex": "Codex",
       "cursor": "Cursor",
       "antigravity": "Antigravity"
+    },
+    "shortcuts": {
+      "title": "Atajos de teclado",
+      "button": "Atajos de teclado (?)",
+      "next": "Sesión siguiente",
+      "prev": "Sesión anterior",
+      "go": "Ir a la sesión abierta",
+      "read": "Leer su respuesta final",
+      "close": "Cerrar el lector, el subagente y luego la vista previa",
+      "help": "Mostrar u ocultar esta ayuda",
+      "key_enter": "Intro",
+      "key_esc": "Esc"
     }
   }
 }

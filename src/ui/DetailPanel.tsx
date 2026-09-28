@@ -21,7 +21,6 @@ import {
 } from "../domain/attention";
 import { copy } from "../domain/copy";
 import { CheckIcon, GoIcon, PlayIcon, ReadIcon, RobotIcon, TerminalIcon, XIcon } from "./icons";
-import { AnswerReader } from "./AnswerReader";
 import { CopyButton } from "./CopyButton";
 import { Markdown } from "./Markdown";
 import { ChangesSection, DiffView } from "./Changes";
@@ -35,9 +34,6 @@ type Props = { detail: OpenDetail; fallback: SessionView | null; store: WarRoomS
 /** Session preview: what you asked, what it answered and what it has been doing. */
 export function DetailPanel({ detail, fallback, store, now }: Props) {
   const s = detail.data?.session ?? fallback;
-
-  const [reading, setReading] = useState(false);
-  useEffect(() => setReading(false), [detail.id]);
 
   const inAgent = detail.agent != null;
   const hasDiff = detail.diff != null;
@@ -90,7 +86,7 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
             {extraActivity(s)}
           </p>
         )}
-        <Actions s={s} store={store} onRead={s.last_reply ? () => setReading(true) : null} />
+        <Actions s={s} store={store} onRead={s.last_reply ? () => store.readAnswer(s.id) : null} />
       </header>
 
       <div className="detail-body">
@@ -122,7 +118,7 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
 
         {s.last_reply && (
           <section>
-            <SectionHead title={copy.detail.lastReply} onRead={() => setReading(true)} />
+            <SectionHead title={copy.detail.lastReply} onRead={() => store.readAnswer(s.id)} />
             <Collapsible text={s.last_reply} lines={18} onLink={onLink} />
           </section>
         )}
@@ -208,15 +204,6 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
         </footer>
       )}
       <DiffView detail={detail} store={store} />
-      {reading && s.last_reply && (
-        <AnswerReader
-          heading={copy.detail.finalAnswer}
-          title={s.title ?? deskName(s)}
-          text={s.last_reply}
-          onLink={onLink}
-          onClose={() => setReading(false)}
-        />
-      )}
     </aside>
   );
 }
@@ -232,7 +219,6 @@ type SubagentProps = {
 
 /** Subagent preview, inside its session panel. */
 function SubagentPanel({ session: s, agent, preview, store, now, onLink }: SubagentProps) {
-  const [reading, setReading] = useState(false);
   const state = agent?.running ? "working" : "offline";
   const replyTitle = agent?.running ? copy.subagent.lastReply : copy.subagent.result;
   return (
@@ -284,7 +270,7 @@ function SubagentPanel({ session: s, agent, preview, store, now, onLink }: Subag
             )}
             {preview.last_reply && (
               <section>
-                <SectionHead title={replyTitle} onRead={() => setReading(true)} />
+                <SectionHead title={replyTitle} onRead={() => agent && store.readAnswer(s.id, agent.id)} />
                 <Collapsible text={preview.last_reply} lines={18} onLink={onLink} />
               </section>
             )}
@@ -299,15 +285,6 @@ function SubagentPanel({ session: s, agent, preview, store, now, onLink }: Subag
           </>
         )}
       </div>
-      {reading && preview?.last_reply && (
-        <AnswerReader
-          heading={replyTitle}
-          title={agent ? agentName(agent) : copy.subagent.title}
-          text={preview.last_reply}
-          onLink={onLink}
-          onClose={() => setReading(false)}
-        />
-      )}
     </aside>
   );
 }
@@ -346,7 +323,7 @@ function Actions({ s, store, onRead }: { s: SessionView; store: WarRoomStore; on
         </>
       )}
       {onRead && (
-        <button className="read-answer" onClick={onRead} title={copy.detail.readFull}>
+        <button className="read-answer" onClick={onRead} title={copy.actions.readAnswer}>
           <ReadIcon size={14} /> {copy.detail.readAnswer}
         </button>
       )}

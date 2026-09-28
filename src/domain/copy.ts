@@ -120,6 +120,20 @@ export const copy = {
     mute: t("actions.mute"),
     unarchive: t("actions.unarchive"),
     archive: t("actions.archive"),
+    readAnswer: t("actions.read_answer"),
+  },
+
+  shortcuts: {
+    title: t("shortcuts.title"),
+    button: t("shortcuts.button"),
+    next: t("shortcuts.next"),
+    prev: t("shortcuts.prev"),
+    go: t("shortcuts.go"),
+    read: t("shortcuts.read"),
+    close: t("shortcuts.close"),
+    help: t("shortcuts.help"),
+    keyEnter: t("shortcuts.key_enter"),
+    keyEsc: t("shortcuts.key_esc"),
   },
 
   queue: {
@@ -306,5 +320,14 @@ export const copy = {
     empty: t("pixel.empty"),
     today: t("pixel.today"),
     cabinetTip: (n: number) => t("pixel.cabinet_tip", { n }),
+    lobbySign: t("pixel.lobby_sign"),
+    rooms: t("pixel.rooms"),
+    warRoom: t("pixel.war_room"),
+    lobby: t("pixel.lobby"),
+    lobbyTitle: t("pixel.lobby_title"),
+    toLobbyTip: t("pixel.to_lobby_tip"),
+    toWarTip: t("pixel.to_war_tip"),
+    menuLabel: (title: string) => t("pixel.menu_label", { title }),
+    warSign: t("pixel.war_sign"),
   },
 };
