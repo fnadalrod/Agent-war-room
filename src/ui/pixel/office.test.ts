@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { aRoom, aSession, aView } from "../../test/fixtures";
+import { aRoom, aSession, aSubagent, aView } from "../../test/fixtures";
 import { cabinetAtPoint, deskAtPoint, FOLD_AFTER, feetOf, findPath, layoutOffice, pixelScale, TILE, WALL_ROWS } from "./office";
-import { type Actor, goals, step } from "./sim";
+import { type Actor, goals, step, subagentKey } from "./sim";
 
 const sessions = (prefix: string, n: number, attention: "working" | "idle" = "working") =>
   Array.from({ length: n }, (_, i) => aSession({ id: `${prefix}${i}`, attention }));
@@ -13,7 +13,8 @@ describe("layoutOffice", () => {
     for (const zone of office.zones) {
       expect(zone.rect.y).toBeGreaterThan(WALL_ROWS);
       for (const d of zone.desks) {
-        expect(office.walkable[d.seat.y][d.seat.x]).toBe(true);
+        expect(office.walkable[d.seat.y][d.seat.x], "a chair is not a corridor").toBe(false);
+        for (const slot of d.slots) expect(office.walkable[slot.y][slot.x]).toBe(true);
         expect(office.walkable[d.seat.y - 1][d.seat.x], "the desk itself blocks").toBe(false);
       }
     }
@@ -106,6 +107,70 @@ describe("sim", () => {
     expect(actors.get("w")?.pose).toBe("desk");
     for (let t = 0; t < 300; t++) step(actors, office, new Map(), 100, true);
     expect(actors.size).toBe(0);
+  });
+});
+
+describe("subagents", () => {
+  const withSubagents = (running: boolean[]) =>
+    layoutOffice(
+      aView([aRoom("a", [aSession({ id: "w", attention: "working", subagents: running.map((r, i) => aSubagent({ id: `s${i}`, running: r })) })])]),
+      400,
+      false,
+      400,
+    );
+  const walk = (actors: Map<string, Actor>, office: ReturnType<typeof layoutOffice>, at: number, ms: number) => {
+    for (let t = 0; t < ms; t += 100) step(actors, office, goals(office, at), 100, true);
+  };
+
+  it("running ones stand spread round their agent's chair; finished ones are not there", () => {
+    const office = withSubagents([true, true, false]);
+    const desk = office.zones[0].desks[0];
+    const g = goals(office, 0);
+    const a = g.get(subagentKey("s0"))!;
+    const b = g.get(subagentKey("s1"))!;
+    expect(desk.slots).toContainEqual(a.tile);
+    expect(desk.slots).toContainEqual(b.tile);
+    expect(a.tile, "spread, not side by side").not.toEqual(b.tile);
+    expect(a.owner).toBe("w");
+    expect(g.has(subagentKey("s2"))).toBe(false);
+  });
+
+  it("they stand up from the chair, then walk the ring as time goes by", () => {
+    const office = withSubagents([true]);
+    const desk = office.zones[0].desks[0];
+    const actors = new Map<string, Actor>();
+    step(actors, office, goals(office, 0), 0, true);
+    const mini = actors.get(subagentKey("s0"))!;
+    expect([mini.x, mini.y]).toEqual([feetOf(desk.seat).x, feetOf(desk.seat).y]);
+    const seen = new Set<string>();
+    for (let at = 0; at < 60_000; at += 2_000) {
+      walk(actors, office, at, 2_000);
+      seen.add(`${Math.round(mini.x)},${Math.round(mini.y)}`);
+    }
+    expect(seen.size, "it moves round the chair").toBeGreaterThan(2);
+  });
+
+  it("when they finish they walk out through the door", () => {
+    const office = withSubagents([true]);
+    const actors = new Map<string, Actor>();
+    step(actors, office, goals(office, 0), 0, false);
+    expect(actors.has(subagentKey("s0"))).toBe(true);
+    const done = withSubagents([false]);
+    step(actors, done, goals(done, 0), 100, true);
+    expect(actors.get(subagentKey("s0"))?.leaving).toBe(true);
+    walk(actors, done, 0, 30_000);
+    expect(actors.has(subagentKey("s0"))).toBe(false);
+    expect(actors.has("w"), "their agent stays").toBe(true);
+  });
+
+  it("a closed session's subagents leave too", () => {
+    const office = layoutOffice(
+      aView([aRoom("a", [aSession({ id: "o", attention: "offline", subagents: [aSubagent({ id: "s0", running: true })] })])]),
+      400,
+      false,
+      400,
+    );
+    expect(goals(office, 0).has(subagentKey("s0"))).toBe(false);
   });
 });
 

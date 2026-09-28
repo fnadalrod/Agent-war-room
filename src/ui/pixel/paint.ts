@@ -4,7 +4,7 @@ import { contextLevel, contextRatio, deskName, tokenCount } from "../../domain/a
 import { copy } from "../../domain/copy";
 import { drawText, fit, textWidth } from "./font";
 import { type Desk, type Office, type Prop, type Rect, type Zone, TILE, WALL_ROWS, feetOf } from "./office";
-import { type Actor, hash } from "./sim";
+import { type Actor, hash, subagentKey } from "./sim";
 import { MINI, body, drawSprite, lounging, palette, seated, waving } from "./sprites";
 
 export const COLOR: Record<AttentionView, string> = {
@@ -37,6 +37,8 @@ const TIERS = ["#22d3ee", "#a78bfa", "#34d399", "#f472b6", "#60a5fa", "#fbbf24"]
 
 export type PaintState = {
   frame: number;
+  /** Screen pixels per art pixel (the canvas transform), for text finer than the art. */
+  scale: number;
   now: Date;
   selected: string | null;
   selectedAgent: string | null;
@@ -94,11 +96,7 @@ export function paintOffice(ctx: CanvasRenderingContext2D, office: Office, st: P
       drawables.push({ y: d.desk.y + d.desk.h, draw: () => desk(ctx, d, st) });
       const seatFeet = feetOf(d.seat);
       drawables.push({ y: seatFeet.y + 0.5, draw: () => chair(ctx, seatFeet.x, seatFeet.y) });
-      drawables.push({ y: seatFeet.y + 0.6, draw: () => nameplate(ctx, d) });
-      d.session.subagents.slice(0, d.slots.length).forEach((agent, i) => {
-        const feet = miniFeet(d, i);
-        drawables.push({ y: feet.y, draw: () => mini(ctx, d.session, agent, feet.x, feet.y, st) });
-      });
+      drawables.push({ y: seatFeet.y + 0.6, draw: () => nameplate(ctx, d, st.scale) });
     }
   }
   for (const zone of office.zones) {
@@ -111,6 +109,11 @@ export function paintOffice(ctx: CanvasRenderingContext2D, office: Office, st: P
   }
   const sessions = new Map(office.zones.flatMap((z) => z.desks.map((d) => [d.session.id, d.session] as const)));
   for (const actor of st.actors.values()) {
+    if (actor.owner != null) {
+      const session = sessions.get(actor.owner);
+      if (session) drawables.push({ y: actor.y, draw: () => mini(ctx, actor, session, subagentOf(session, actor), st) });
+      continue;
+    }
     const session = sessions.get(actor.id);
     drawables.push({ y: actor.y, draw: () => agent(ctx, actor, session, st) });
   }
@@ -118,18 +121,19 @@ export function paintOffice(ctx: CanvasRenderingContext2D, office: Office, st: P
   for (const d of drawables) d.draw();
 
   // On top of everything: what each agent is saying, and selection marks.
+  const seats = new Map(office.zones.flatMap((z) => z.desks.map((d) => [d.session.id, feetOf(d.seat)] as const)));
   for (const actor of st.actors.values()) {
-    const session = sessions.get(actor.id);
-    if (session) bubble(ctx, actor, session, st.frame);
-  }
-  for (const zone of office.zones) {
-    for (const d of zone.desks) {
-      d.session.subagents.slice(0, d.slots.length).forEach((agent, i) => {
-        const feet = miniFeet(d, i);
-        // In the aisle the bubble goes to the side, clear of the name.
-        if (agent.running) toolBubble(ctx, agent, feet.x, feet.y, st.frame, d.slots[i].y > d.seat.y);
-      });
+    if (actor.owner == null) {
+      const session = sessions.get(actor.id);
+      if (session) bubble(ctx, actor, session, st.frame);
+      continue;
     }
+    const session = sessions.get(actor.owner);
+    const agent = session && subagentOf(session, actor);
+    const seat = seats.get(actor.owner);
+    // In the aisle the bubble goes to the outer side, clear of the names.
+    const side = seat && actor.y > seat.y ? (actor.x < seat.x ? "left" : "right") : null;
+    if (agent?.running && actor.pose !== "walk") toolBubble(ctx, agent, actor.x, actor.y, st.frame, side);
   }
   for (const zone of office.zones) for (const d of zone.desks) marks(ctx, d, st);
 }
@@ -383,22 +387,32 @@ function monitor(ctx: CanvasRenderingContext2D, x: number, y: number, s: Session
   if (s.attention === "needs_you" && !s.muted) withAlpha(ctx, frame % 8 < 5 ? 0.35 : 0.15, () => rect(ctx, x - 2, y - 2, 20, 15, COLOR.needs_you));
 }
 
-/** Where a subagent stands: aisle ones a little lower, clear of the name. */
-export function miniFeet(d: Desk, i: number) {
-  const feet = feetOf(d.slots[i]);
-  return d.slots[i].y > d.seat.y ? { x: feet.x, y: feet.y + 2 } : feet;
+/** The subagent an actor stands for (null once the session forgot it). */
+export function subagentOf(session: SessionView, actor: Actor): SubagentView | null {
+  return session.subagents.find((a) => subagentKey(a.id) === actor.id) ?? null;
 }
 
-/** The session's name on the floor, under its chair. */
-function nameplate(ctx: CanvasRenderingContext2D, d: Desk) {
+/**
+ * Size of a name's font pixel in art pixels: two screen pixels, so names read at half the art's
+ * size (and fit twice the letters) on big scales, and as before on small ones.
+ */
+export const nameDot = (scale: number) => Math.min(1, 2 / scale);
+
+/** The session's name on the floor, under its chair (the full title is in the hover tip). */
+function nameplate(ctx: CanvasRenderingContext2D, d: Desk, scale: number) {
   const s = d.session;
-  // Subagents in the aisle corners: leave them room.
-  const crowded = s.subagents.length > 2;
-  const name = fit((s.title ?? deskName(s)).toUpperCase(), d.cell.w - (crowded ? 20 : 6));
+  const px = nameDot(scale);
+  // Subagents walk round the chair and through the aisle corners: leave them room.
+  const crowded = s.subagents.some((a) => a.running);
+  const name = fit((s.title ?? deskName(s)).toUpperCase(), d.cell.w - (crowded ? 20 : 10), px);
   const feet = feetOf(d.seat);
-  const x = feet.x - Math.floor(textWidth(name) / 2);
-  withAlpha(ctx, 0.7, () => rect(ctx, x - 2, feet.y + 3, textWidth(name) + 3, 7, "#050a14"));
-  drawText(ctx, name, x, feet.y + 4, s.attention === "offline" ? "#475569" : UI.text);
+  const w = textWidth(name, px);
+  const x = feet.x - Math.floor(w / 2);
+  withAlpha(ctx, 0.7, () => {
+    ctx.fillStyle = "#050a14";
+    ctx.fillRect(x - 2 * px, feet.y + 3, w + 4 * px, 2 + 5 * px);
+  });
+  drawText(ctx, name, x, feet.y + 4, s.attention === "offline" ? "#475569" : UI.text, px);
 }
 
 function chair(ctx: CanvasRenderingContext2D, fx: number, fy: number) {
@@ -506,15 +520,20 @@ function agent(ctx: CanvasRenderingContext2D, actor: Actor, session: SessionView
   });
 }
 
-function mini(ctx: CanvasRenderingContext2D, session: SessionView, agent: SubagentView, fx: number, fy: number, st: PaintState) {
-  const seed = hash(agent.id);
+/** A subagent: bobs while it works, steps as it walks the ring, fades as it walks out. */
+function mini(ctx: CanvasRenderingContext2D, actor: Actor, session: SessionView, agent: SubagentView | null, st: PaintState) {
+  const seed = hash(actor.id);
   const pal = palette(session.provider, seed);
-  const bob = agent.running && (st.frame + seed) % 6 < 3 ? -1 : 0;
-  withAlpha(ctx, agent.running ? 1 : 0.55, () => {
+  const fx = Math.round(actor.x);
+  const fy = Math.round(actor.y);
+  const walking = actor.pose === "walk";
+  const bob = walking ? (Math.floor(actor.walked / 3) % 2 === 1 ? -1 : 0) : agent?.running && (st.frame + seed) % 6 < 3 ? -1 : 0;
+  withAlpha(ctx, actor.leaving ? 0.6 : 1, () => {
     withAlpha(ctx, 0.3, () => rect(ctx, fx - 3, fy - 1, 7, 1, "#000"));
-    drawSprite(ctx, MINI, fx - 3, fy - 9 + bob, pal);
+    drawSprite(ctx, MINI, fx - 3, fy - 9 + bob, pal, actor.dir === "left");
   });
-  if (st.selectedAgent === agent.id || st.hoveredAgent === agent.id) frameRect(ctx, fx - 5, fy - 10, 10, 11, st.selectedAgent === agent.id ? "#facc15" : "#ffffffaa");
+  const id = agent?.id;
+  if (id && (st.selectedAgent === id || st.hoveredAgent === id)) frameRect(ctx, fx - 5, fy - 10, 10, 11, st.selectedAgent === id ? "#facc15" : "#ffffffaa");
 }
 
 /** Filing cabinet of a busy repo's closed sessions, with how many there are. */
@@ -547,15 +566,16 @@ export function toolGlyph(tool: string | null): string | null {
   return null;
 }
 
-function toolBubble(ctx: CanvasRenderingContext2D, agent: SubagentView, fx: number, fy: number, frame: number, side: boolean) {
+function toolBubble(ctx: CanvasRenderingContext2D, agent: SubagentView, fx: number, fy: number, frame: number, side: "left" | "right" | null) {
   const glyph = toolGlyph(agent.last_tool);
   if (!glyph) return;
   const bob = (frame + hash(agent.id)) % 6 < 3 ? -1 : 0;
-  const x = side ? fx + 4 : fx - 3;
-  const y = (side ? fy - 11 : fy - 17) + bob;
+  const x = Math.round(side === "right" ? fx + 4 : side === "left" ? fx - 11 : fx - 3);
+  const y = Math.round((side ? fy - 11 : fy - 17) + bob);
   rect(ctx, x, y, 7, 7, "#1b1523");
   rect(ctx, x + 1, y + 1, 5, 5, "#fdfcf7");
-  if (side) rect(ctx, x - 1, y + 4, 1, 1, "#1b1523");
+  if (side === "right") rect(ctx, x - 1, y + 4, 1, 1, "#1b1523");
+  else if (side === "left") rect(ctx, x + 7, y + 4, 1, 1, "#1b1523");
   else rect(ctx, x + 3, y + 7, 1, 1, "#1b1523");
   drawText(ctx, glyph, x + 2, y + 1, glyph === "$" ? "#15803d" : "#1b1523");
 }
@@ -602,6 +622,6 @@ function marks(ctx: CanvasRenderingContext2D, d: Desk, st: PaintState) {
     rect(ctx, cx + (dx < 0 ? -3 : 0), cy, 4, 1, color);
     rect(ctx, cx, cy + (dy < 0 ? -3 : 0), 1, 4, color);
   }
-  const more = d.session.subagents.length - d.slots.length;
+  const more = d.session.subagents.filter((a) => a.running).length - d.slots.length;
   if (more > 0) drawText(ctx, `+${more}`, x + w - 12, y + h - 7, "#e5e7eb");
 }

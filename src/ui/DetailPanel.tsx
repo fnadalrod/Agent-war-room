@@ -20,7 +20,9 @@ import {
   type TimelineEntryView,
 } from "../domain/attention";
 import { copy } from "../domain/copy";
-import { CheckIcon, CopyIcon, GoIcon, PlayIcon, RobotIcon, TerminalIcon, XIcon } from "./icons";
+import { CheckIcon, GoIcon, PlayIcon, ReadIcon, RobotIcon, TerminalIcon, XIcon } from "./icons";
+import { AnswerReader } from "./AnswerReader";
+import { CopyButton } from "./CopyButton";
 import { Markdown } from "./Markdown";
 import { ChangesSection, DiffView } from "./Changes";
 import { ContextBar } from "./ContextBar";
@@ -33,6 +35,9 @@ type Props = { detail: OpenDetail; fallback: SessionView | null; store: WarRoomS
 /** Session preview: what you asked, what it answered and what it has been doing. */
 export function DetailPanel({ detail, fallback, store, now }: Props) {
   const s = detail.data?.session ?? fallback;
+
+  const [reading, setReading] = useState(false);
+  useEffect(() => setReading(false), [detail.id]);
 
   const inAgent = detail.agent != null;
   const hasDiff = detail.diff != null;
@@ -85,7 +90,7 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
             {extraActivity(s)}
           </p>
         )}
-        <Actions s={s} store={store} />
+        <Actions s={s} store={store} onRead={s.last_reply ? () => setReading(true) : null} />
       </header>
 
       <div className="detail-body">
@@ -115,6 +120,13 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
           </section>
         )}
 
+        {s.last_reply && (
+          <section>
+            <SectionHead title={copy.detail.lastReply} onRead={() => setReading(true)} />
+            <Collapsible text={s.last_reply} lines={18} onLink={onLink} />
+          </section>
+        )}
+
         {s.usage.total_tokens > 0 && (
           <section>
             <h3>{copy.detail.usage}</h3>
@@ -141,13 +153,6 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
         )}
 
         <ChangesSection detail={detail} store={store} now={now} />
-
-        {s.last_reply && (
-          <section>
-            <h3>{copy.detail.lastReply}</h3>
-            <Markdown text={s.last_reply} onLink={onLink} />
-          </section>
-        )}
 
         {s.skills.length > 0 && (
           <section>
@@ -203,6 +208,15 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
         </footer>
       )}
       <DiffView detail={detail} store={store} />
+      {reading && s.last_reply && (
+        <AnswerReader
+          heading={copy.detail.finalAnswer}
+          title={s.title ?? deskName(s)}
+          text={s.last_reply}
+          onLink={onLink}
+          onClose={() => setReading(false)}
+        />
+      )}
     </aside>
   );
 }
@@ -218,7 +232,9 @@ type SubagentProps = {
 
 /** Subagent preview, inside its session panel. */
 function SubagentPanel({ session: s, agent, preview, store, now, onLink }: SubagentProps) {
+  const [reading, setReading] = useState(false);
   const state = agent?.running ? "working" : "offline";
+  const replyTitle = agent?.running ? copy.subagent.lastReply : copy.subagent.result;
   return (
     <aside className="detail" data-attention={state} aria-label={copy.subagent.label(agent ? agentName(agent) : "")}>
       <header className="detail-head">
@@ -268,8 +284,8 @@ function SubagentPanel({ session: s, agent, preview, store, now, onLink }: Subag
             )}
             {preview.last_reply && (
               <section>
-                <h3>{agent?.running ? copy.subagent.lastReply : copy.subagent.result}</h3>
-                <Markdown text={preview.last_reply} onLink={onLink} />
+                <SectionHead title={replyTitle} onRead={() => setReading(true)} />
+                <Collapsible text={preview.last_reply} lines={18} onLink={onLink} />
               </section>
             )}
             <section>
@@ -283,11 +299,32 @@ function SubagentPanel({ session: s, agent, preview, store, now, onLink }: Subag
           </>
         )}
       </div>
+      {reading && preview?.last_reply && (
+        <AnswerReader
+          heading={replyTitle}
+          title={agent ? agentName(agent) : copy.subagent.title}
+          text={preview.last_reply}
+          onLink={onLink}
+          onClose={() => setReading(false)}
+        />
+      )}
     </aside>
   );
 }
 
-function Actions({ s, store }: { s: SessionView; store: WarRoomStore }) {
+/** A section title with a button that opens its text at reading size. */
+function SectionHead({ title, onRead }: { title: string; onRead: () => void }) {
+  return (
+    <div className="section-head">
+      <h3>{title}</h3>
+      <button className="ghost small" onClick={onRead} title={copy.detail.readFull}>
+        <ReadIcon size={13} /> {copy.detail.readAnswer}
+      </button>
+    </div>
+  );
+}
+
+function Actions({ s, store, onRead }: { s: SessionView; store: WarRoomStore; onRead: (() => void) | null }) {
   return (
     <div className="detail-actions">
       {s.alive && (
@@ -307,6 +344,11 @@ function Actions({ s, store }: { s: SessionView; store: WarRoomStore }) {
           </button>
           <button onClick={() => store.resume(s, "warp")}>{copy.detail.resumeInWarp}</button>
         </>
+      )}
+      {onRead && (
+        <button className="read-answer" onClick={onRead} title={copy.detail.readFull}>
+          <ReadIcon size={14} /> {copy.detail.readAnswer}
+        </button>
       )}
       {s.attention === "finished" && (
         <button onClick={() => store.acknowledge(s)}>
@@ -427,24 +469,6 @@ function Collapsible({ text, lines, plain, onLink }: { text: string; lines: numb
         </button>
       )}
     </div>
-  );
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      className="icon"
-      title={copy.detail.copy}
-      onClick={() =>
-        void navigator.clipboard.writeText(text).then(() => {
-          setDone(true);
-          setTimeout(() => setDone(false), 1200);
-        })
-      }
-    >
-      {done ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
-    </button>
   );
 }
 

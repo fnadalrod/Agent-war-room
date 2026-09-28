@@ -3,7 +3,7 @@ import type { WarRoomStore } from "../../application/warRoomStore";
 import { agentName, deskName, money, providerName, tokenCount, unpriced, usageLabel, type WarRoomView } from "../../domain/attention";
 import { copy } from "../../domain/copy";
 import { type Hit, type Office, type Point, type Zone, cabinetAtPoint, deskAtPoint, layoutOffice, pixelScale } from "./office";
-import { miniFeet, paintOffice } from "./paint";
+import { paintOffice, subagentOf } from "./paint";
 import { type Actor, goals, step } from "./sim";
 
 type Props = {
@@ -29,19 +29,18 @@ function sceneHit(office: Office, actors: Map<string, Actor>, p: Point): SceneHi
 }
 
 function hitTest(office: Office, actors: Map<string, Actor>, p: Point): Hit | null {
-  for (const zone of office.zones) {
-    for (const d of zone.desks) {
-      const i = d.session.subagents.slice(0, d.slots.length).findIndex((_, n) => {
-        const f = miniFeet(d, n);
-        return p.x >= f.x - 4 && p.x <= f.x + 4 && p.y >= f.y - 11 && p.y <= f.y + 1;
-      });
-      if (i >= 0) return { session: d.session, agent: d.session.subagents[i] };
-    }
+  const sessionOf = (id: string) => office.zones.flatMap((z) => z.desks).find((d) => d.session.id === id)?.session;
+  for (const actor of actors.values()) {
+    if (actor.owner == null || !(p.x >= actor.x - 4 && p.x <= actor.x + 4 && p.y >= actor.y - 11 && p.y <= actor.y + 1)) continue;
+    const session = sessionOf(actor.owner);
+    const agent = session && subagentOf(session, actor);
+    if (session && agent) return { session, agent };
   }
   for (const actor of actors.values()) {
+    if (actor.owner != null) continue;
     if (p.x >= actor.x - 7 && p.x <= actor.x + 6 && p.y >= actor.y - 19 && p.y <= actor.y + 1) {
-      const d = office.zones.flatMap((z) => z.desks).find((d) => d.session.id === actor.id);
-      if (d) return { session: d.session, agent: null };
+      const session = sessionOf(actor.id);
+      if (session) return { session, agent: null };
     }
   }
   const d = deskAtPoint(office, p);
@@ -84,8 +83,8 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
     ? `${tokenCount(view.today.total_tokens).toUpperCase()}${unpriced(view.today) ? "" : ` ${money(view.today.cost_usd)}`}`
     : null;
   // Live state for the paint loop, so it is not restarted on every render.
-  const live = useRef({ office, selectedId, selectedAgent, alerts, today, hovered: null as Hit | null, cabinet: null as string | null });
-  live.current = { office, selectedId, selectedAgent, alerts, today, hovered, cabinet: hoveredZone?.room.repo_id ?? null };
+  const live = useRef({ office, scale, selectedId, selectedAgent, alerts, today, hovered: null as Hit | null, cabinet: null as string | null });
+  live.current = { office, scale, selectedId, selectedAgent, alerts, today, hovered, cabinet: hoveredZone?.room.repo_id ?? null };
 
   useEffect(() => {
     const el = box.current;
@@ -108,19 +107,23 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
       const c = canvas.current;
       const ctx = c?.getContext("2d");
       if (!c || !ctx) return;
-      const { office, selectedId, selectedAgent, hovered, alerts, today, cabinet } = live.current;
+      const { office, scale, selectedId, selectedAgent, hovered, alerts, today, cabinet } = live.current;
       // Agents already there when the room opens are in place; later ones come through the door.
       // A new width moves every desk: re-seat everyone rather than have them all walk.
       const relaid = laidOutFor !== office.width;
       laidOutFor = office.width;
       if (relaid) actors.current.clear();
       step(actors.current, office, goals(office, Date.now()), dt, !relaid);
-      if (c.width !== office.width || c.height !== office.height) {
-        c.width = office.width;
-        c.height = office.height;
+      // One canvas pixel per screen (CSS) pixel: the art is scaled up by the transform, and names
+      // can be drawn finer than the art.
+      if (c.width !== office.width * scale || c.height !== office.height * scale) {
+        c.width = office.width * scale;
+        c.height = office.height * scale;
       }
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
       paintOffice(ctx, office, {
         frame: Math.floor(frame++ / 2),
+        scale,
         now: new Date(),
         selected: selectedId,
         selectedAgent,

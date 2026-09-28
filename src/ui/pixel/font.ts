@@ -72,28 +72,33 @@ export function normalize(text: string): string {
     .join("");
 }
 
-export function textWidth(text: string): number {
-  return text.length === 0 ? 0 : text.length * ADVANCE - 1;
+/** Width in logical pixels; `px` is the size of a font pixel (1, or smaller for fine text). */
+export function textWidth(text: string, px = 1): number {
+  return text.length === 0 ? 0 : (text.length * ADVANCE - 1) * px;
 }
 
 /** Truncates to `maxWidth` pixels with a trailing "." if it does not fit. */
-export function fit(text: string, maxWidth: number): string {
+export function fit(text: string, maxWidth: number, px = 1): string {
   const t = normalize(text);
-  const max = Math.floor((maxWidth + 1) / ADVANCE);
+  const max = Math.floor((maxWidth / px + 1) / ADVANCE);
   return t.length <= max ? t : `${t.slice(0, Math.max(0, max - 1))}.`;
 }
 
-/** Draws text (normalized here) at logical coordinates. */
-export function drawText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string) {
+/**
+ * Draws text (normalized here) at logical coordinates. With `px` < 1 the glyphs are finer than the
+ * art: the canvas must be scaled so that `px` is a whole number of screen pixels.
+ */
+export function drawText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string, px = 1) {
   ctx.fillStyle = color;
   let cx = Math.round(x);
+  const top = Math.round(y);
   for (const ch of normalize(text)) {
     const rows = GLYPHS[ch];
     for (let r = 0; r < GLYPH_H; r++) {
       for (let c = 0; c < GLYPH_W; c++) {
-        if (rows[r] & (1 << (GLYPH_W - 1 - c))) ctx.fillRect(cx + c, Math.round(y) + r, 1, 1);
+        if (rows[r] & (1 << (GLYPH_W - 1 - c))) ctx.fillRect(cx + c * px, top + r * px, px, px);
       }
     }
-    cx += ADVANCE;
+    cx += ADVANCE * px;
   }
 }

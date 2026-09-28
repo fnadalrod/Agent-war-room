@@ -137,3 +137,10 @@ export const FilterIcon = (p: IconProps) => (
     <path d="M3 5h18l-7 9v6l-4-2v-4L3 5Z" />
   </Svg>
 );
+
+export const ReadIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5v-13Z" />
+    <path d="M20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5v-13Z" />
+  </Svg>
+);

@@ -3,7 +3,7 @@
 //   npm run shot -- <out-dir> [width] [lang]     (lang: en, es…; default en)
 //
 // Builds nothing: run `npm run build` first if the source changed (npm run shot does it for you).
-// Writes classic.png (full page), detail.png, changes.png, diff.png, subagent.png, filtered.png,
+// Writes classic.png (full page), detail.png, reader.png, changes.png, diff.png, subagent.png, filtered.png,
 // agents.png, pixel.png and pixel-later.png to <out-dir>.
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
@@ -59,6 +59,13 @@ try {
   await page.locator(".commit").first().click();
   await shot("diff");
   await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  // A finished session's answer at reading size; Esc closes only the reader, then the panel.
+  await page.getByText("Document the test bench").first().click();
+  await page.locator(".read-answer").click();
+  await shot("reader");
+  await page.keyboard.press("Escape");
+  await page.locator(".detail").waitFor({ timeout: 2000 });
   await page.keyboard.press("Escape");
   // Filters start folded.
   const toggle = page.locator(".filter-toggle");

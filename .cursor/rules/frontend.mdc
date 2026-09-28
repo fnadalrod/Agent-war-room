@@ -37,8 +37,10 @@ alwaysApply: false
 - Styling: one `ui/styles.css` on tokens. `--c` = attention color via `data-attention`; `--k` = skill
   source color via `data-source`; amber `#f59e0b` = stalled. No CSS framework, no inline colors.
 - Links in agent Markdown never navigate the app window (`Markdown.tsx` → `openExternal`, http(s) only).
-- The detail panel is the one place for a session's depth: preview, usage, changes (on demand), skills,
-  subagents (clickable → subagent view, Esc goes back), timeline, diff overlay.
+- The detail panel is the one place for a session's depth: task, last reply, usage, changes (on
+  demand), skills, subagents (clickable → subagent view, Esc goes back), timeline, diff overlay. "Read
+  the answer" (header and the reply's section, also for a subagent's result) opens `AnswerReader`: the
+  Markdown at reading size over the whole window (portal), with copy; its Esc is caught first.
 
 ## Trigger table
 

@@ -16,4 +16,10 @@ describe("3×5 font", () => {
     expect(textWidth(fit("Fix the login", 23))).toBeLessThanOrEqual(23);
     expect(fit("OK", 23)).toBe("OK");
   });
+
+  it("fine text fits more letters in the same width", () => {
+    expect(textWidth("ABC", 0.5)).toBe(5.5);
+    expect(fit("Fix the login", 23, 0.5)).toBe("FIX THE LO.");
+    expect(textWidth(fit("Fix the login", 23, 0.5), 0.5)).toBeLessThanOrEqual(23);
+  });
 });

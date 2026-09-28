@@ -1,5 +1,5 @@
 // Factories for front-end tests.
-import type { AttentionView, RoomView, SessionView, WarRoomView } from "../domain/attention";
+import type { AttentionView, RoomView, SessionView, SubagentView, WarRoomView } from "../domain/attention";
 
 export function aSession(p: Partial<SessionView> = {}): SessionView {
   return {
@@ -36,6 +36,21 @@ export function aSession(p: Partial<SessionView> = {}): SessionView {
     in_warp: false,
     pty_id: null,
     can_approve: false,
+    ...p,
+  };
+}
+
+export function aSubagent(p: Partial<SubagentView> = {}): SubagentView {
+  return {
+    id: "a1",
+    kind: null,
+    description: null,
+    last_tool: null,
+    model: null,
+    effort: null,
+    running: true,
+    started_at: 0,
+    finished_at: null,
     ...p,
   };
 }

@@ -6,19 +6,26 @@ A top-down mission control in the spirit of pixel-agents: a screen wall at the f
 per repo with a bank of consoles (one per session), operators with headsets who walk between their
 console and the crew lounge. Classic and pixel views show the same state; the pixel one adds movement.
 
-- **Logical pixels.** The canvas is drawn at low resolution (office width = CSS width / scale, scale
-  2–4 from `pixelScale`) and scaled with `image-rendering: pixelated`. Integer rects only; no smoothing.
+- **Logical pixels.** The art is drawn in low-resolution logical pixels (office width = CSS width /
+  scale, scale 2–4 from `pixelScale`); the canvas has one pixel per CSS pixel and `setTransform(scale)`
+  blows the art up. Integer rects only; no smoothing. Names under the chairs use a finer font pixel
+  (`nameDot`: two CSS pixels, so half the art's size at scale 4) to fit twice the letters.
 - **`office.ts` is pure and tested**: 16 px tiles, `WALL_ROWS` of wall, zones packed in shelves and
   centered, each desk cell 3×3 tiles (console row, seat row, aisle). A repo with more than
   `FOLD_AFTER` sessions keeps consoles only for live ones; closed ones go into a cabinet ("+N",
   click → classic view filtered to that repo). Lounge along the bottom: furniture on its top row,
   spots in front of it, on the sofas, and chatting pairs in mingle rows it adds until every idle agent
-  has a spot. Door at the top left, `walkable` grid and 4-way BFS `findPath`. Subagents stand in fixed `slots` beside the chair and in the aisle corners
-  (`miniFeet`), so they can be clicked.
+  has a spot. Door at the top left, `walkable` grid and 4-way BFS `findPath`. Chairs are not walkable
+  (only a goal), so nobody walks through a seated agent. Each desk has a ring of `slots` round the
+  chair (left, aisle corners, right) for its subagents.
 - **`sim.ts` is pure and tested**: `goals()` says where each agent wants to be (working / needs you /
   finished / stuck → its seat; idle → a lounge spot that changes every ~15–23 s; closed → no agent),
   `step()` walks actors there at 3 tiles/s. New agents come in through the door, gone ones walk out.
-  On the first frame and on a new width the scene re-seats everyone instead (no parade).
+  **Running subagents are actors too** (`subagentKey`, `owner` = their session): they stand up from
+  their agent's chair, stand spread over the ring and take a step round it every 5–8 s; finished ones
+  (or those of a closed session) have no goal, so they walk out through the door. Finished subagents
+  are only in the detail panel. On the first frame and on a new width the scene re-seats everyone
+  instead (no parade).
 - **`sprites.ts`**: 12×17 chibi agents as pixel maps (front, back, side, walk frames), seated from
   behind with a headset, waving (hand up beside the head, part of the sprite), lounging, and a 7×9
   mini. Arms hang inside the silhouette: nothing may stick out of the torso's outline
@@ -36,6 +43,6 @@ console and the crew lounge. Classic and pixel views show the same state; the pi
 - **`font.ts`** is a 3×5 bitmap font: uppercase, no accents, unknown glyphs → "?". Add glyphs when
   copy needs them.
 - 20 fps; the loop reads live state from a ref and is never restarted. Hit test: subagent, then the
-  agent wherever it is, then the desk cell.
+  agent wherever it is (both where their actor is), then the desk cell.
 - Always check with screenshots (`npm run shot` takes `pixel` and, 2.5 s later, `pixel-later`):
   overlap, depth and colour bugs only show up there.

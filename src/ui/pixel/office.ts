@@ -24,7 +24,7 @@ export type Desk = {
   desk: Rect;
   /** Where its agent sits (tile). */
   seat: Point;
-  /** Around the chair, for subagents (tiles). */
+  /** A ring of tiles around the chair where running subagents stand, in walking order. */
   slots: Point[];
   /** Clickable area of the whole cell (pixels). */
   cell: Rect;
@@ -129,6 +129,8 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
     for (const d of zone.desks) {
       const deskRow = d.seat.y - 1;
       for (let c = d.seat.x - 1; c <= d.seat.x + 1; c++) block(c, deskRow);
+      // A chair is a goal, never a corridor: nobody walks through a seated agent.
+      block(d.seat.x, d.seat.y);
     }
     if (zone.cabinet) block(zone.cabinet.x, zone.cabinet.y);
   }
@@ -157,12 +159,12 @@ function deskAt(session: SessionView, cx: number, cy: number): Desk {
     session,
     desk: { x: cx * TILE + 6, y: cy * TILE + 2, w: 3 * TILE - 12, h: TILE - 2 },
     seat,
-    // Left and right of the chair, then the aisle corners (the name sits in the middle).
+    // A ring around the chair: left of it, the aisle corners (the name sits in between), right.
     slots: [
       { x: cx, y: cy + 1 },
-      { x: cx + 2, y: cy + 1 },
       { x: cx, y: cy + 2 },
       { x: cx + 2, y: cy + 2 },
+      { x: cx + 2, y: cy + 1 },
     ],
     cell: { x: cx * TILE, y: cy * TILE - 6, w: CELL_W * TILE, h: CELL_H * TILE + 6 },
   };
