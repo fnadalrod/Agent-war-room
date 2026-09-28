@@ -67,7 +67,10 @@ try {
     await chip.click();
   }
   await page.locator(".segmented button").nth(1).click();
-  await shot("pixel");
+  await shot("pixel", true);
+  // A few seconds later, to see agents on the move.
+  await page.waitForTimeout(2500);
+  await shot("pixel-later", true);
   await page.locator(".segmented button").nth(0).click();
   await browser.close();
 } finally {

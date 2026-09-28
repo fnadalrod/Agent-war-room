@@ -1,9 +1,11 @@
-// Pixel-art painting of the room. Logical coordinates; the canvas is scaled with `pixelated`.
-import type { AttentionView, SessionView } from "../../domain/attention";
+// Pixel-art painting of the office. Logical coordinates; the canvas is scaled with `pixelated`.
+import type { AttentionView, SessionView, SubagentView } from "../../domain/attention";
 import { deskName } from "../../domain/attention";
 import { copy } from "../../domain/copy";
 import { drawText, fit, textWidth } from "./font";
-import { type Bay, type DeskSpot, DRONE_H, DRONE_W, type Scene, WALL_H } from "./layout";
+import { type Desk, type Office, type Prop, type Rect, TILE, WALL_ROWS, feetOf } from "./office";
+import { type Actor, hash } from "./sim";
+import { MINI, drawSprite, lounging, palette, seated, body } from "./sprites";
 
 export const COLOR: Record<AttentionView, string> = {
   needs_you: "#f25555",
@@ -12,44 +14,24 @@ export const COLOR: Record<AttentionView, string> = {
   idle: "#93a1b8",
   offline: "#56637a",
 };
-
 /** Working but silent for too long: amber, between "working" and "needs you". */
 const STALLED = "#f59e0b";
 
-const SCREEN_BG: Record<AttentionView, string> = {
-  needs_you: "#450a0a",
-  finished: "#082f49",
-  working: "#052e16",
-  idle: "#111827",
-  offline: "#020617",
-};
+const WOOD = { base: "#8a6444", dark: "#7f5c3e", light: "#946c4a", seam: "#6e4f34" };
+const WALL = { face: "#3a4063", light: "#4a5178", trim: "#262a42", base: "#2c3150" };
+const RUGS = ["#4b5d8a", "#6a4c7d", "#3f6f63", "#7a5a3a", "#4e6b8f", "#7d4f55"];
 
-const SKIN = ["#f1c7a0", "#e0a97d", "#c68a5e", "#8d5a3b", "#5c3a26"];
-const HAIR = ["#2b1b0e", "#6b3e1f", "#d9a441", "#1f1f1f", "#8b2e2e", "#e8e1d0", "#4c1d95"];
-const SHIRT = ["#3b82f6", "#a855f7", "#f97316", "#14b8a6", "#e11d48", "#84cc16", "#eab308"];
-
-export type Paint = {
+export type PaintState = {
   frame: number;
+  now: Date;
   selected: string | null;
   selectedAgent: string | null;
   hovered: string | null;
   hoveredAgent: string | null;
-  now: Date;
-  /** Titles of what needs you, for the main screen ticker. */
+  /** Titles of what needs you, for the wall board ticker. */
   alerts: string[];
+  actors: Map<string, Actor>;
 };
-
-function hash(text: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
-  return h >>> 0;
-}
-
-/** Seeded stable pseudo-random (so decoration does not jitter between frames). */
-function rand(seed: number): number {
-  const x = Math.sin(seed * 12.9898) * 43758.5453;
-  return x - Math.floor(x);
-}
 
 function rect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string) {
   ctx.fillStyle = color;
@@ -70,416 +52,427 @@ function withAlpha(ctx: CanvasRenderingContext2D, alpha: number, draw: () => voi
   ctx.restore();
 }
 
-/** Stepped halo around something glowing. */
-function glow(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string, strength: number) {
-  for (let i = 3; i >= 1; i--) {
-    withAlpha(ctx, (strength * (4 - i)) / 12, () => rect(ctx, x - i, y - i, w + 2 * i, h + 2 * i, color));
-  }
+/** Seeded stable pseudo-random, so decoration does not jitter between frames. */
+function rand(seed: number): number {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
 }
 
-/** Pool of light on the floor (ellipse approximated with stripes). */
-function floorLight(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, color: string, alpha: number) {
-  for (let dy = -ry; dy <= ry; dy++) {
-    const half = Math.round(rx * Math.sqrt(1 - (dy * dy) / (ry * ry)));
-    withAlpha(ctx, alpha * (1 - Math.abs(dy) / (ry + 1)), () => rect(ctx, cx - half, cy + dy, half * 2, 1, color));
-  }
-}
+const stalled = (s: SessionView) => s.attention === "working" && s.stalled_since != null;
 
-export function paintScene(ctx: CanvasRenderingContext2D, scene: Scene, p: Paint) {
+export function paintOffice(ctx: CanvasRenderingContext2D, office: Office, st: PaintState) {
   ctx.imageSmoothingEnabled = false;
-  paintFloor(ctx, scene);
-  paintWall(ctx, scene, p);
-  paintPlants(ctx, scene);
-  for (const bay of scene.bays) paintBay(ctx, bay, p);
-}
+  floor(ctx, office);
+  wall(ctx, office, st);
+  for (const zone of office.zones) rug(ctx, zone.rect, RUGS[hash(zone.room.repo_id) % RUGS.length], zone.room.repo_name, zone.desks.length);
+  loungeRug(ctx, office);
 
-function paintFloor(ctx: CanvasRenderingContext2D, scene: Scene) {
-  rect(ctx, 0, 0, scene.width, scene.height, "#070b14");
-  for (let y = WALL_H; y < scene.height; y += 8) {
-    for (let x = 0; x < scene.width; x += 8) {
-      rect(ctx, x, y, 8, 8, ((x + y) / 8) % 2 === 0 ? "#0a1120" : "#0c1426");
+  // Everything that stands on the floor, back to front.
+  const drawables: Array<{ y: number; draw: () => void }> = [];
+  const seatedAt = new Set<string>();
+  for (const actor of st.actors.values()) if (actor.pose === "desk") seatedAt.add(actor.id);
+  for (const zone of office.zones) {
+    for (const d of zone.desks) {
+      drawables.push({ y: d.desk.y + d.desk.h, draw: () => desk(ctx, d, st) });
+      const seatFeet = feetOf(d.seat);
+      drawables.push({ y: seatFeet.y + 0.5, draw: () => chair(ctx, seatFeet.x, seatFeet.y) });
+      drawables.push({ y: seatFeet.y + 0.6, draw: () => nameplate(ctx, d) });
+      d.session.subagents.slice(0, d.slots.length).forEach((agent, i) => {
+        const feet = miniFeet(d, i);
+        drawables.push({ y: feet.y, draw: () => mini(ctx, d.session, agent, feet.x, feet.y, st) });
+      });
     }
   }
-  // Wall shadow on the floor.
-  withAlpha(ctx, 0.35, () => rect(ctx, 0, WALL_H, scene.width, 3, "#000"));
+  for (const prop of office.props) {
+    const top = prop.y * TILE;
+    drawables.push({ y: top + 5, draw: () => propBack(ctx, prop) });
+    drawables.push({ y: top + TILE - 2.5, draw: () => propFront(ctx, prop) });
+  }
+  const sessions = new Map(office.zones.flatMap((z) => z.desks.map((d) => [d.session.id, d.session] as const)));
+  for (const actor of st.actors.values()) {
+    const session = sessions.get(actor.id);
+    drawables.push({ y: actor.y, draw: () => agent(ctx, actor, session, st) });
+  }
+  drawables.sort((a, b) => a.y - b.y);
+  for (const d of drawables) d.draw();
+
+  // On top of everything: what each agent is saying, and selection marks.
+  for (const actor of st.actors.values()) {
+    const session = sessions.get(actor.id);
+    if (session) bubble(ctx, actor, session, st.frame);
+  }
+  for (const zone of office.zones) for (const d of zone.desks) marks(ctx, d, st);
 }
 
-function paintWall(ctx: CanvasRenderingContext2D, scene: Scene, p: Paint) {
-  const w = scene.width;
-  rect(ctx, 0, 0, w, WALL_H, "#0f172a");
-  for (let x = 0; x < w; x += 24) rect(ctx, x, 0, 1, WALL_H - 4, "#131d33");
-  rect(ctx, 0, WALL_H - 4, w, 4, "#1e293b");
-  rect(ctx, 0, WALL_H - 1, w, 1, "#334155");
+// ---------- Room ----------
 
-  const sw = Math.min(200, w - 80);
-  const sx = Math.round((w - sw) / 2);
-
-  // Windows with the city at night, on both sides of the main screen.
-  const winW = 34;
-  const space = Math.floor((sx - 40) / (winW + 8));
-  for (let i = 0; i < Math.min(space, 3); i++) {
-    paintWindow(ctx, sx - 10 - (i + 1) * (winW + 8) + 8, 8, winW, 30, i * 7 + 1, p.frame);
-    paintWindow(ctx, sx + sw + 10 + i * (winW + 8), 8, winW, 30, i * 7 + 4, p.frame);
-  }
-
-  paintRack(ctx, 22, WALL_H - 38, p.frame, 1);
-  paintRack(ctx, w - 34, WALL_H - 38, p.frame, 2);
-  paintMainScreen(ctx, scene, sx, sw, p);
-
-  // Beacons: they spin when something needs you.
-  const alarm = scene.aggregate === "needs_you";
-  for (const bx of [6, w - 12]) {
-    const on = alarm && p.frame % 6 < 3;
-    rect(ctx, bx, 14, 6, 4, "#1e293b");
-    rect(ctx, bx + 1, 8, 4, 6, on ? "#f25555" : alarm ? "#7f1d1d" : "#1e293b");
-    if (on) glow(ctx, bx + 1, 8, 4, 6, "#f25555", 1.2);
-  }
-}
-
-function paintWindow(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, seed: number, frame: number) {
-  rect(ctx, x - 2, y - 2, w + 4, h + 4, "#1e293b");
-  rect(ctx, x, y, w, h, "#0b1a33");
-  rect(ctx, x, y, w, 8, "#0e2244");
-  // Moon or stars.
-  if (seed % 3 === 1) rect(ctx, x + w - 8, y + 3, 3, 3, "#e2e8f0");
-  for (let i = 0; i < 4; i++) rect(ctx, x + Math.floor(rand(seed + i) * w), y + 1 + Math.floor(rand(seed + i + 9) * 8), 1, 1, "#94a3b8");
-  // Buildings.
-  let bx = x;
-  let n = 0;
-  while (bx < x + w) {
-    const bw = 4 + Math.floor(rand(seed * 31 + n) * 6);
-    const bh = 8 + Math.floor(rand(seed * 17 + n) * (h - 12));
-    const width = Math.min(bw, x + w - bx);
-    rect(ctx, bx, y + h - bh, width, bh, n % 2 ? "#111b30" : "#16223b");
-    // Lit windows that flicker now and then.
-    for (let wy = y + h - bh + 2; wy < y + h - 1; wy += 3) {
-      for (let wx = bx + 1; wx < bx + width - 1; wx += 2) {
-        const r = rand(seed * 101 + wx * 7 + wy * 13);
-        const flicker = r > 0.93 && (frame + Math.floor(r * 50)) % 40 < 3;
-        if (r > 0.55 && !flicker) rect(ctx, wx, wy, 1, 1, r > 0.85 ? "#fde68a" : "#facc15");
-      }
+function floor(ctx: CanvasRenderingContext2D, office: Office) {
+  rect(ctx, 0, 0, office.width, office.height, WOOD.base);
+  for (let r = WALL_ROWS; r < office.rows; r++) {
+    for (let y = 0; y < TILE; y += 4) {
+      const py = r * TILE + y;
+      rect(ctx, 0, py + 3, office.width, 1, WOOD.dark);
+      // Staggered plank joints.
+      const offset = ((r * 4 + y) * 7) % 23;
+      for (let x = offset; x < office.width; x += 23 + ((r + y) % 3) * 4) rect(ctx, x, py, 1, 3, WOOD.seam);
+      if ((r + y) % 3 === 0) rect(ctx, 0, py, office.width, 1, WOOD.light);
     }
-    bx += bw;
-    n++;
   }
-  // Cross-shaped frame.
-  rect(ctx, x + Math.floor(w / 2), y, 1, h, "#1e293b");
-}
-
-function paintRack(ctx: CanvasRenderingContext2D, x: number, y: number, frame: number, seed: number) {
-  rect(ctx, x, y, 12, 34, "#111827");
-  frameRect(ctx, x, y, 12, 34, "#334155");
-  for (let i = 0; i < 7; i++) {
-    const ly = y + 3 + i * 4;
-    rect(ctx, x + 2, ly, 8, 2, "#1f2937");
-    const blink = rand(seed * 13 + i + Math.floor((frame + i * 3) / 4)) > 0.5;
-    rect(ctx, x + 8, ly, 1, 1, blink ? "#34d27a" : "#064e3b");
-    if (i % 3 === 0) rect(ctx, x + 6, ly, 1, 1, rand(seed + i + frame / 7) > 0.8 ? "#f59e0b" : "#78350f");
-  }
-}
-
-function paintMainScreen(ctx: CanvasRenderingContext2D, scene: Scene, sx: number, sw: number, p: Paint) {
-  const color = COLOR[scene.aggregate];
-  const sy = 6;
-  const sh = 36;
-  const alarm = scene.aggregate === "needs_you";
-  if (scene.aggregate !== "offline") glow(ctx, sx, sy, sw, sh, color, alarm && p.frame % 10 < 5 ? 1.4 : 0.7);
-  rect(ctx, sx - 3, sy - 3, sw + 6, sh + 6, "#334155");
-  rect(ctx, sx - 2, sy - 2, sw + 4, sh + 4, "#1e293b");
-  rect(ctx, sx, sy, sw, sh, SCREEN_BG[scene.aggregate]);
-
-  const title = copy.pixel.title;
-  drawText(ctx, title, sx + Math.round((sw - textWidth(title)) / 2), sy + 4, "#e7ecf5");
-
-  const counts = countOnWatch(scene);
-  const line =
-    [
-      counts.needs_you ? `! ${counts.needs_you}` : "",
-      counts.finished ? `OK ${counts.finished}` : "",
-      counts.working ? `>> ${counts.working}` : "",
-    ]
-      .filter(Boolean)
-      .join("   ") || copy.pixel.allQuiet;
-  drawText(ctx, line, sx + Math.round((sw - textWidth(line)) / 2), sy + 13, color);
-
-  // Ticker: what needs you scrolls by; otherwise, the time.
-  if (p.alerts.length > 0) {
-    const text = p.alerts.map((a) => `! ${a}`).join("     ");
-    const tw = textWidth(text);
-    const offset = (p.frame * 2) % (tw + sw);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(sx + 2, sy + 22, sw - 4, 7);
-    ctx.clip();
-    drawText(ctx, text, sx + sw - offset, sy + 23, "#fecaca");
-    ctx.restore();
-  } else {
-    const clock = p.now.toTimeString().slice(0, 5);
-    drawText(ctx, clock, sx + Math.round((sw - textWidth(clock)) / 2), sy + 23, "#64748b");
-  }
-
-  withAlpha(ctx, 0.15, () => {
-    for (let y = sy; y < sy + sh; y += 2) rect(ctx, sx, y, sw, 1, "#000");
+  // Side walls' shadow on the floor.
+  withAlpha(ctx, 0.25, () => {
+    rect(ctx, 0, WALL_ROWS * TILE, office.width, 3, "#000");
+    rect(ctx, 0, WALL_ROWS * TILE, 3, office.height, "#000");
+    rect(ctx, office.width - 3, WALL_ROWS * TILE, 3, office.height, "#000");
   });
 }
 
-function countOnWatch(scene: Scene): Partial<Record<AttentionView, number>> {
-  const counts: Partial<Record<AttentionView, number>> = {};
-  for (const bay of scene.bays) {
-    for (const d of bay.desks) {
-      if (d.session.archived || d.session.muted) continue;
-      counts[d.session.attention] = (counts[d.session.attention] ?? 0) + 1;
-    }
+function sky(hour: number): { top: string; bottom: string; night: boolean } {
+  if (hour >= 21 || hour < 6) return { top: "#0b1026", bottom: "#1c2350", night: true };
+  if (hour < 8) return { top: "#f6a86b", bottom: "#fbd49a", night: false };
+  if (hour >= 19) return { top: "#5b3f82", bottom: "#e0866b", night: false };
+  return { top: "#6fb7ef", bottom: "#b8e0fb", night: false };
+}
+
+function wall(ctx: CanvasRenderingContext2D, office: Office, st: PaintState) {
+  const h = WALL_ROWS * TILE;
+  rect(ctx, 0, 0, office.width, h, WALL.face);
+  rect(ctx, 0, 0, office.width, 3, WALL.trim);
+  for (let x = 0; x < office.width; x += 8) rect(ctx, x, 3, 1, h - 7, WALL.light);
+  rect(ctx, 0, h - 4, office.width, 4, WALL.base);
+
+  const { top, bottom, night } = sky(st.now.getHours());
+  const boardW = Math.min(150, office.width - 80);
+  const boardX = Math.floor((office.width - boardW) / 2);
+  // Windows left and right of the board.
+  for (let x = 40; x + 30 < office.width - 8; x += 44) {
+    if (x + 30 > boardX - 6 && x < boardX + boardW + 6) continue;
+    window_(ctx, x, 9, 30, 24, top, bottom, night, x);
   }
-  return counts;
+  door(ctx, office.door.x * TILE, h);
+  board(ctx, office, boardX, 6, boardW, h - 14, st);
+  clock(ctx, office.width - 20, 10, st.now);
 }
 
-function paintPlants(ctx: CanvasRenderingContext2D, scene: Scene) {
-  const y = scene.height - 16;
-  for (const x of [6, scene.width - 14]) {
-    rect(ctx, x + 1, y + 8, 7, 6, "#7c2d12");
-    rect(ctx, x, y + 8, 9, 2, "#9a3412");
-    rect(ctx, x + 3, y, 3, 8, "#15803d");
-    rect(ctx, x, y + 2, 3, 4, "#16a34a");
-    rect(ctx, x + 6, y + 1, 3, 5, "#16a34a");
-    rect(ctx, x + 2, y - 2, 2, 3, "#22c55e");
-    rect(ctx, x + 5, y - 3, 2, 3, "#22c55e");
+function window_(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, top: string, bottom: string, night: boolean, seed: number) {
+  rect(ctx, x - 2, y - 2, w + 4, h + 4, "#5c4631");
+  rect(ctx, x, y, w, Math.floor(h / 2), top);
+  rect(ctx, x, y + Math.floor(h / 2), w, Math.ceil(h / 2), bottom);
+  if (night) for (let i = 0; i < 5; i++) rect(ctx, x + Math.floor(rand(seed + i) * w), y + Math.floor(rand(seed * 3 + i) * 8), 1, 1, "#fff8d0");
+  else rect(ctx, x + 4 + (seed % 9), y + 4, 6, 2, "#ffffffcc");
+  // Skyline.
+  for (let bx = 0; bx < w; bx += 5) {
+    const bh = 4 + Math.floor(rand(seed + bx) * 9);
+    rect(ctx, x + bx, y + h - bh, 4, bh, night ? "#141a38" : "#5d7aa0");
+    if (night && rand(seed + bx * 7) > 0.5) rect(ctx, x + bx + 1, y + h - bh + 2, 1, 1, "#ffd76a");
   }
+  rect(ctx, x + Math.floor(w / 2), y, 1, h, "#5c4631");
+  rect(ctx, x, y + Math.floor(h / 2), w, 1, "#5c4631");
+  rect(ctx, x - 3, y + h + 2, w + 6, 2, "#6e5639");
 }
 
-function paintBay(ctx: CanvasRenderingContext2D, bay: Bay, p: Paint) {
-  const color = COLOR[bay.room.attention];
-  // Rug with a border.
-  rect(ctx, bay.x, bay.y, bay.w, bay.h, "#0f1629");
-  withAlpha(ctx, 0.08, () => rect(ctx, bay.x, bay.y, bay.w, bay.h, color));
-  frameRect(ctx, bay.x, bay.y, bay.w, bay.h, "#1e293b");
-  frameRect(ctx, bay.x + 2, bay.y + 2, bay.w - 4, bay.h - 4, "#141d33");
-  // Name plate.
-  const name = fit(bay.room.repo_name, bay.w - 16);
-  rect(ctx, bay.x + 4, bay.y + 2, textWidth(name) + 10, 8, "#1e293b");
-  rect(ctx, bay.x + 6, bay.y + 4, 3, 3, color);
-  drawText(ctx, name, bay.x + 11, bay.y + 3, "#cbd5e1");
-  for (const desk of bay.desks) paintDesk(ctx, desk, p);
+function door(ctx: CanvasRenderingContext2D, x: number, wallBottom: number) {
+  rect(ctx, x + 1, wallBottom - 30, 14, 30, "#5c4631");
+  rect(ctx, x + 3, wallBottom - 28, 10, 28, "#7a5a3c");
+  rect(ctx, x + 4, wallBottom - 26, 8, 10, "#8a6848");
+  rect(ctx, x + 11, wallBottom - 14, 1, 2, "#e8c872");
+  rect(ctx, x, wallBottom, 16, 4, "#4a3a5a");
 }
 
-function paintDesk(ctx: CanvasRenderingContext2D, d: DeskSpot, p: Paint) {
-  const s = d.session;
-  const x = d.x;
-  const y = d.y;
-  const lit = !s.archived && (s.attention === "working" || s.attention === "finished" || s.attention === "needs_you");
+function board(ctx: CanvasRenderingContext2D, office: Office, x: number, y: number, w: number, h: number, st: PaintState) {
+  rect(ctx, x - 2, y - 2, w + 4, h + 4, "#1b1f2e");
+  rect(ctx, x, y, w, h, "#0f1422");
+  drawText(ctx, copy.pixel.title, x + Math.floor((w - textWidth(copy.pixel.title)) / 2), y + 3, "#e5e7eb");
+  const counts = { needs_you: 0, finished: 0, working: 0 } as Record<string, number>;
+  for (const zone of office.zones) for (const d of zone.desks) if (!d.session.archived && d.session.attention in counts) counts[d.session.attention]++;
+  const parts: Array<[string, string]> = [
+    [`! ${counts.needs_you}`, COLOR.needs_you],
+    [`OK ${counts.finished}`, COLOR.finished],
+    [`>> ${counts.working}`, COLOR.working],
+  ];
+  const total = parts.reduce((sum, [t]) => sum + textWidth(t), 0) + 12 * (parts.length - 1);
+  let tx = x + Math.floor((w - total) / 2);
+  for (const [text, color] of parts) {
+    drawText(ctx, text, tx, y + 11, color);
+    tx += textWidth(text) + 12;
+  }
+  // Ticker of what needs you, or all quiet.
+  const ticker = st.alerts.length ? st.alerts.join("  ·  ") : copy.pixel.allQuiet;
+  const color = st.alerts.length ? (st.frame % 10 < 6 ? COLOR.needs_you : "#fca5a5") : "#64748b";
   ctx.save();
-  if (s.archived) ctx.globalAlpha = 0.35;
-  else if (s.muted) ctx.globalAlpha = 0.6;
-
-  if (p.selected === s.id) floorLight(ctx, x + 24, y + 40, 22, 9, "#facc15", 0.18);
-  if (lit) floorLight(ctx, x + 24, y + 38, 20, 6, COLOR[s.attention], s.attention === "needs_you" && p.frame % 8 < 4 ? 0.22 : 0.12);
-
-  paintMonitor(ctx, s, x + 10, y + 3, p.frame);
-  if (s.stalled_since != null && p.frame % 10 < 7) frameRect(ctx, x + 9, y + 2, 30, 21, STALLED);
-  // Desk: top with edge, front and legs.
-  rect(ctx, x + 4, y + 25, 40, 1, "#64748b");
-  rect(ctx, x + 4, y + 26, 40, 3, "#475569");
-  rect(ctx, x + 4, y + 29, 40, 3, "#334155");
-  rect(ctx, x + 6, y + 32, 2, 6, "#1e293b");
-  rect(ctx, x + 40, y + 32, 2, 6, "#1e293b");
-  // Keyboard and mouse.
-  rect(ctx, x + 17, y + 26, 14, 2, "#1e293b");
-  rect(ctx, x + 18, y + 26, 12, 1, "#273449");
-  rect(ctx, x + 34, y + 26, 2, 2, "#1e293b");
-  if (s.attention === "idle" && s.alive) paintMug(ctx, x + 7, y + 22, p.frame);
-
-  if (s.alive) paintOperator(ctx, s, x + 17, y + 29, p.frame);
-  else paintEmptyChair(ctx, x + 29, y + 36);
-  paintSubagents(ctx, d, p);
-
-  paintBubble(ctx, s, x + 36, y, p.frame);
-  const caption = s.title ?? deskName(s);
-  drawText(ctx, fit(caption, d.w - 4), x + 2, y + 50, s.alive ? "#94a3b8" : "#475569");
+  ctx.beginPath();
+  ctx.rect(x + 2, y + h - 8, w - 4, 7);
+  ctx.clip();
+  const tw = textWidth(ticker);
+  const tx0 = st.alerts.length && tw > w - 8 ? x + w - ((st.frame * 1.5) % (tw + w)) : x + Math.floor((w - tw) / 2);
+  drawText(ctx, ticker, tx0, y + h - 7, color);
   ctx.restore();
-
-  if (p.selected === s.id && !p.selectedAgent) {
-    frameRect(ctx, x, y, d.w, d.h - 1, p.frame % 4 < 2 ? "#facc15" : "#a16207");
-  } else if (p.hovered === s.id && !p.hoveredAgent) {
-    frameRect(ctx, x, y, d.w, d.h - 1, "#334155");
-  }
 }
 
-function paintMonitor(ctx: CanvasRenderingContext2D, s: SessionView, x: number, y: number, frame: number) {
-  const a = s.attention;
-  const color = COLOR[a];
-  const w = 28;
-  const h = 19;
-  const lit = a === "working" || a === "finished" || a === "needs_you";
-  const flashing = a === "needs_you" && frame % 8 < 4;
-  if (lit && !s.muted && !s.archived) glow(ctx, x, y, w, h, color, flashing ? 1.5 : 0.8);
+function clock(ctx: CanvasRenderingContext2D, x: number, y: number, now: Date) {
+  rect(ctx, x - 1, y - 1, 14, 14, "#1b1f2e");
+  rect(ctx, x, y, 12, 12, "#f1efe6");
+  const hand = (turn: number, len: number, color: string) => {
+    for (let i = 1; i <= len; i++) rect(ctx, x + 6 + Math.round(Math.sin(turn) * i), y + 6 - Math.round(Math.cos(turn) * i), 1, 1, color);
+  };
+  hand(((now.getHours() % 12) / 12) * 2 * Math.PI, 3, "#1b1f2e");
+  hand((now.getMinutes() / 60) * 2 * Math.PI, 5, "#1b1f2e");
+  hand((now.getSeconds() / 60) * 2 * Math.PI, 5, "#e11d48");
+}
 
-  rect(ctx, x, y, w, h, "#1e293b");
-  rect(ctx, x, y, w, 1, "#334155");
-  rect(ctx, x + 12, y + h, 4, 3, "#1e293b");
-  rect(ctx, x + 9, y + h + 2, 10, 1, "#334155");
-  const sx = x + 2;
-  const sy = y + 2;
-  const sw = w - 4;
-  const sh = h - 4;
-  rect(ctx, sx, sy, sw, sh, flashing ? "#7f1d1d" : SCREEN_BG[a]);
+function rug(ctx: CanvasRenderingContext2D, r: Rect, color: string, name: string, count: number) {
+  const x = r.x * TILE + 2;
+  const y = r.y * TILE + 4;
+  const w = r.w * TILE - 4;
+  const h = r.h * TILE - 6;
+  withAlpha(ctx, 0.55, () => rect(ctx, x, y, w, h, color));
+  withAlpha(ctx, 0.35, () => {
+    frameRect(ctx, x + 2, y + 2, w - 4, h - 4, "#ffffff");
+    for (let yy = y + 6; yy < y + h - 4; yy += 6) rect(ctx, x + 4, yy, w - 8, 1, "#00000055");
+  });
+  // Name plaque, hanging over the rug's top edge (the monitors stand just below).
+  const label = fit(`${name.toUpperCase()} ${count}`, w - 10);
+  const lw = textWidth(label) + 8;
+  rect(ctx, x + 3, y - 8, lw, 9, "#1b1f2e");
+  rect(ctx, x + 3, y - 8, 2, 9, color);
+  drawText(ctx, label, x + 8, y - 6, "#e5e7eb");
+}
 
+function loungeRug(ctx: CanvasRenderingContext2D, office: Office) {
+  // Under the furniture row too, which stands on the rug's back edge.
+  const r = office.lounge;
+  const y = r.y * TILE - 10;
+  const h = r.h * TILE + 8;
+  withAlpha(ctx, 0.4, () => rect(ctx, r.x * TILE + 6, y, r.w * TILE - 12, h, "#3f6f63"));
+  withAlpha(ctx, 0.3, () => frameRect(ctx, r.x * TILE + 8, y + 2, r.w * TILE - 16, h - 4, "#d9f2e6"));
+}
+
+// ---------- Furniture ----------
+
+function desk(ctx: CanvasRenderingContext2D, d: Desk, st: PaintState) {
+  const { x, y, w, h } = d.desk;
+  const s = d.session;
+  const dim = s.archived ? 0.45 : 1;
+  withAlpha(ctx, dim, () => {
+    // Shadow, top, front panel, legs.
+    withAlpha(ctx, 0.3, () => rect(ctx, x + 1, y + h, w, 2, "#000"));
+    rect(ctx, x, y, w, 6, "#b07b4f");
+    rect(ctx, x, y, w, 1, "#c99468");
+    rect(ctx, x, y + 6, w, h - 6, "#8a5c38");
+    rect(ctx, x + 1, y + h - 1, 2, 1, "#5a3a22");
+    rect(ctx, x + w - 3, y + h - 1, 2, 1, "#5a3a22");
+    // A drawer handle on the front panel.
+    rect(ctx, x + Math.floor(w / 2) - 3, y + 9, 6, 1, "#6b4428");
+    monitor(ctx, x + Math.floor(w / 2) - 8, y - 9, s, st.frame);
+    // Keyboard and something personal on the desk.
+    rect(ctx, x + Math.floor(w / 2) - 5, y + 3, 10, 2, "#2b2f3a");
+    const deco = hash(s.id) % 3;
+    if (deco === 0) mug(ctx, x + w - 6, y + 1);
+    else if (deco === 1) {
+      rect(ctx, x + 2, y + 1, 3, 3, "#6b4e2e");
+      rect(ctx, x + 1, y - 2, 5, 3, "#4f9d69");
+    } else rect(ctx, x + w - 7, y + 2, 5, 2, "#e8e1d0");
+  });
+}
+
+function mug(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  rect(ctx, x, y, 3, 3, "#e8e1d0");
+  rect(ctx, x + 3, y + 1, 1, 1, "#e8e1d0");
+}
+
+function monitor(ctx: CanvasRenderingContext2D, x: number, y: number, s: SessionView, frame: number) {
+  rect(ctx, x + 6, y + 10, 4, 2, "#2b2f3a");
+  rect(ctx, x, y, 16, 11, "#1f2330");
+  const sx = x + 1;
+  const sy = y + 1;
+  const bg = { needs_you: "#4a0f14", finished: "#0b2f4a", working: "#07301a", idle: "#141a2e", offline: "#050608" }[s.attention];
+  rect(ctx, sx, sy, 14, 9, stalled(s) ? "#3f2a05" : bg);
   const seed = hash(s.id);
-  if (a === "working") {
-    // Scrolling code: each line has its own length and moves over time.
-    for (let i = 0; i < 6; i++) {
-      const lineNo = i + Math.floor(frame / 2);
-      const len = 3 + Math.floor(rand(seed + lineNo) * (sw - 7));
-      const indent = Math.floor(rand(seed * 3 + lineNo) * 3) * 2;
-      const c = rand(seed + lineNo * 7) > 0.7 ? "#86efac" : color;
-      rect(ctx, sx + 2 + indent, sy + 1 + i * 2, Math.min(len, sw - 4 - indent), 1, c);
+  if (stalled(s)) {
+    drawText(ctx, "?", sx + 5, sy + 2, frame % 10 < 7 ? STALLED : "#78500a");
+  } else if (s.attention === "working") {
+    for (let i = 0; i < 4; i++) {
+      const len = 3 + Math.floor(rand(seed + i + Math.floor(frame / 3)) * 9);
+      rect(ctx, sx + 1 + (i % 2) * 2, sy + 1 + i * 2, len, 1, i === 3 ? "#a7f3c9" : "#34d27a");
     }
-    if (frame % 4 < 2) rect(ctx, sx + 2, sy + sh - 2, 2, 1, "#bbf7d0");
-  } else if (a === "needs_you") {
-    const fg = flashing ? "#fecaca" : color;
-    rect(ctx, sx + sw / 2 - 1, sy + 3, 2, 5, fg);
-    rect(ctx, sx + sw / 2 - 1, sy + 10, 2, 2, fg);
-  } else if (a === "finished") {
-    const cx = sx + sw / 2 - 4;
-    const cy = sy + 7;
-    for (let i = 0; i < 3; i++) rect(ctx, cx + i, cy + i, 2, 2, color);
-    for (let i = 0; i < 5; i++) rect(ctx, cx + 3 + i, cy + 2 - i, 2, 2, color);
-  } else if (a === "idle") {
-    // Screensaver: a bouncing dot.
-    const t = frame % 40;
-    const px = t < 20 ? t : 40 - t;
-    rect(ctx, sx + 2 + Math.floor((px / 20) * (sw - 6)), sy + 2 + Math.floor(Math.abs(Math.sin(frame / 5)) * (sh - 5)), 2, 2, "#475569");
-  } else {
-    rect(ctx, sx + sw - 5, sy + 2, 2, 1, "#1e293b");
-  }
-  withAlpha(ctx, 0.18, () => {
-    for (let yy = sy + 1; yy < sy + sh; yy += 2) rect(ctx, sx, yy, sw, 1, "#000");
-  });
-}
-
-function paintMug(ctx: CanvasRenderingContext2D, x: number, y: number, frame: number) {
-  rect(ctx, x, y, 4, 4, "#e2e8f0");
-  rect(ctx, x + 4, y + 1, 1, 2, "#e2e8f0");
-  rect(ctx, x + 1, y, 2, 1, "#78350f");
-  // Steam.
-  const t = frame % 12;
-  withAlpha(ctx, 0.6, () => {
-    rect(ctx, x + 1 + (t < 6 ? 0 : 1), y - 2 - (t % 3), 1, 1, "#cbd5e1");
-    rect(ctx, x + 2 + (t < 6 ? 1 : 0), y - 4 - (t % 2), 1, 1, "#94a3b8");
-  });
-}
-
-/** Operator seen from behind, facing the monitor. */
-function paintOperator(ctx: CanvasRenderingContext2D, s: SessionView, x: number, y: number, frame: number) {
-  const seed = hash(s.id);
-  const hair = HAIR[seed % HAIR.length];
-  const skin = SKIN[(seed >>> 4) % SKIN.length];
-  const shirt = SHIRT[(seed >>> 8) % SHIRT.length];
-  const headphones = (seed >>> 12) % 3 === 0;
-  const a = s.attention;
-  const typing = a === "working";
-  const waving = a === "needs_you";
-  const relaxed = a === "finished";
-  const bob = a === "idle" && frame % 20 < 10 ? 1 : 0;
-
-  // Chair base and wheels (painted first so they sit behind the torso).
-  rect(ctx, x + 6, y + 19, 2, 3, "#0f172a");
-  rect(ctx, x + 2, y + 22, 10, 1, "#0f172a");
-
-  // Head (from behind): hair, ears and nape.
-  const hy = y + bob - (relaxed ? 1 : 0);
-  rect(ctx, x + 3, hy, 8, 7, hair);
-  rect(ctx, x + 2, hy + 3, 1, 2, skin);
-  rect(ctx, x + 11, hy + 3, 1, 2, skin);
-  rect(ctx, x + 5, hy + 7, 4, 1, skin);
-  if (headphones) {
-    rect(ctx, x + 3, hy - 1, 8, 1, "#0f172a");
-    rect(ctx, x + 1, hy + 2, 2, 3, "#0f172a");
-    rect(ctx, x + 11, hy + 2, 2, 3, "#0f172a");
-  }
-  // Torso.
-  rect(ctx, x, y + 8, 14, 7, shirt);
-  withAlpha(ctx, 0.25, () => rect(ctx, x, y + 13, 14, 2, "#000"));
-  // Arms and hands.
-  if (typing) {
-    const up = frame % 2 === 0;
-    rect(ctx, x - 1, y + 7, 2, 4, shirt);
-    rect(ctx, x + 13, y + 7, 2, 4, shirt);
-    rect(ctx, x + 1, y - 2 + (up ? 0 : 1), 2, 1, skin);
-    rect(ctx, x + 11, y - 2 + (up ? 1 : 0), 2, 1, skin);
-  } else if (waving) {
-    const high = frame % 6 < 3;
-    rect(ctx, x + 13, y + (high ? -2 : 0), 2, 9, shirt);
-    rect(ctx, x + 13, y + (high ? -4 : -2), 2, 2, skin);
-    rect(ctx, x - 1, y + 9, 2, 4, shirt);
-  } else if (relaxed) {
-    // Hands behind the head.
-    rect(ctx, x + 1, y + 1, 2, 7, shirt);
-    rect(ctx, x + 11, y + 1, 2, 7, shirt);
-    rect(ctx, x + 2, y, 2, 2, skin);
-    rect(ctx, x + 10, y, 2, 2, skin);
-  } else {
-    rect(ctx, x - 1, y + 9, 2, 5, shirt);
-    rect(ctx, x + 13, y + 9, 2, 5, shirt);
-  }
-  // Chair back.
-  rect(ctx, x + 1, y + 13, 12, 6, "#1e293b");
-  rect(ctx, x + 1, y + 13, 12, 1, "#334155");
-}
-
-function paintEmptyChair(ctx: CanvasRenderingContext2D, x: number, y: number) {
-  rect(ctx, x, y, 12, 6, "#1e293b");
-  rect(ctx, x, y, 12, 1, "#334155");
-  rect(ctx, x + 5, y + 6, 2, 3, "#0f172a");
-  rect(ctx, x + 1, y + 9, 10, 1, "#0f172a");
-}
-
-/** Subagent drones in their slots by the desk: hovering while working, parked when finished. */
-function paintSubagents(ctx: CanvasRenderingContext2D, d: DeskSpot, p: Paint) {
-  d.drones.forEach((drone, i) => {
-    const a = drone.agent;
-    const bob = a.running && (p.frame + i * 3) % 8 < 4 ? -1 : 0;
-    const x = drone.x;
-    const y = drone.y + bob;
-    const eye = !a.running ? "#475569" : a.last_tool ? "#34d27a" : "#4cb8f5";
-    withAlpha(ctx, a.running ? 1 : 0.55, () => {
-      if (a.running) withAlpha(ctx, 0.3, () => rect(ctx, x + 1, drone.y + DRONE_H + 1, DRONE_W - 2, 1, "#000"));
-      rect(ctx, x, y + 1, DRONE_W, DRONE_H - 2, "#cbd5e1");
-      rect(ctx, x + 1, y, DRONE_W - 2, 1, "#e2e8f0");
-      rect(ctx, x, y + DRONE_H - 2, DRONE_W, 1, "#94a3b8");
-      rect(ctx, x + 1, y + 2, 2, 1, eye);
-      rect(ctx, x + 4, y + 2, 2, 1, eye);
-      // Rotor.
-      if (a.running) rect(ctx, x + (p.frame % 2 ? 0 : 4), y - 1, 3, 1, "#64748b");
-    });
-    if (p.selected === d.session.id && p.selectedAgent === a.id) {
-      frameRect(ctx, drone.x - 2, drone.y - 2, DRONE_W + 4, DRONE_H + 4, p.frame % 4 < 2 ? "#facc15" : "#a16207");
-    } else if (p.hovered === d.session.id && p.hoveredAgent === a.id) {
-      frameRect(ctx, drone.x - 2, drone.y - 2, DRONE_W + 4, DRONE_H + 4, "#94a3b8");
-    }
-  });
-  if (d.hiddenDrones > 0) drawText(ctx, `+${d.hiddenDrones}`, d.x + 40, d.y + 42, "#94a3b8");
-}
-
-function paintBubble(ctx: CanvasRenderingContext2D, s: SessionView, x: number, y: number, frame: number) {
-  let symbol: string | null = null;
-  let ink = COLOR[s.attention];
-  if (s.stalled_since != null) {
-    symbol = frame % 10 < 7 ? "?" : null;
-    ink = STALLED;
   } else if (s.attention === "needs_you") {
-    symbol = frame % 8 < 6 ? "!" : null;
-    ink = "#b91c1c";
+    if (frame % 8 < 5) drawText(ctx, "!", sx + 5, sy + 2, "#ff8a8a");
   } else if (s.attention === "finished") {
-    symbol = copy.pixel.finishedBubble;
-    ink = "#0369a1";
-  } else if (s.muted) {
-    symbol = copy.pixel.mutedBubble;
-    ink = "#64748b";
+    // A check mark.
+    for (const [cx, cy] of [[3, 4], [4, 5], [5, 6], [6, 5], [7, 4], [8, 3], [9, 2]]) rect(ctx, sx + cx, sy + cy, 1, 1, "#7dd3fc");
+  } else if (s.attention === "idle") {
+    const t = (frame + seed) % 40;
+    rect(ctx, sx + 1 + (t < 20 ? t / 2 : 20 - t / 2), sy + 3 + ((t >> 2) % 3), 2, 2, "#475569");
   }
-  if (!symbol) return;
-  const w = textWidth(symbol) + 4;
-  const bobY = s.attention === "needs_you" ? (frame % 4 < 2 ? 0 : -1) : 0;
-  rect(ctx, x, y + bobY, w, 9, "#f8fafc");
-  rect(ctx, x + 1, y + 9 + bobY, 2, 2, "#f8fafc");
-  drawText(ctx, symbol, x + 2, y + 2 + bobY, ink);
+  withAlpha(ctx, 0.25, () => rect(ctx, sx, sy, 14, 1, "#ffffff"));
+  if (s.attention === "needs_you" && !s.muted) withAlpha(ctx, frame % 8 < 5 ? 0.35 : 0.15, () => rect(ctx, x - 2, y - 2, 20, 15, COLOR.needs_you));
+}
+
+/** Where a subagent stands: aisle ones a little lower, clear of the name. */
+export function miniFeet(d: Desk, i: number) {
+  const feet = feetOf(d.slots[i]);
+  return d.slots[i].y > d.seat.y ? { x: feet.x, y: feet.y + 2 } : feet;
+}
+
+/** The session's name on the floor, under its chair. */
+function nameplate(ctx: CanvasRenderingContext2D, d: Desk) {
+  const s = d.session;
+  const name = fit((s.title ?? deskName(s)).toUpperCase(), d.cell.w - 6);
+  const feet = feetOf(d.seat);
+  const x = feet.x - Math.floor(textWidth(name) / 2);
+  withAlpha(ctx, 0.55, () => rect(ctx, x - 2, feet.y + 3, textWidth(name) + 3, 7, "#1b1523"));
+  drawText(ctx, name, x, feet.y + 4, s.attention === "offline" ? "#8b93a7" : "#e9dfcf");
+}
+
+function chair(ctx: CanvasRenderingContext2D, fx: number, fy: number) {
+  // Seen from behind: the backrest hides the seated agent's waist.
+  rect(ctx, fx - 5, fy - 6, 10, 5, "#2f3442");
+  rect(ctx, fx - 5, fy - 6, 10, 1, "#454b5e");
+  rect(ctx, fx - 1, fy - 1, 2, 2, "#1f232d");
+  rect(ctx, fx - 4, fy + 1, 2, 1, "#1f232d");
+  rect(ctx, fx + 2, fy + 1, 2, 1, "#1f232d");
+}
+
+function propBack(ctx: CanvasRenderingContext2D, prop: Prop) {
+  const x = prop.x * TILE;
+  const y = prop.y * TILE;
+  switch (prop.kind) {
+    case "sofa":
+      rect(ctx, x + 1, y - 2, 30, 9, "#7d3c4f");
+      rect(ctx, x + 1, y - 2, 30, 1, "#9b5066");
+      break;
+    case "shelf":
+      rect(ctx, x + 1, y - 14, 14, 28, "#5c4631");
+      for (let row = 0; row < 3; row++) {
+        for (let b = 0; b < 4; b++) rect(ctx, x + 3 + b * 3, y - 12 + row * 9, 2, 7, RUGS[(prop.x + row * 4 + b) % RUGS.length]);
+        rect(ctx, x + 2, y - 5 + row * 9, 12, 1, "#3e2f20");
+      }
+      break;
+    case "coffee":
+      rect(ctx, x + 2, y - 8, 12, 20, "#2f3442");
+      rect(ctx, x + 4, y - 5, 8, 4, "#111827");
+      rect(ctx, x + 5, y - 4, 2, 1, "#f87171");
+      rect(ctx, x + 6, y + 2, 4, 4, "#e8e1d0");
+      break;
+    case "cooler":
+      rect(ctx, x + 4, y - 12, 8, 9, "#8ecbf0");
+      rect(ctx, x + 5, y - 11, 2, 7, "#c8e9fb");
+      rect(ctx, x + 3, y - 3, 10, 15, "#e5e7eb");
+      break;
+    default:
+      break;
+  }
+}
+
+function propFront(ctx: CanvasRenderingContext2D, prop: Prop) {
+  const x = prop.x * TILE;
+  const y = prop.y * TILE;
+  switch (prop.kind) {
+    case "sofa":
+      rect(ctx, x, y + 6, 32, 7, "#8e4a5e");
+      rect(ctx, x + 2, y + 6, 13, 3, "#a65a70");
+      rect(ctx, x + 17, y + 6, 13, 3, "#a65a70");
+      rect(ctx, x, y + 2, 3, 11, "#6c3343");
+      rect(ctx, x + 29, y + 2, 3, 11, "#6c3343");
+      break;
+    case "plant": {
+      const leaf = ["#3f8f5a", "#56a870", "#2f6f45"];
+      for (let i = 0; i < 9; i++) rect(ctx, x + 3 + ((i * 5) % 10), y - 8 + ((i * 3) % 9), 3, 3, leaf[i % 3]);
+      rect(ctx, x + 4, y + 3, 8, 8, "#b0603a");
+      rect(ctx, x + 4, y + 3, 8, 1, "#c97a4f");
+      break;
+    }
+    case "table":
+      rect(ctx, x + 1, y + 2, 14, 6, "#9c7350");
+      rect(ctx, x + 1, y + 2, 14, 1, "#b58a63");
+      mug(ctx, x + 5, y + 3);
+      break;
+    default:
+      break;
+  }
+}
+
+// ---------- People ----------
+
+function agent(ctx: CanvasRenderingContext2D, actor: Actor, session: SessionView | undefined, st: PaintState) {
+  const seed = hash(actor.id);
+  const pal = palette(session?.provider ?? "claude", seed);
+  const x = Math.round(actor.x) - 5;
+  const typing = session?.attention === "working" && !stalled(session);
+  withAlpha(ctx, actor.leaving || session?.archived ? 0.5 : 1, () => {
+    // Soft shadow under the feet.
+    withAlpha(ctx, 0.25, () => rect(ctx, x + 1, Math.round(actor.y) - 1, 8, 2, "#000"));
+    if (actor.pose === "desk") {
+      const top = Math.round(actor.y) - 16;
+      drawSprite(ctx, seated(typing, Math.floor(st.frame / 2)), x, top, pal);
+      if (session?.attention === "needs_you") raisedHand(ctx, x + 9, top, pal, st.frame);
+    } else if (actor.pose === "sofa") {
+      drawSprite(ctx, lounging, x, Math.round(actor.y) - 15, pal);
+    } else {
+      const walking = actor.pose === "walk";
+      const bob = walking && Math.floor(actor.walked / 4) % 2 === 1 ? -1 : 0;
+      const top = Math.round(actor.y) - 14 + bob;
+      drawSprite(ctx, body(actor.dir, walking, Math.floor(actor.walked / 4)), x, top, pal, actor.dir === "left");
+      // Idle agents in the lounge sometimes hold a coffee.
+      if (!walking && seed % 2 === 0 && actor.dir === "down") mug(ctx, x + 8, top + 9);
+    }
+  });
+}
+
+function raisedHand(ctx: CanvasRenderingContext2D, x: number, top: number, pal: Record<string, string>, frame: number) {
+  const wave = frame % 6 < 3 ? 0 : 1;
+  rect(ctx, x + wave, top - 3, 2, 11, pal.k);
+  rect(ctx, x + wave, top - 2, 1, 9, pal.c);
+  rect(ctx, x + wave - 1, top - 5, 3, 3, pal.s);
+}
+
+function mini(ctx: CanvasRenderingContext2D, session: SessionView, agent: SubagentView, fx: number, fy: number, st: PaintState) {
+  const seed = hash(agent.id);
+  const pal = palette(session.provider, seed);
+  const bob = agent.running && (st.frame + seed) % 6 < 3 ? -1 : 0;
+  withAlpha(ctx, agent.running ? 1 : 0.55, () => {
+    withAlpha(ctx, 0.25, () => rect(ctx, fx - 3, fy - 1, 6, 1, "#000"));
+    drawSprite(ctx, MINI, fx - 3, fy - 8 + bob, pal);
+  });
+  if (st.selectedAgent === agent.id || st.hoveredAgent === agent.id) frameRect(ctx, fx - 5, fy - 10, 10, 11, st.selectedAgent === agent.id ? "#facc15" : "#ffffffaa");
+}
+
+/** What the agent is saying, above its head. */
+function bubble(ctx: CanvasRenderingContext2D, actor: Actor, s: SessionView, frame: number) {
+  if (actor.pose === "walk") return;
+  const top = Math.round(actor.y) - (actor.pose === "desk" ? 16 : 14) - 11;
+  const x = Math.round(actor.x) - 4;
+  let text: string | null = null;
+  let color = "#1b1523";
+  if (s.muted) [text, color] = ["ZZ", "#64748b"];
+  else if (s.attention === "needs_you") [text, color] = ["!", COLOR.needs_you];
+  else if (stalled(s)) [text, color] = ["?", STALLED];
+  else if (s.attention === "finished" && !s.archived) [text, color] = [copy.pixel.finishedBubble, "#0284c7"];
+  if (!text) return;
+  const bounce = s.attention === "needs_you" && frame % 6 < 3 ? -1 : 0;
+  const w = Math.max(9, textWidth(text) + 5);
+  const bx = x + 4 - Math.floor(w / 2) + 1;
+  const by = top + bounce;
+  rect(ctx, bx, by, w, 9, "#1b1523");
+  rect(ctx, bx + 1, by + 1, w - 2, 7, "#fdfcf7");
+  rect(ctx, x + 4, by + 9, 2, 1, "#1b1523");
+  rect(ctx, x + 4, by + 8, 2, 1, "#fdfcf7");
+  drawText(ctx, text, bx + Math.floor((w - textWidth(text)) / 2) + 1, by + 2, color);
+}
+
+function marks(ctx: CanvasRenderingContext2D, d: Desk, st: PaintState) {
+  const id = d.session.id;
+  if (st.selected !== id && st.hovered !== id) return;
+  const { x, y, w, h } = d.cell;
+  const color = st.selected === id ? (st.frame % 8 < 5 ? "#facc15" : "#fde68a") : "#ffffff99";
+  for (const [cx, cy, dx, dy] of [
+    [x, y, 1, 1],
+    [x + w - 1, y, -1, 1],
+    [x, y + h - 1, 1, -1],
+    [x + w - 1, y + h - 1, -1, -1],
+  ]) {
+    rect(ctx, cx + (dx < 0 ? -3 : 0), cy, 4, 1, color);
+    rect(ctx, cx, cy + (dy < 0 ? -3 : 0), 1, 4, color);
+  }
+  const more = d.session.subagents.length - d.slots.length;
+  if (more > 0) drawText(ctx, `+${more}`, x + w - 12, y + h - 7, "#e5e7eb");
 }
