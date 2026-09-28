@@ -34,23 +34,23 @@ describe("WarRoomStore", () => {
   it("navigates from a session to its subagent and back", async () => {
     const store = storeWith();
     await store.start();
-    store.openSubagent("b2c3d4e5-tintero-inky", "x1");
+    store.openSubagent("b2c3d4e5-harbor-pixie", "x1");
     await vi.waitFor(() => expect(store.snapshot().detail?.agent?.data?.first_prompt).toContain("Find usages"));
-    expect(store.snapshot().detail?.data?.session.id).toBe("b2c3d4e5-tintero-inky");
+    expect(store.snapshot().detail?.data?.session.id).toBe("b2c3d4e5-harbor-pixie");
     store.backToSession();
     expect(store.snapshot().detail?.agent).toBeNull();
-    expect(store.snapshot().detail?.id).toBe("b2c3d4e5-tintero-inky");
+    expect(store.snapshot().detail?.id).toBe("b2c3d4e5-harbor-pixie");
   });
 
   it("remembers the filter across launches", () => {
-    let saved: Filter | null = { ...NO_FILTER, repos: ["/code/kainban/.git"] };
+    let saved: Filter | null = { ...NO_FILTER, repos: ["/code/trellis/.git"] };
     const storage = { load: () => saved, save: (f: Filter) => void (saved = f) };
     const demo = createDemo();
     const store = new WarRoomStore(demo.rooms, demo.integration, demo.terminals, storage);
-    expect(store.snapshot().filter.repos).toEqual(["/code/kainban/.git"]);
+    expect(store.snapshot().filter.repos).toEqual(["/code/trellis/.git"]);
 
     store.toggleSkillFilter("close-task");
-    store.toggleRepoFilter("/code/kainban/.git");
+    store.toggleRepoFilter("/code/trellis/.git");
     expect(saved).toEqual({ ...NO_FILTER, skills: ["close-task"] });
     store.clearFilter();
     expect(saved).toEqual(NO_FILTER);
@@ -65,7 +65,7 @@ describe("WarRoomStore", () => {
   it("loads changes on demand and opens a commit diff over the preview", async () => {
     const store = storeWith();
     await store.start();
-    store.openDetail("a1b2c3d4-tintero-sync");
+    store.openDetail("a1b2c3d4-harbor-sync");
     expect(store.snapshot().detail?.changes).toBeNull();
     store.loadChanges();
     await vi.waitFor(() => expect(store.snapshot().detail?.changes?.data?.commits.length).toBeGreaterThan(0));

@@ -69,7 +69,7 @@ Priority: jump to the right window or pane.
 - **tmux:** selects the pane and focuses its client's terminal.
 - **KDE Plasma (X11 and Wayland):** a KWin script loaded over DBus looks for the window whose PID is in
   the agent's process chain. If several windows share the process, the title breaks the tie, weighting
-  whole-word matches higher (`Tintero` does not win on `Tintero3Repo`).
+  whole-word matches higher (`Harbor` does not win on `Harbor3Repo`).
 
 Writing into a session is only possible if it runs in an app terminal (PTY linked through
 `AWR_PTY_ID`) or in tmux.

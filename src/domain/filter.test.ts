@@ -12,11 +12,11 @@ const skill = (name: string, source: "project" | "personal" | "plugin" | "builti
 });
 
 const view = aView([
-  aRoom("tintero", [
+  aRoom("harbor", [
     aSession({ id: "t1", skills: [skill("close-task", "project", "agent")] }),
     aSession({ id: "t2", skills: [skill("claude-api", "builtin", "user")] }),
   ]),
-  aRoom("kainban", [aSession({ id: "k1" })]),
+  aRoom("trellis", [aSession({ id: "k1" })]),
 ]);
 
 describe("filters", () => {
@@ -26,8 +26,8 @@ describe("filters", () => {
   });
 
   it("filters by repo", () => {
-    const out = applyFilter(view, { ...NO_FILTER, repos: ["/code/kainban/.git"] });
-    expect(out.rooms.map((r) => r.repo_name)).toEqual(["kainban"]);
+    const out = applyFilter(view, { ...NO_FILTER, repos: ["/code/trellis/.git"] });
+    expect(out.rooms.map((r) => r.repo_name)).toEqual(["trellis"]);
   });
 
   it("filters by skill and drops rooms left empty", () => {
@@ -42,7 +42,7 @@ describe("filters", () => {
 
   it("offers the repos and skills present, with who launched them", () => {
     const { repos, skills } = filterOptions(view);
-    expect(repos.map((r) => r.name)).toEqual(["kainban", "tintero"]);
+    expect(repos.map((r) => r.name)).toEqual(["harbor", "trellis"]);
     expect(skills.map((s) => [s.name, s.byUser, s.byAgent])).toEqual([
       ["claude-api", true, false],
       ["close-task", false, true],

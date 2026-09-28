@@ -79,7 +79,7 @@ fn script(pids: &[u32], hints: &[String]) -> String {
         const rank = pids.indexOf(w.pid);
         if (rank < 0) continue;
         const caption = String(w.caption || "").toLowerCase();
-        // "Tintero" must not win on "Tintero3Repo": a whole-word match weighs ten times more.
+        // "Harbor" must not win on "Harbor3Repo": a whole-word match weighs ten times more.
         let bonus = 0;
         for (let i = 0; i < hints.length; i++) {{
             const weight = (hints.length - i) * 1000;
@@ -116,9 +116,9 @@ mod tests {
 
     #[test]
     fn script_embeds_pids_and_lowercased_hints_as_json() {
-        let s = script(&[10, 20], &["Tintero3Repo-wt-f1".into(), "".into(), "It's \"quoted\"".into()]);
+        let s = script(&[10, 20], &["Harbor3Repo-wt-f1".into(), "".into(), "It's \"quoted\"".into()]);
         assert!(s.contains("const pids = [10,20];"));
-        assert!(s.contains(r#"const hints = ["tintero3repo-wt-f1","it's \"quoted\""];"#));
+        assert!(s.contains(r#"const hints = ["harbor3repo-wt-f1","it's \"quoted\""];"#));
     }
 
     /// Runs the real script against a fake `workspace` with the captions of an IDE that has several
@@ -126,7 +126,7 @@ mod tests {
     #[test]
     fn picks_the_window_whose_caption_names_the_worktree() {
         const HARNESS: &str = r#"
-            const captions = ["TinteroBackend – Makefile", "Tintero3Repo – Commit: x.ts", "Tintero2Repo – .env", "Tintero – Commit: y.ts"];
+            const captions = ["HarborBackend – Makefile", "Harbor3Repo – Commit: x.ts", "Harbor2Repo – .env", "Harbor – Commit: y.ts"];
             let active = null;
             globalThis.workspace = { windowList: () => captions.map(caption => ({ pid: 5638, caption, normalWindow: true, desktops: [] })) };
             Object.defineProperty(workspace, "activeWindow", { set(w) { active = w; }, get() { return active; }, enumerable: true });
@@ -145,10 +145,10 @@ mod tests {
             child.stdin.take()?.write_all(script(&[5638], &hints).as_bytes()).ok()?;
             String::from_utf8(child.wait_with_output().ok()?.stdout).ok()
         };
-        let Some(tintero) = pick(&["Tintero", "Tintero"]) else { return };
-        assert_eq!(tintero, "Tintero – Commit: y.ts");
-        assert_eq!(pick(&["Tintero3Repo-wt-f1", "Tintero3Repo"]).unwrap(), "Tintero3Repo – Commit: x.ts");
-        assert_eq!(pick(&["Some title", "Tintero2Repo"]).unwrap(), "Tintero2Repo – .env");
+        let Some(harbor) = pick(&["Harbor", "Harbor"]) else { return };
+        assert_eq!(harbor, "Harbor – Commit: y.ts");
+        assert_eq!(pick(&["Harbor3Repo-wt-f1", "Harbor3Repo"]).unwrap(), "Harbor3Repo – Commit: x.ts");
+        assert_eq!(pick(&["Some title", "Harbor2Repo"]).unwrap(), "Harbor2Repo – .env");
     }
 }
 

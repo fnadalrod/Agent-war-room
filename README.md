@@ -313,4 +313,4 @@ Issues and pull requests are welcome.
 
 ## License
 
-See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

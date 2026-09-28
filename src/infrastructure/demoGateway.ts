@@ -133,19 +133,19 @@ function agent(id: string, kind: string, description: string, tool: string | nul
 function initialRooms(): RoomView[] {
   return [
     {
-      repo_id: "/code/tintero/.git",
-      repo_name: "Tintero",
+      repo_id: "/code/harbor/.git",
+      repo_name: "Harbor",
       attention: "needs_you",
       sessions: [
         session({
-          id: "a1b2c3d4-tintero-sync",
+          id: "a1b2c3d4-harbor-sync",
           attention: "needs_you",
           status_label: `${STATUS.asksPermission}: Bash · npm run e2e -- --grep sync`,
           title: "Fix offline sync",
           first_prompt:
             "Changes made offline are lost when the network comes back. Reproduce it with an e2e test and fix it without touching the database schema.",
           command: "claude --permission-mode default",
-          worktree_path: "/code/tintero",
+          worktree_path: "/code/harbor",
           can_approve: true,
           status_since: minutes(2),
           context_tokens: 312_000,
@@ -156,26 +156,26 @@ function initialRooms(): RoomView[] {
           ],
         }),
         session({
-          id: "b2c3d4e5-tintero-inky",
+          id: "b2c3d4e5-harbor-pixie",
           attention: "working",
           status_label: STATUS.thinking,
-          last_action: "Edit · inky-header.component.ts",
-          title: "Animated Inky header",
+          last_action: "Edit · pixie-header.component.ts",
+          title: "Animated Pixie header",
           skills: [{ name: "anthropic-skills:docx", source: "plugin", by_user: false, by_agent: true, count: 1, last_at: minutes(10) }],
-          worktree_path: "/code/Tintero3Repo-wt-f1",
-          branch: "feat/inky",
+          worktree_path: "/code/Harbor3Repo-wt-f1",
+          branch: "feat/pixie",
           is_linked_worktree: true,
           in_warp: true,
           context_tokens: 540_000,
           usage: usage(41_000_000, 19.8),
           subagents: [
-            agent("x1", "Explore", "Find usages of the header", "Grep · InkyHeader"),
+            agent("x1", "Explore", "Find usages of the header", "Grep · PixieHeader"),
             agent("x2", "general-purpose", "Review styles", "Read · header.scss", "claude-opus-5-5"),
             agent("x3", "Explore", "Component map", null, "claude-haiku-4-5", false),
           ],
         }),
         session({
-          id: "c3d4e5f6-tintero-docs",
+          id: "c3d4e5f6-harbor-docs",
           attention: "finished",
           status_label: STATUS.finished,
           title: "Document the test bench",
@@ -186,19 +186,19 @@ function initialRooms(): RoomView[] {
           first_prompt: "Document in docs/tasks how to rerun block V of the test bench.",
           command: "claude --resume c3d4e5f6",
           last_reply: DEMO_REPLY,
-          worktree_path: "/code/tintero",
+          worktree_path: "/code/harbor",
           status_since: minutes(6),
           model: "claude-sonnet-5",
           effort: "medium",
           usage: usage(9_800_000, 2.6),
         }),
         session({
-          id: "a9b8c7d6-tintero-i18n",
+          id: "a9b8c7d6-harbor-i18n",
           attention: "working",
           status_label: "Bash",
           last_action: "Bash · npm run build:i18n -- --watch",
           title: "Migrate i18n keys",
-          worktree_path: "/code/Tintero2Repo",
+          worktree_path: "/code/Harbor2Repo",
           branch: "chore/i18n",
           stalled_since: minutes(9),
           last_activity_at: minutes(9),
@@ -208,12 +208,12 @@ function initialRooms(): RoomView[] {
       ],
     },
     {
-      repo_id: "/code/kainban/.git",
-      repo_name: "Kainban",
+      repo_id: "/code/trellis/.git",
+      repo_name: "Trellis",
       attention: "working",
       sessions: [
         session({
-          id: "d4e5f6a7-kainban-roles",
+          id: "d4e5f6a7-trellis-roles",
           attention: "working",
           status_label: "Bash",
           last_action: "Bash · go test ./...",
@@ -221,17 +221,17 @@ function initialRooms(): RoomView[] {
           model: "claude-sonnet-5",
           effort: "medium",
           skills: [{ name: "run-epic", source: "project", by_user: true, by_agent: true, count: 2, last_at: minutes(2) }],
-          worktree_path: "/code/kainban",
+          worktree_path: "/code/trellis",
           tmux_pane: "%4",
           usage: usage(12_600_000, 3.4),
         }),
         session({
-          id: "k2k2k2k2-kainban-notify",
+          id: "k2k2k2k2-trellis-notify",
           attention: "working",
           status_label: STATUS.thinking,
           last_action: "Agent · Split the notifications epic",
           title: "Epic: in-app notifications",
-          worktree_path: "/code/kainban-wt-notify",
+          worktree_path: "/code/trellis-wt-notify",
           branch: "epic/notifications",
           is_linked_worktree: true,
           context_tokens: 880_000,
@@ -247,8 +247,8 @@ function initialRooms(): RoomView[] {
       ],
     },
     {
-      repo_id: "/code/git-pro-reviewer/.git",
-      repo_name: "git-pro-reviewer",
+      repo_id: "/code/pr-lens/.git",
+      repo_name: "pr-lens",
       attention: "finished",
       sessions: [
         session({
@@ -257,7 +257,7 @@ function initialRooms(): RoomView[] {
           status_label: STATUS.finished,
           title: "Review PR #42: diff viewer",
           last_reply: "## Review\n\n3 issues found, 1 blocking: the diff viewer drops the last hunk when the file has no trailing newline.",
-          worktree_path: "/code/git-pro-reviewer",
+          worktree_path: "/code/pr-lens",
           status_since: minutes(14),
           usage: usage(7_300_000, 3.0),
           skills: [{ name: "code-review", source: "builtin", by_user: true, by_agent: false, count: 1, last_at: minutes(25) }],
@@ -268,7 +268,7 @@ function initialRooms(): RoomView[] {
           status_label: STATUS.thinking,
           last_action: "Read · tauri.conf.json",
           title: "Upgrade Tauri plugins",
-          worktree_path: "/code/git-pro-reviewer",
+          worktree_path: "/code/pr-lens",
           model: "claude-sonnet-5",
           effort: "low",
           usage: usage(2_100_000, 0.4),
@@ -277,8 +277,8 @@ function initialRooms(): RoomView[] {
       ],
     },
     {
-      repo_id: "/code/TinteroBackend/.git",
-      repo_name: "TinteroBackend",
+      repo_id: "/code/HarborBackend/.git",
+      repo_name: "HarborBackend",
       attention: "needs_you",
       sessions: [
         session({
@@ -287,7 +287,7 @@ function initialRooms(): RoomView[] {
           status_label: STATUS.asksQuestion,
           title: "Sync conflicts strategy",
           last_action: "AskUserQuestion",
-          worktree_path: "/code/TinteroBackend",
+          worktree_path: "/code/HarborBackend",
           status_since: minutes(4),
           usage: usage(5_500_000, 2.2),
         }),
@@ -323,7 +323,7 @@ function initialRooms(): RoomView[] {
 }
 
 const DEMO_DIFF = `commit 3f9c2ab71e0d4c55a2e1b9f0c7d6e5a4b3c2d1e0
-Author:     Francisco <f@example.com>
+Author:     Alex <f@example.com>
 Date:       Sun Sep 28 01:12:00 2026 +0200
 
     fix(sync): keep offline edits when the socket reconnects
@@ -375,10 +375,10 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
   };
   const find = (id: string) => rooms.flatMap((r) => r.sessions).find((s) => s.id === id);
 
-  // The Kainban agent finishes after 12 s, so transitions show up without touching anything.
+  // The Trellis agent finishes after 12 s, so transitions show up without touching anything.
   setTimeout(
     () =>
-      update("d4e5f6a7-kainban-roles", {
+      update("d4e5f6a7-trellis-roles", {
         attention: "finished",
         status_label: STATUS.finished,
         status_since: Date.now(),
@@ -436,10 +436,10 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
           session_id: id,
           agent: a,
           first_prompt: `${a.description ?? "Task"}: find every usage and summarise where to change it.`,
-          last_reply: a.running ? null : "Found **12 components**:\n\n- `InkyHeader` in 4 pages\n- `ThemeToggle` in 2",
+          last_reply: a.running ? null : "Found **12 components**:\n\n- `PixieHeader` in 4 pages\n- `ThemeToggle` in 2",
           timeline: [
             { kind: "prompt", text: `${a.description ?? "Task"}: find every usage and summarise where to change it.`, at: minutes(3), model: null, effort: null },
-            { kind: "tool", text: "Grep · InkyHeader", at: minutes(3), model: a.model, effort: a.effort },
+            { kind: "tool", text: "Grep · PixieHeader", at: minutes(3), model: a.model, effort: a.effort },
             { kind: "tool", text: "Read · app.component.html", at: minutes(2), model: a.model, effort: a.effort },
             ...(a.running ? [] : [{ kind: "reply" as const, text: "Found **12 components**.", at: minutes(1), model: a.model, effort: a.effort }]),
           ],
@@ -463,8 +463,8 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
           { path: "docs/tasks/sync.md", edits: 1, written: false },
         ],
         commits: [
-          { hash: "3f9c2ab71e0d4c55", short: "3f9c2ab7", subject: "fix(sync): keep offline edits when the socket reconnects", author: "Francisco", at: minutes(3), files_changed: 2, insertions: 43, deletions: 6 },
-          { hash: "8d1e0f9a2b3c4d5e", short: "8d1e0f9a", subject: "test(sync): reproduce lost offline edits", author: "Francisco", at: minutes(25), files_changed: 1, insertions: 31, deletions: 0 },
+          { hash: "3f9c2ab71e0d4c55", short: "3f9c2ab7", subject: "fix(sync): keep offline edits when the socket reconnects", author: "Alex", at: minutes(3), files_changed: 2, insertions: 43, deletions: 6 },
+          { hash: "8d1e0f9a2b3c4d5e", short: "8d1e0f9a", subject: "test(sync): reproduce lost offline edits", author: "Alex", at: minutes(25), files_changed: 1, insertions: 31, deletions: 0 },
         ],
       }),
       commitDiff: async () => DEMO_DIFF,

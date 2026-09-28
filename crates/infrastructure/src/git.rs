@@ -66,7 +66,7 @@ fn git(cwd: &str, args: &[&str]) -> Option<String> {
     Some(text.trim_end().to_owned()).filter(|t| !t.is_empty())
 }
 
-/// `/code/Tintero3Repo/.git` → `Tintero3Repo`, also from any of its worktrees.
+/// `/code/Harbor3Repo/.git` → `Harbor3Repo`, also from any of its worktrees.
 fn repo_name(common_dir: &str, toplevel: &str) -> String {
     let common = Path::new(common_dir);
     let named = if common.file_name().is_some_and(|n| n == ".git") { common.parent() } else { Some(common) };
