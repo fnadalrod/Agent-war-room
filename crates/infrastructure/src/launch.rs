@@ -118,6 +118,9 @@ fn agent_command(request: &LaunchRequest) -> PortResult<String> {
     let (program, resume) = match request.provider {
         ProviderKind::Claude => ("claude", "claude --resume"),
         ProviderKind::Codex => ("codex", "codex resume"),
+        ProviderKind::Cursor => ("cursor-agent", "cursor-agent --resume"),
+        // Only runs inside its own app.
+        ProviderKind::Antigravity => return Err(PortError::Failed(locale::agent_not_launchable("Antigravity"))),
     };
     match &request.resume {
         None => Ok(program.into()),

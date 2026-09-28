@@ -1,6 +1,6 @@
 # Agent War Room — agent guide (single entry point)
 
-Tauri desktop app that watches coding-agent sessions (Claude Code and Codex) through hooks and routes your
+Tauri desktop app that watches coding-agent sessions (Claude Code, Codex, Cursor, Antigravity) through hooks and routes your
 attention: one screen per session, grouped by repo, lit when something needs you, finished or looks
 stuck. Linux/KDE first. Human docs: `README.md`. Decisions: `docs/adr/0001-architecture.md`.
 
@@ -45,7 +45,7 @@ Tool support and what each tool loads → `.agents/README.md`.
 | Add or change user-visible text, or a language | `i18n.mdc` |
 | Touch the pixel-art War Room | `frontend.mdc` → `frontend-pixel-art.md` |
 | Add a Tauri command/event, tray, notifications, packaging | `app-shell.mdc` (+`app-packaging.md`) |
-| Touch Codex support | `codex.mdc` (+`hooks-ingest.mdc`) |
+| Touch Codex, Cursor or Antigravity support | `codex.mdc` / `cursor.mdc` / `antigravity.mdc` (+`hooks-ingest.mdc`) |
 | Support another agent (Gemini, opencode…) | skill `add-provider` |
 | Write or run tests | `testing.mdc` (+`testing-e2e.md`) |
 | Finish and commit | skill `close-task` (subagent `awr-reviewer` for big diffs) |
@@ -60,6 +60,8 @@ All in `.cursor/rules/`. "+leaves" = router with a trigger table.
 - Sessions, status machine, attention, subagents, skills, stored events (`crates/domain/**`) → `domain-model.mdc`
 - Hook bridge, socket, shared hook protocol and installer, dialects (`crates/hook-bridge/**`, `crates/wire/**`, `ingress.rs`, `hooks.rs`, `hook_installer.rs`) → `hooks-ingest.mdc` (+leaves: approvals, Claude hooks reference)
 - Codex: hooks trust, rollouts, CODEX_HOME (`codex/**`) → `codex.mdc`
+- Cursor: its own hooks, Claude hooks it also runs, transcripts (`cursor/**`) → `cursor.mdc`
+- Antigravity: named hooks.json, events without names, step transcripts (`antigravity/**`) → `antigravity.mdc`
 - Claude transcripts, usage, cost, context window, shared JSONL reading (`claude/transcript.rs`, `claude/pricing.rs`, `jsonl.rs`) → `transcripts.mdc` (+leaves: JSONL format, usage and prices)
 - Go-to window, PTYs, launcher, typing, git, liveness (`desktop/**`, `pty.rs`, `launch.rs`, `git.rs`, `system.rs`) → `desktop.mdc` (+leaves: KWin, terminals)
 - Tauri shell: composition, commands/events, tray, notifications, `--next`, packaging (`src-tauri/**`) → `app-shell.mdc` (+leaf: packaging)

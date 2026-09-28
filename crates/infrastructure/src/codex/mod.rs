@@ -19,6 +19,8 @@ pub fn codex_home(home: &std::path::Path) -> std::path::PathBuf {
 /// once to review and trust the new hooks; until then it does not run them.
 pub const CODEX_HOOKS: HookSpec = HookSpec {
     provider: awr_domain::ProviderKind::Codex,
+    layout: crate::hook_installer::HookLayout::Grouped,
+    launchable: true,
     events: &[
         ("SessionStart", T),
         ("SessionEnd", 3),

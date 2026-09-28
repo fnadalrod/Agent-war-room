@@ -30,7 +30,7 @@ export function IntegrationBar({ integrations, busy, store }: Props) {
                 {copy.integration.installNote.beforePath} <code>{status.settings_path}</code>{" "}
                 {copy.integration.installNote.beforeBackup} <code>.warroom-bak</code>
                 {copy.integration.installNote.end}
-                {status.provider === "codex" && <> {copy.integration.codexTrust}</>}
+                {copy.integration.notes[status.provider] && <> {copy.integration.notes[status.provider]}</>}
               </p>
             </div>
             <button className="primary" disabled={busy} onClick={() => store.install(status.provider)}>

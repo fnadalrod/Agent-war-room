@@ -15,7 +15,7 @@ describe("WarRoomStore", () => {
     const store = storeWith();
     await store.start();
     expect(store.snapshot().view?.rooms.length).toBeGreaterThan(0);
-    expect(store.snapshot().integrations.map((i) => i.provider)).toEqual(["claude", "codex"]);
+    expect(store.snapshot().integrations.map((i) => i.provider)).toEqual(["claude", "codex", "cursor", "antigravity"]);
     expect(store.snapshot().integrations.every((i) => i.installed)).toBe(true);
   });
 

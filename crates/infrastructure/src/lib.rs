@@ -1,7 +1,9 @@
 //! Adapters implementing the `awr-application` ports against the real world.
 
+pub mod antigravity;
 pub mod claude;
 pub mod codex;
+pub mod cursor;
 pub mod desktop;
 pub mod git;
 pub mod hook_installer;

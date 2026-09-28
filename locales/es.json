@@ -46,7 +46,8 @@
     "settings_not_an_object": "settings.json no es un objeto JSON",
     "settings_invalid_json": "settings.json no es JSON válido: {error}",
     "bridge_not_found": "no se encuentra el binario warroom-hook; compílalo con `cargo build -p warroom-hook`",
-    "invalid_bridge": "{path} no es un ejecutable válido del puente"
+    "invalid_bridge": "{path} no es un ejecutable válido del puente",
+    "agent_not_launchable": "{agent} solo se puede abrir desde su propia app"
   },
   "shell": {
     "tray": {
@@ -291,7 +292,9 @@
       "autostart": "Abrir al iniciar sesión (en la bandeja)",
       "reinstall": "Reinstalar",
       "disconnect": "Desconectar",
-      "codex_trust": "La primera vez, Codex te pedirá revisar los hooks nuevos: elige «Trust all and continue»."
+      "codex_trust": "La primera vez, Codex te pedirá revisar los hooks nuevos: elige «Trust all and continue».",
+      "cursor_note": "Cursor también ejecuta los hooks de Claude Code; si están los dos, se salta los nuestros repetidos. Da tokens y modelo, no aprobaciones.",
+      "antigravity_note": "Van en su carpeta global y se ejecutan dentro de su agente: la sala sigue sus conversaciones pero no puede abrirlas ni aprobar nada."
     },
     "toasts": {
       "approved": "Permiso aprobado",
@@ -310,7 +313,9 @@
     },
     "provider": {
       "claude": "Claude Code",
-      "codex": "Codex"
+      "codex": "Codex",
+      "cursor": "Cursor",
+      "antigravity": "Antigravity"
     }
   }
 }

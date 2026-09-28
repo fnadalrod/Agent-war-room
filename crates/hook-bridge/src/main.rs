@@ -16,7 +16,8 @@ const MAX_PAYLOAD_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_ANCESTRY: usize = 12;
 /// Agent processes that run hooks, and the provider each one is: the bridge is the same binary for
 /// all of them, so the agent is recognised by walking up to it.
-const AGENTS: &[(&str, &str)] = &[("claude", "claude"), ("codex", "codex")];
+const AGENTS: &[(&str, &str)] =
+    &[("claude", "claude"), ("codex", "codex"), ("cursor-agent", "cursor"), ("language_server", "antigravity")];
 /// Agents that show their own permission dialog while this hook waits for the war room, so the first
 /// answer wins. Codex runs the hook first and shows its dialog only after it returns: waiting there
 /// would freeze its terminal, so for Codex the war room only reports the request.
@@ -25,7 +26,10 @@ const DIALOG_WHILE_WAITING: &[&str] = &["claude"];
 const REPLY_WAIT: Duration = Duration::from_secs(590);
 
 fn main() {
-    if let Some(output) = run() {
+    // Antigravity names the event in our command (its payloads don't) and expects JSON back, always.
+    let event_arg = std::env::args().nth(1).filter(|a| !a.is_empty());
+    let output = run(event_arg.as_deref()).or_else(|| event_arg.map(|_| "{}".to_owned()));
+    if let Some(output) = output {
         let mut stdout = std::io::stdout();
         let _ = stdout.write_all(output.as_bytes());
         let _ = stdout.flush();
@@ -34,10 +38,13 @@ fn main() {
 }
 
 /// Returns what to print for the agent, if the app decided something.
-fn run() -> Option<String> {
+fn run(event_arg: Option<&str>) -> Option<String> {
     let mut raw = String::new();
     std::io::stdin().take(MAX_PAYLOAD_BYTES).read_to_string(&mut raw).ok()?;
-    let payload: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let mut payload: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    if let (Some(event), Some(map)) = (event_arg, payload.as_object_mut()) {
+        map.entry("hook_event_name").or_insert_with(|| event.into());
+    }
     let event = payload.get("hook_event_name").and_then(|e| e.as_str()).unwrap_or_default().to_owned();
 
     let ancestry = ancestry(std::os::unix::process::parent_id());
@@ -46,7 +53,7 @@ fn run() -> Option<String> {
         .find_map(|p| AGENTS.iter().find(|(name, _)| *name == p.name).map(|(_, provider)| (p.pid, *provider)));
     let agent_pid = agent.map(|(pid, _)| pid);
 
-    let provider = provider(std::env::var("WARROOM_PROVIDER").ok(), agent.map(|(_, p)| p));
+    let provider = provider(std::env::var("WARROOM_PROVIDER").ok(), fingerprint(&payload), agent.map(|(_, p)| p));
     let expects_reply = event == "PermissionRequest" && DIALOG_WHILE_WAITING.contains(&provider.as_str());
     let envelope = HookEnvelope {
         v: PROTOCOL_VERSION,
@@ -86,9 +93,24 @@ fn run() -> Option<String> {
     Some(permission_output(&reply))
 }
 
-/// `WARROOM_PROVIDER` wins; then the agent found among the ancestors; Claude by default.
-fn provider(env: Option<String>, ancestor: Option<&str>) -> String {
-    env.filter(|p| !p.is_empty()).or_else(|| ancestor.map(str::to_owned)).unwrap_or_else(|| "claude".into())
+/// Agents recognisable by their payload alone. Cursor also runs the hooks in Claude's settings, with
+/// its own payload, so the process tree is not enough.
+fn fingerprint(payload: &serde_json::Value) -> Option<&'static str> {
+    if payload.get("cursor_version").is_some() {
+        Some("cursor")
+    } else if payload.get("conversationId").is_some() {
+        Some("antigravity")
+    } else {
+        None
+    }
+}
+
+/// `WARROOM_PROVIDER` wins; then the payload; then the agent found among the ancestors; Claude by default.
+fn provider(env: Option<String>, payload: Option<&str>, ancestor: Option<&str>) -> String {
+    env.filter(|p| !p.is_empty())
+        .or_else(|| payload.map(str::to_owned))
+        .or_else(|| ancestor.map(str::to_owned))
+        .unwrap_or_else(|| "claude".into())
 }
 
 /// Output Claude Code and Codex understand for `PermissionRequest` (the same contract).
@@ -171,10 +193,14 @@ mod tests {
     }
 
     #[test]
-    fn the_provider_comes_from_the_environment_then_from_the_agent_process() {
-        assert_eq!(provider(Some("codex".into()), Some("claude")), "codex");
-        assert_eq!(provider(None, Some("codex")), "codex");
-        assert_eq!(provider(Some(String::new()), None), "claude");
+    fn the_provider_comes_from_the_environment_the_payload_then_the_agent_process() {
+        assert_eq!(provider(Some("codex".into()), None, Some("claude")), "codex");
+        assert_eq!(provider(None, None, Some("codex")), "codex");
+        assert_eq!(provider(Some(String::new()), None, None), "claude");
+        // Cursor running the hooks from Claude's settings, from a terminal where `claude` is an ancestor.
+        let cursor = serde_json::json!({ "cursor_version": "3.18.9", "hook_event_name": "stop" });
+        assert_eq!(provider(None, fingerprint(&cursor), Some("claude")), "cursor");
+        assert_eq!(fingerprint(&serde_json::json!({ "conversationId": "x" })), Some("antigravity"));
     }
 
     #[test]

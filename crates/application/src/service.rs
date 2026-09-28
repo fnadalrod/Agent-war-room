@@ -1,8 +1,9 @@
 use crate::locale;
 use crate::ports::{
     AgentLauncher, AgentProvider, ApprovalDecision, ApprovalResponder, Clock, EventStore, FocusOutcome, FocusTarget,
-    GitHistory, LaunchOutcome, LaunchRequest, LaunchTarget, Notice, Notifier, PortError, PortResult, ProcessProbe,
-    RepoResolver, SessionInput, SkillCatalog, TranscriptReader, TranscriptSummary, ViewPublisher, WindowNavigator,
+    GitHistory, HookFacts, LaunchOutcome, LaunchRequest, LaunchTarget, Notice, Notifier, PortError, PortResult,
+    ProcessProbe, RepoResolver, SessionInput, SkillCatalog, TranscriptReader, TranscriptSummary, Usage, ViewPublisher,
+    WindowNavigator,
 };
 use crate::view::{self, CommitView, SessionChanges, SessionDetail, SubagentPreview, TouchedFileView, WarRoomView};
 use awr_domain::{
@@ -57,7 +58,41 @@ pub struct WarRoomService {
     approvals: Mutex<HashMap<SessionId, Arc<dyn ApprovalResponder>>>,
     /// Sessions already notified as possibly stuck (until they show activity again).
     stalled: Mutex<HashSet<SessionId>>,
+    /// What hooks said that transcripts don't (model, tokens…), merged into the summaries.
+    hook_facts: Mutex<HashMap<SessionId, HookTotals>>,
     ports: Ports,
+}
+
+/// [`HookFacts`] accumulated per session.
+#[derive(Default)]
+struct HookTotals {
+    model: Option<String>,
+    context_tokens: Option<u64>,
+    context_window: Option<u64>,
+    usage: Usage,
+    /// By [`Clock::day`], for "today".
+    daily: HashMap<i64, Usage>,
+}
+
+impl HookTotals {
+    fn add(&mut self, facts: HookFacts, day: i64) {
+        self.model = facts.model.or(self.model.take());
+        self.context_tokens = facts.context_tokens.or(self.context_tokens);
+        self.context_window = facts.context_window.or(self.context_window);
+        if let Some(usage) = facts.usage {
+            self.usage.add(&usage);
+            self.daily.entry(day).or_default().add(&usage);
+        }
+    }
+
+    /// Fills what the transcript did not say; tokens add up (a transcript and hooks never both count).
+    fn overlay(&self, summary: &mut TranscriptSummary, today: i64) {
+        summary.model = summary.model.take().or_else(|| self.model.clone());
+        summary.context_tokens = summary.context_tokens.or(self.context_tokens);
+        summary.context_window = summary.context_window.or(self.context_window);
+        summary.usage.add(&self.usage);
+        summary.usage_today.add(&self.daily.get(&today).copied().unwrap_or_default());
+    }
 }
 
 impl WarRoomService {
@@ -67,6 +102,7 @@ impl WarRoomService {
             summaries: Mutex::default(),
             approvals: Mutex::default(),
             stalled: Mutex::default(),
+            hook_facts: Mutex::default(),
             ports,
         }
     }
@@ -183,17 +219,26 @@ impl WarRoomService {
             return Ok(());
         };
 
+        let at = signal.received_at.unwrap_or_else(|| self.ports.clock.now());
+        if !translated.facts.is_empty() {
+            let day = self.ports.clock.day(at);
+            self.hook_facts.lock().unwrap().entry(translated.session.clone()).or_default().add(translated.facts, day);
+        }
+        let Some(kind) = translated.kind else {
+            // Facts only: refresh what is shown if the session is already known.
+            if self.room().get(&translated.session).is_some() && self.refresh_summary(&translated.session) {
+                self.publish();
+            }
+            return Ok(());
+        };
+
         if let Some(reply) = signal.reply
-            && matches!(
-                translated.kind,
-                SessionEventKind::AwaitingYou { reason: awr_domain::WaitReason::Permission, .. }
-            )
+            && matches!(kind, SessionEventKind::AwaitingYou { reason: awr_domain::WaitReason::Permission, .. })
         {
             self.approvals().insert(translated.session.clone(), reply);
         }
 
         let workspace = self.ports.resolver.resolve(&translated.cwd);
-        let at = signal.received_at.unwrap_or_else(|| self.ports.clock.now());
         let worktree = workspace.worktree_path.clone();
         self.commit(SessionEvent {
             session: translated.session.clone(),
@@ -205,7 +250,7 @@ impl WarRoomService {
                 transcript_path: translated.transcript_path,
                 cwd: Some(translated.cwd.clone()).filter(|c| !c.is_empty()),
             }),
-            kind: translated.kind,
+            kind,
         })?;
 
         for kind in translated.extra {
@@ -503,15 +548,31 @@ impl WarRoomService {
         stored
     }
 
-    /// Rereads a session's transcript. Returns whether anything visible changed.
+    /// Rereads a session's transcript and merges what its hooks said. Returns whether anything
+    /// visible changed.
     fn refresh_summary(&self, id: &SessionId) -> bool {
-        let source = self.room().get(id).and_then(|s| {
-            let path = s.transcript_path.clone()?;
-            Some((s.provider, path, s.subagents.keys().cloned().collect::<Vec<_>>()))
-        });
-        let Some((provider, path, subagents)) = source else { return false };
-        let Some(agent) = self.agent(provider) else { return false };
-        let Some(summary) = agent.transcripts.read(&path, &subagents) else { return false };
+        let Some((provider, path, subagents)) = self
+            .room()
+            .get(id)
+            .map(|s| (s.provider, s.transcript_path.clone(), s.subagents.keys().cloned().collect::<Vec<_>>()))
+        else {
+            return false;
+        };
+        let read = path.and_then(|path| self.agent(provider)?.transcripts.read(&path, &subagents));
+        let today = self.ports.clock.day(self.ports.clock.now());
+        let summary = {
+            let facts = self.hook_facts.lock().unwrap();
+            match (read, facts.get(id)) {
+                (None, None) => return false,
+                (read, facts) => {
+                    let mut summary = read.unwrap_or_default();
+                    if let Some(facts) = facts {
+                        facts.overlay(&mut summary, today);
+                    }
+                    summary
+                }
+            }
+        };
         self.summaries().insert(id.clone(), summary.clone()) != Some(summary)
     }
 
@@ -589,6 +650,26 @@ mod tests {
             "fake"
         }
         fn translate(&self, payload: &serde_json::Value) -> PortResult<Option<Translated>> {
+            if payload["e"] == "tokens" {
+                // Like Cursor's `afterAgentResponse`: no state, only model and tokens.
+                return Ok(Some(Translated {
+                    session: SessionId(payload["s"].as_str().unwrap().into()),
+                    cwd: "/code/app".into(),
+                    transcript_path: None,
+                    kind: None,
+                    extra: vec![],
+                    facts: HookFacts {
+                        model: Some("gpt-x".into()),
+                        usage: Some(Usage {
+                            input_tokens: 100,
+                            output_tokens: 10,
+                            unpriced_messages: 1,
+                            ..Usage::default()
+                        }),
+                        ..HookFacts::default()
+                    },
+                }));
+            }
             let kind = match payload["e"].as_str().unwrap() {
                 "prompt" => SessionEventKind::PromptSubmitted,
                 "stop" => SessionEventKind::TurnEnded,
@@ -609,8 +690,9 @@ mod tests {
                 session: SessionId(payload["s"].as_str().unwrap().into()),
                 cwd: "/code/app".into(),
                 transcript_path: Some("/t.jsonl".into()),
-                kind,
+                kind: Some(kind),
                 extra,
+                facts: HookFacts::default(),
             }))
         }
     }
@@ -1129,5 +1211,19 @@ mod tests {
     fn truncate_collapses_whitespace_and_cuts_on_chars() {
         assert_eq!(truncate("hello\n\n  world", 50), "hello world");
         assert_eq!(truncate("ßßßßß", 3), "ßß…");
+    }
+
+    #[test]
+    fn hooks_can_bring_model_and_tokens_the_transcript_lacks() {
+        let h = harness();
+        h.svc.ingest(signal("a", "prompt")).unwrap();
+        h.svc.ingest(signal("a", "tokens")).unwrap();
+        h.svc.ingest(signal("a", "tokens")).unwrap();
+        h.svc.ingest(signal("unknown", "tokens")).unwrap();
+        let s = &h.svc.view().rooms[0].sessions[0];
+        assert_eq!(s.model.as_deref(), Some("gpt-x"), "the transcript said nothing");
+        assert_eq!(s.usage.input_tokens, 200);
+        assert!(s.usage.partial_cost);
+        assert_eq!(h.svc.view().rooms.iter().map(|r| r.sessions.len()).sum::<usize>(), 1, "facts alone start nothing");
     }
 }

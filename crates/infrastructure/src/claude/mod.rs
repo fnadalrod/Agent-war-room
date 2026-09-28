@@ -12,6 +12,8 @@ pub use transcript::ClaudeTranscriptReader;
 /// Claude hooks that feed the state machine (`~/.claude/settings.json`).
 pub const CLAUDE_HOOKS: HookSpec = HookSpec {
     provider: awr_domain::ProviderKind::Claude,
+    layout: crate::hook_installer::HookLayout::Grouped,
+    launchable: true,
     events: &[
         ("SessionStart", T),
         ("SessionEnd", T),

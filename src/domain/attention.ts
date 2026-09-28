@@ -60,11 +60,13 @@ export function isConnected(status: IntegrationStatus | null | undefined): boole
   return status != null && status.installed && status.bridge_present;
 }
 
-/** Agents you can start from a room: the connected ones, else the installed ones, else Claude. */
+/** Agents you can start from a room: the connected ones, else the installed ones, else Claude. Some
+ *  (Antigravity) only run inside their own app. */
 export function launchableAgents(integrations: IntegrationStatus[]): string[] {
-  const connected = integrations.filter(isConnected).map((i) => i.provider);
+  const startable = integrations.filter((i) => i.launchable);
+  const connected = startable.filter(isConnected).map((i) => i.provider);
   if (connected.length) return connected;
-  const found = integrations.filter((i) => i.agent_found).map((i) => i.provider);
+  const found = startable.filter((i) => i.agent_found).map((i) => i.provider);
   return found.length ? found : ["claude"];
 }
 

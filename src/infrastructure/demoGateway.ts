@@ -185,13 +185,16 @@ function initialRooms(): RoomView[] {
             { name: "claude-api", source: "builtin", by_user: false, by_agent: true, count: 3, last_at: minutes(7) },
           ],
           first_prompt: "Document in docs/tasks how to rerun block V of the test bench.",
-          command: "claude --resume c3d4e5f6",
+          command: "cursor-agent",
+          provider: "cursor",
           last_reply: DEMO_REPLY,
           worktree_path: "/code/harbor",
           status_since: minutes(6),
-          model: "claude-sonnet-5",
-          effort: "medium",
-          usage: usage(9_800_000, 2.6),
+          model: "composer-2",
+          effort: null,
+          context_window: null,
+          context_tokens: null,
+          usage: { ...usage(9_800_000, 0), partial_cost: true },
         }),
         session({
           id: "a9b8c7d6-harbor-i18n",
@@ -199,12 +202,17 @@ function initialRooms(): RoomView[] {
           status_label: "Bash",
           last_action: "Bash · npm run build:i18n -- --watch",
           title: "Migrate i18n keys",
+          provider: "antigravity",
+          model: "gemini-3.1-pro",
+          effort: null,
+          context_window: null,
+          context_tokens: null,
           worktree_path: "/code/Harbor2Repo",
           branch: "chore/i18n",
           stalled_since: minutes(9),
           last_activity_at: minutes(9),
           status_since: minutes(9),
-          usage: usage(4_100_000, 1.9),
+          usage: usage(0, 0),
         }),
       ],
     },
@@ -398,16 +406,22 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
   let autostart = false;
   const launched = async (): Promise<Launched> => ({ pty_id: null, via: "demo" });
 
-  const integration = (provider: string, settings_path: string): IntegrationStatus => ({
+  const integration = (provider: string, settings_path: string, launchable = true): IntegrationStatus => ({
     provider,
     agent_found: true,
+    launchable,
     installed: true,
     hooked_events: [],
     settings_path,
     bridge_path: "~/.local/share/agent-war-room/bin/warroom-hook",
     bridge_present: true,
   });
-  const statuses = [integration("claude", "~/.claude/settings.json"), integration("codex", "~/.codex/hooks.json")];
+  const statuses = [
+    integration("claude", "~/.claude/settings.json"),
+    integration("codex", "~/.codex/hooks.json"),
+    integration("cursor", "~/.cursor/hooks.json"),
+    integration("antigravity", "~/.gemini/config/hooks.json", false),
+  ];
   const byProvider = async (provider: string) => statuses.find((s) => s.provider === provider) ?? statuses[0];
 
   return {

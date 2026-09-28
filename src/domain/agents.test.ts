@@ -12,6 +12,7 @@ const integration = (provider: string, over: Partial<IntegrationStatus> = {}): I
   settings_path: "",
   bridge_path: "",
   bridge_present: true,
+  launchable: true,
   ...over,
 });
 
@@ -20,6 +21,9 @@ describe("several agents", () => {
     expect(launchableAgents([integration("claude", { installed: true }), integration("codex")])).toEqual(["claude"]);
     expect(launchableAgents([integration("claude"), integration("codex")])).toEqual(["claude", "codex"]);
     expect(launchableAgents([integration("codex", { agent_found: false })])).toEqual(["claude"]);
+    expect(
+      launchableAgents([integration("claude", { installed: true }), integration("antigravity", { installed: true, launchable: false })]),
+    ).toEqual(["claude"]);
   });
 
   it("names agents and notices when the room mixes them", () => {

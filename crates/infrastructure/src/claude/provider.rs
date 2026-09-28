@@ -90,7 +90,7 @@ mod tests {
     use serde_json::json;
 
     fn translate(payload: Value) -> Option<SessionEventKind> {
-        ClaudeProvider.translate(&payload).unwrap().map(|t| t.kind)
+        ClaudeProvider.translate(&payload).unwrap().and_then(|t| t.kind)
     }
 
     fn hook(event: &str, extra: Value) -> Value {
@@ -110,7 +110,7 @@ mod tests {
         assert_eq!(t.session, SessionId("abc".into()));
         assert_eq!(t.cwd, "/code/app");
         assert_eq!(t.transcript_path.as_deref(), Some("/home/u/.claude/projects/x/abc.jsonl"));
-        assert_eq!(t.kind, SessionEventKind::TurnEnded);
+        assert_eq!(t.kind, Some(SessionEventKind::TurnEnded));
     }
 
     #[test]

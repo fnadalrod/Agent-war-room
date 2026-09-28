@@ -8,6 +8,11 @@ impl Clock for SystemClock {
     fn now(&self) -> Timestamp {
         Timestamp(SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or_default())
     }
+
+    fn day(&self, at: Timestamp) -> i64 {
+        use chrono::Datelike;
+        crate::jsonl::local_day(at.0).map(|d| i64::from(d.num_days_from_ce())).unwrap_or(at.0.div_euclid(86_400_000))
+    }
 }
 
 /// Checks in `/proc` that the PID still exists and is not a zombie.

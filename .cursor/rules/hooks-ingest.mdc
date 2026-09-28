@@ -1,5 +1,5 @@
 ---
-description: How agent hooks reach the app — the shared Claude-style hook protocol (Claude Code and Codex), the warroom-hook bridge, the socket, the per-agent dialects and the hook installer. Read before touching the bridge, ingress, hooks.rs, a provider or the installer.
+description: How agent hooks reach the app — the warroom-hook bridge (one binary for every agent), the socket, the shared Claude-style protocol (Claude Code, Codex), the other agents' translations (Cursor, Antigravity), HookFacts and the installer's layouts. Read before touching the bridge, ingress, hooks.rs, a provider or the installer.
 globs: crates/hook-bridge/**, crates/wire/**, crates/infrastructure/src/ingress.rs, crates/infrastructure/src/hooks.rs, crates/infrastructure/src/hook_installer.rs, crates/infrastructure/src/tools.rs, crates/infrastructure/src/skills.rs, crates/infrastructure/src/claude/provider.rs, crates/infrastructure/src/codex/provider.rs
 alwaysApply: false
 ---
@@ -11,6 +11,8 @@ claude | codex ─(hook stdin JSON)→ warroom-hook ─(Unix socket, 1 line)→ 
    → WarRoomService::ingest → AgentPorts{provider}.translate → hooks::translate(dialect) → SessionEvent
 ```
 
+Cursor and Antigravity have their own events and fields: each has its own `translate`
+(`cursor.mdc`, `antigravity.mdc`) and they reuse the bridge, socket, installer and service.
 Claude Code and Codex speak **the same hook protocol**: same event names, same payload fields
 (`session_id`, `cwd`, `transcript_path`, `tool_name`, `tool_input`, `agent_id`…), same
 `PermissionRequest` reply. So there is one translation (`hooks.rs`), one bridge, one installer
@@ -24,8 +26,12 @@ and a `HookSpec` (events + timeouts). Codex specifics → `codex.mdc`.
 - **stdout only carries an explicit app decision** (PermissionRequest reply). Anything else printed
   is interpreted by the agent.
 - It walks `/proc` from its parent upward: hooks may run through a shell, so `getppid()` is not the
-  agent. The chain gives the agent PID (liveness), **which agent it is** (`claude`/`codex` process →
-  provider; `WARROOM_PROVIDER` overrides) and the terminal/IDE (focus).
+  agent. The chain gives the agent PID (liveness) and the terminal/IDE (focus).
+- **Which agent**: `WARROOM_PROVIDER`, else the payload (`cursor_version` → cursor, `conversationId` →
+  antigravity), else the nearest agent process (`claude`, `codex`, `cursor-agent`, `language_server`),
+  else claude. Payload first: Cursor also runs Claude's hooks, from wherever it runs.
+- An argument is the event name for agents whose payload lacks it (Antigravity); then the bridge
+  always prints JSON (`{}`), even with the app closed.
 - It only waits for a decision on `PermissionRequest` for agents that show their own dialog meanwhile
   (`DIALOG_WHILE_WAITING`: Claude). Codex runs the hook *before* its dialog: holding it would freeze
   the terminal, so for Codex the war room reports the request but can't approve it.
@@ -46,6 +52,12 @@ Each hook → one `SessionEventKind` (+ `extra`: a `/skill` or `$skill` prompt i
 `agent_id` belong to a subagent. `Interrupt` (Codex) → `Interrupted` (your turn, no notice).
 `Notification` exists only in Claude. Unknown hooks → `Ok(None)` (ignored, not an error).
 
+## HookFacts
+
+A hook may bring facts besides (or instead of) a state change: model, one response's tokens, context
+(`Translated.kind: None` + `facts`). The service accumulates them per session and fills what the
+transcript did not say (Cursor's transcripts have no model or tokens). Derived, not persisted.
+
 ## Trigger table
 
 | If you… | Read |
@@ -53,12 +65,14 @@ Each hook → one `SessionEventKind` (+ `extra`: a `/skill` or `$skill` prompt i
 | touch approvals (PermissionRequest, reply, EOF detection) | `hooks-approvals.md` |
 | rely on a Claude hook field, a notification type or add a hook | `hooks-claude-reference.md` |
 | touch anything Codex-specific (trust prompt, rollouts, CODEX_HOME) | `codex.mdc` |
+| touch Cursor (its events, the Claude hooks it also runs) | `cursor.mdc` |
+| touch Antigravity (named hooks.json, events without names) | `antigravity.mdc` |
 | add another agent | skill `add-provider` |
 
 ## Installer (hook_installer.rs)
 
-Non-destructive merge into the agent's hook file (`~/.claude/settings.json`, `$CODEX_HOME/hooks.json`;
-same `"hooks"` shape): our entries are recognised by the `warroom-hook` marker in `command`; foreign
+Non-destructive merge into the agent's hook file (`~/.claude/settings.json`, `$CODEX_HOME/hooks.json`,
+`~/.cursor/hooks.json`, `~/.gemini/config/hooks.json`) in its `HookLayout` (Grouped, Flat, Named): our entries are recognised by the `warroom-hook` marker in `command`; foreign
 hooks are untouched; a `.warroom-bak` copy is written before each change; invalid JSON is refused; the
 bridge is copied (tmp + rename, to avoid ETXTBSY) to `~/.local/share/agent-war-room/bin/` only if it
 is a real ELF. `PermissionRequest` gets 600 s (the bridge gives up at 590 s), others 5 s (Codex caps

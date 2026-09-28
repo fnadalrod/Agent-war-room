@@ -288,6 +288,8 @@ pub struct IntegrationStatus {
     pub provider: String,
     /// The agent's configuration folder exists (it is installed on this machine).
     pub agent_found: bool,
+    /// The app can start and resume this agent (Antigravity only runs inside its own app).
+    pub launchable: bool,
     pub installed: bool,
     /// Hook events pointing at our bridge.
     pub hooked_events: Vec<String>,

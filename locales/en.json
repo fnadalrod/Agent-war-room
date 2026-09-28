@@ -46,7 +46,8 @@
     "settings_not_an_object": "settings.json is not a JSON object",
     "settings_invalid_json": "settings.json is not valid JSON: {error}",
     "bridge_not_found": "the warroom-hook binary was not found; build it with `cargo build -p warroom-hook`",
-    "invalid_bridge": "{path} is not a valid bridge executable"
+    "invalid_bridge": "{path} is not a valid bridge executable",
+    "agent_not_launchable": "{agent} can only be started from its own app"
   },
   "shell": {
     "tray": {
@@ -291,7 +292,9 @@
       "autostart": "Open at login (in the tray)",
       "reinstall": "Reinstall",
       "disconnect": "Disconnect",
-      "codex_trust": "The first time, Codex asks you to review the new hooks: choose “Trust all and continue”."
+      "codex_trust": "The first time, Codex asks you to review the new hooks: choose “Trust all and continue”.",
+      "cursor_note": "Cursor also runs Claude Code’s hooks; it skips ours when both are there, so nothing arrives twice. It reports tokens and model, not approvals.",
+      "antigravity_note": "They go in its global folder and run inside its agent loop: the room follows its conversations but can’t start them or approve anything."
     },
     "toasts": {
       "approved": "Permission approved",
@@ -310,7 +313,9 @@
     },
     "provider": {
       "claude": "Claude Code",
-      "codex": "Codex"
+      "codex": "Codex",
+      "cursor": "Cursor",
+      "antigravity": "Antigravity"
     }
   }
 }

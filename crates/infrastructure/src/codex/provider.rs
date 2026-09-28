@@ -45,7 +45,7 @@ mod tests {
         CAPTURED
             .lines()
             .map(|l| serde_json::from_str::<Value>(l).unwrap())
-            .filter_map(|p| CodexProvider.translate(&p).unwrap().map(|t| t.kind))
+            .filter_map(|p| CodexProvider.translate(&p).unwrap().and_then(|t| t.kind))
             .collect()
     }
 
@@ -88,7 +88,7 @@ mod tests {
             p.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
             CodexProvider.translate(&p).unwrap().unwrap()
         };
-        assert_eq!(hook("Interrupt", json!({ "turn_id": "t" })).kind, SessionEventKind::Interrupted);
+        assert_eq!(hook("Interrupt", json!({ "turn_id": "t" })).kind, Some(SessionEventKind::Interrupted));
         assert_eq!(
             hook("UserPromptSubmit", json!({ "prompt": "$close-task now" })).extra,
             vec![SessionEventKind::SkillInvoked {

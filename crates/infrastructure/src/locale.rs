@@ -18,6 +18,10 @@ pub fn unknown_terminal(id: &str) -> String {
     tf("desktop.unknown_terminal", &[("id", &id)])
 }
 
+pub fn agent_not_launchable(agent: &str) -> String {
+    tf("desktop.agent_not_launchable", &[("agent", &agent)])
+}
+
 /// Name of the Warp tab opened for an agent.
 pub fn warp_tab_name(label: &str) -> String {
     tf("desktop.warp_tab_name", &[("label", &label)])

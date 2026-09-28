@@ -8,8 +8,10 @@ mod tray;
 use awr_application::ports::IntegrationInstaller;
 use awr_application::{AgentPorts, Ports, WarRoomService};
 use awr_domain::ProviderKind;
+use awr_infrastructure::antigravity::{ANTIGRAVITY_HOOKS, AntigravityProvider, AntigravityTranscriptReader};
 use awr_infrastructure::claude::{CLAUDE_HOOKS, ClaudeProvider, ClaudeTranscriptReader};
 use awr_infrastructure::codex::{CODEX_HOOKS, CodexProvider, CodexTranscriptReader, codex_home};
+use awr_infrastructure::cursor::{CURSOR_HOOKS, CursorProvider, CursorTranscriptReader};
 use awr_infrastructure::desktop::DesktopNavigator;
 use awr_infrastructure::git::{GitCli, GitRepoResolver};
 use awr_infrastructure::hook_installer::HookInstaller;
@@ -129,6 +131,16 @@ fn compose(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 transcripts: Arc::new(CodexTranscriptReader::new()),
                 skills: Arc::new(FsSkillCatalog::codex(&home, codex_home.clone())),
             },
+            AgentPorts {
+                provider: Arc::new(CursorProvider),
+                transcripts: Arc::new(CursorTranscriptReader::new()),
+                skills: Arc::new(FsSkillCatalog::cursor(&home)),
+            },
+            AgentPorts {
+                provider: Arc::new(AntigravityProvider::new(home.join(".gemini/antigravity/brain"))),
+                transcripts: Arc::new(AntigravityTranscriptReader::new()),
+                skills: Arc::new(FsSkillCatalog::antigravity(&home)),
+            },
         ],
         resolver: Arc::new(GitRepoResolver::new()),
         store: Arc::new(SqliteEventStore::open(&data_dir.join("events.db"))?),
@@ -161,7 +173,26 @@ fn compose(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         ),
         (
             ProviderKind::Codex,
-            Arc::new(HookInstaller::new(&CODEX_HOOKS, codex_home.join("hooks.json"), built_bridge(), bridge)),
+            Arc::new(HookInstaller::new(&CODEX_HOOKS, codex_home.join("hooks.json"), built_bridge(), bridge.clone())),
+        ),
+        (
+            ProviderKind::Cursor,
+            Arc::new(HookInstaller::new(
+                &CURSOR_HOOKS,
+                home.join(".cursor/hooks.json"),
+                built_bridge(),
+                bridge.clone(),
+            )),
+        ),
+        (
+            ProviderKind::Antigravity,
+            // Its global customization root.
+            Arc::new(HookInstaller::new(
+                &ANTIGRAVITY_HOOKS,
+                home.join(".gemini/config/hooks.json"),
+                built_bridge(),
+                bridge,
+            )),
         ),
     ]);
     app.manage(installers);

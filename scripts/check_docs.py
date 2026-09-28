@@ -64,7 +64,8 @@ PATHLIKE = re.compile(r"`([^`\s]+\.(?:mdc|md|rs|ts|tsx|sh|py|mjs|json|toml|css|h
 def check_paths() -> None:
     for doc in agent_docs():
         for mention in PATHLIKE.findall(doc.read_text(encoding="utf-8")):
-            if any(c in mention for c in "<>*{}$~") or mention.startswith("http"):
+            # Placeholders, URLs and absolute paths (other tools' files on the user's machine).
+            if any(c in mention for c in "<>*{}$~") or mention.startswith(("http", "/")):
                 continue
             path = mention.split("::")[0].lstrip("@./")  # `@AGENTS.md` is a Claude Code import
             candidates = [ROOT / path, doc.parent / path, RULES / path]

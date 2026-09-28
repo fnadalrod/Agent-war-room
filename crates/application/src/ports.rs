@@ -15,10 +15,30 @@ pub struct Translated {
     pub session: SessionId,
     pub cwd: String,
     pub transcript_path: Option<String>,
-    pub kind: SessionEventKind,
+    /// `None`: the hook changes no state, it only brings [`HookFacts`].
+    pub kind: Option<SessionEventKind>,
     /// Events implied by the same hook besides the main one (e.g. a `/skill` in the prompt).
     /// `SkillInvoked` arrives with a provisional source; [`SkillCatalog`] settles it.
     pub extra: Vec<SessionEventKind>,
+    pub facts: HookFacts,
+}
+
+/// What a hook says about the session besides its state, for agents whose transcript lacks it
+/// (Cursor's carries no model or tokens; Antigravity's no model). Merged over the transcript summary
+/// by the service; derived, never persisted.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HookFacts {
+    pub model: Option<String>,
+    /// Tokens of one response, counted once.
+    pub usage: Option<Usage>,
+    pub context_tokens: Option<u64>,
+    pub context_window: Option<u64>,
+}
+
+impl HookFacts {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 /// Works out where a skill comes from (repo, personal, plugin or built-in).
@@ -48,6 +68,10 @@ pub trait EventStore: Send + Sync {
 
 pub trait Clock: Send + Sync {
     fn now(&self) -> Timestamp;
+    /// Calendar day of a moment, for "today" totals (the real clock uses the local time zone).
+    fn day(&self, at: Timestamp) -> i64 {
+        at.0.div_euclid(86_400_000)
+    }
 }
 
 pub trait ProcessProbe: Send + Sync {

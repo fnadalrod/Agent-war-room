@@ -23,6 +23,16 @@ impl FsSkillCatalog {
         Self::new(&[".claude"], vec![home.join(".claude")])
     }
 
+    /// Cursor: `.cursor/` in the repo and `~/.cursor`.
+    pub fn cursor(home: &Path) -> Self {
+        Self::new(&[".cursor"], vec![home.join(".cursor")])
+    }
+
+    /// Antigravity: `.agents/` (or `.agent/`) in the repo and its global root, `~/.gemini/config`.
+    pub fn antigravity(home: &Path) -> Self {
+        Self::new(&[".agents", ".agent"], vec![home.join(".gemini/config")])
+    }
+
     /// Codex: `.codex/` and `.agents/` in the repo, `$CODEX_HOME` (`~/.codex`) and `~/.agents`.
     pub fn codex(home: &Path, codex_home: PathBuf) -> Self {
         Self::new(&[".codex", ".agents"], vec![codex_home, home.join(".agents")])
@@ -63,7 +73,8 @@ fn project_dirs(cwd: &Path, worktree: &Path) -> Vec<PathBuf> {
 
 /// `<dir>/skills/<name>/SKILL.md` or `<dir>/commands/<name>.md`.
 fn defines(dir: &Path, name: &str) -> bool {
-    dir.join("skills").join(name).join("SKILL.md").is_file() || dir.join("commands").join(format!("{name}.md")).is_file()
+    dir.join("skills").join(name).join("SKILL.md").is_file()
+        || dir.join("commands").join(format!("{name}.md")).is_file()
 }
 
 #[cfg(test)]
@@ -107,7 +118,9 @@ mod codex_tests {
     fn codex_looks_in_codex_and_agents_folders() {
         let tmp = tempfile::tempdir().unwrap();
         let (repo, home) = (tmp.path().join("repo"), tmp.path().join("home"));
-        for (dir, name) in [(repo.join(".agents"), "verify"), (home.join(".codex"), "mine"), (home.join(".agents"), "shared")] {
+        for (dir, name) in
+            [(repo.join(".agents"), "verify"), (home.join(".codex"), "mine"), (home.join(".agents"), "shared")]
+        {
             std::fs::create_dir_all(dir.join("skills").join(name)).unwrap();
             std::fs::write(dir.join("skills").join(name).join("SKILL.md"), "x").unwrap();
         }

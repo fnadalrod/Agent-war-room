@@ -1,6 +1,5 @@
-//! Non-destructive install of our bridge into an agent's hook configuration. Claude Code
-//! (`~/.claude/settings.json`) and Codex (`~/.codex/hooks.json`) keep hooks in the same JSON shape
-//! under `"hooks"`; a [`HookSpec`] says which events each one gets.
+//! Non-destructive install of our bridge into an agent's hook configuration. Every agent keeps hooks
+//! in a JSON file; they differ in its [`HookLayout`] and in which events exist ([`HookSpec`]).
 
 use crate::locale;
 use awr_application::ports::{IntegrationInstaller, PortError, PortResult};
@@ -10,10 +9,24 @@ use serde_json::{Map, Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Which hook events an agent gets, with their timeout in seconds.
+/// How an agent's hook file is laid out.
+pub enum HookLayout {
+    /// `{"hooks": {"Event": [{"matcher": "", "hooks": [{type, command, timeout}]}]}}`: Claude Code, Codex.
+    Grouped,
+    /// `{"version": 1, "hooks": {"event": [{command, timeout}]}}`: Cursor.
+    Flat,
+    /// `{"<name>": {"Event": [...]}}`, one named block per tool: Antigravity. Tool events are grouped
+    /// with a matcher, the rest flat; its payloads don't name the event, so it goes as an argument.
+    Named(&'static str),
+}
+
+/// Which hook events an agent gets, with their timeout in seconds, and how its file looks.
 pub struct HookSpec {
     pub provider: ProviderKind,
+    pub layout: HookLayout,
     pub events: &'static [(&'static str, u64)],
+    /// The app can start (and resume) this agent in a terminal.
+    pub launchable: bool,
 }
 
 impl HookSpec {
@@ -103,11 +116,12 @@ impl IntegrationInstaller for HookInstaller {
     fn status(&self) -> PortResult<IntegrationStatus> {
         let settings = self.read_settings()?;
         let hooked_events: Vec<String> =
-            self.spec.event_names().filter(|event| event_has_ours(&settings, event)).map(str::to_owned).collect();
+            self.spec.event_names().filter(|event| event_has_ours(&settings, self.spec, event)).map(str::to_owned).collect();
         Ok(IntegrationStatus {
             provider: format!("{:?}", self.spec.provider).to_lowercase(),
             agent_found: self.settings_path.parent().is_some_and(Path::is_dir),
             installed: hooked_events.len() == self.spec.events.len(),
+            launchable: self.spec.launchable,
             hooked_events,
             settings_path: self.settings_path.display().to_string(),
             bridge_path: self.bridge_target.display().to_string(),
@@ -126,7 +140,7 @@ impl IntegrationInstaller for HookInstaller {
 
     fn uninstall(&self) -> PortResult<IntegrationStatus> {
         let mut settings = self.read_settings()?;
-        if remove_hooks(&mut settings) {
+        if remove_hooks(&mut settings, self.spec) {
             self.write_settings(&settings)?;
         }
         self.status()
@@ -135,58 +149,89 @@ impl IntegrationInstaller for HookInstaller {
 
 fn add_hooks(settings: &mut Map<String, Value>, spec: &HookSpec, command: &str) {
     // Reinstalling replaces our entries (e.g. if the bridge path changed).
-    remove_hooks(settings);
-    let hooks = settings.entry("hooks").or_insert_with(|| Value::Object(Map::new()));
-    if !hooks.is_object() {
-        *hooks = Value::Object(Map::new());
-    }
-    let hooks = hooks.as_object_mut().expect("just ensured to be an object");
-    for (event, timeout) in spec.events {
-        let groups = hooks.entry(*event).or_insert_with(|| Value::Array(Vec::new()));
-        if let Some(groups) = groups.as_array_mut() {
-            groups.push(json!({
-                "matcher": "",
-                "hooks": [{ "type": "command", "command": command, "timeout": timeout }]
-            }));
+    remove_hooks(settings, spec);
+    let entry = |timeout: u64, command: &str| json!({ "type": "command", "command": command, "timeout": timeout });
+    match spec.layout {
+        HookLayout::Named(name) => {
+            let block: Map<String, Value> = spec
+                .events
+                .iter()
+                .map(|(event, timeout)| {
+                    let hook = entry(*timeout, &format!("{command} {event}"));
+                    let list = if event.ends_with("ToolUse") { json!([{ "matcher": "", "hooks": [hook] }]) } else { json!([hook]) };
+                    (event.to_string(), list)
+                })
+                .collect();
+            settings.insert(name.into(), Value::Object(block));
+        }
+        HookLayout::Grouped | HookLayout::Flat => {
+            if matches!(spec.layout, HookLayout::Flat) {
+                settings.entry("version").or_insert(json!(1));
+            }
+            let hooks = settings.entry("hooks").or_insert_with(|| Value::Object(Map::new()));
+            if !hooks.is_object() {
+                *hooks = Value::Object(Map::new());
+            }
+            let hooks = hooks.as_object_mut().expect("just ensured to be an object");
+            for (event, timeout) in spec.events {
+                let list = hooks.entry(*event).or_insert_with(|| Value::Array(Vec::new()));
+                if let Some(list) = list.as_array_mut() {
+                    list.push(match spec.layout {
+                        HookLayout::Flat => entry(*timeout, command),
+                        _ => json!({ "matcher": "", "hooks": [entry(*timeout, command)] }),
+                    });
+                }
+            }
         }
     }
 }
 
 /// Removes our entries and whatever is left empty because of it. Returns whether anything changed.
-fn remove_hooks(settings: &mut Map<String, Value>) -> bool {
+fn remove_hooks(settings: &mut Map<String, Value>, spec: &HookSpec) -> bool {
+    if let HookLayout::Named(name) = spec.layout {
+        return settings.remove(name).is_some();
+    }
     let Some(hooks) = settings.get_mut("hooks").and_then(Value::as_object_mut) else {
         return false;
     };
     let mut changed = false;
-    for groups in hooks.values_mut() {
-        let Some(groups) = groups.as_array_mut() else { continue };
-        for group in groups.iter_mut() {
-            if let Some(list) = group.get_mut("hooks").and_then(Value::as_array_mut) {
-                let before = list.len();
-                list.retain(|h| !is_ours(h));
-                changed |= list.len() != before;
+    for list in hooks.values_mut() {
+        let Some(list) = list.as_array_mut() else { continue };
+        for group in list.iter_mut() {
+            if let Some(inner) = group.get_mut("hooks").and_then(Value::as_array_mut) {
+                let before = inner.len();
+                inner.retain(|h| !is_ours(h));
+                changed |= inner.len() != before;
             }
         }
-        let before = groups.len();
-        groups.retain(|g| g.get("hooks").and_then(Value::as_array).is_none_or(|l| !l.is_empty()));
-        changed |= groups.len() != before;
+        let before = list.len();
+        // Flat entries of ours, and groups left empty.
+        list.retain(|g| !is_ours(g) && g.get("hooks").and_then(Value::as_array).is_none_or(|l| !l.is_empty()));
+        changed |= list.len() != before;
     }
-    hooks.retain(|_, groups| groups.as_array().is_none_or(|g| !g.is_empty()));
+    hooks.retain(|_, list| list.as_array().is_none_or(|g| !g.is_empty()));
     if hooks.is_empty() {
         settings.remove("hooks");
+        // A Cursor file with nothing but its version says nothing.
+        if settings.len() == 1 && settings.get("version") == Some(&json!(1)) {
+            settings.remove("version");
+        }
     }
     changed
 }
 
-fn event_has_ours(settings: &Map<String, Value>, event: &str) -> bool {
-    settings
-        .get("hooks")
-        .and_then(|h| h.get(event))
-        .and_then(Value::as_array)
+fn event_has_ours(settings: &Map<String, Value>, spec: &HookSpec, event: &str) -> bool {
+    let list = match spec.layout {
+        HookLayout::Named(name) => settings.get(name).and_then(|b| b.get(event)),
+        _ => settings.get("hooks").and_then(|h| h.get(event)),
+    };
+    list.and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|g| g.get("hooks").and_then(Value::as_array))
-        .flatten()
+        .flat_map(|g| match g.get("hooks").and_then(Value::as_array) {
+            Some(inner) => inner.iter().collect::<Vec<_>>(),
+            None => vec![g],
+        })
         .any(is_ours)
 }
 
@@ -220,6 +265,8 @@ mod tests {
 
     const SPEC: HookSpec = HookSpec {
         provider: ProviderKind::Claude,
+        layout: HookLayout::Grouped,
+        launchable: true,
         events: &[
             ("SessionStart", HOOK_TIMEOUT_SECS),
             ("Stop", HOOK_TIMEOUT_SECS),
@@ -305,4 +352,53 @@ mod tests {
         assert!(installer.install().is_err());
         assert_eq!(fs::read_to_string(&installer.settings_path).unwrap(), "{ not json");
     }
+
+    fn installer_for(spec: &'static HookSpec, initial: Option<Value>) -> (tempfile::TempDir, HookInstaller) {
+        let (dir, base) = setup(initial);
+        let installer = HookInstaller::new(spec, base.settings_path.clone(), base.bridge_source.clone(), base.bridge_target.clone());
+        (dir, installer)
+    }
+
+    #[test]
+    fn cursor_gets_flat_entries_with_a_version_and_leaves_no_trace() {
+        static FLAT: HookSpec = HookSpec {
+            provider: ProviderKind::Cursor,
+            layout: HookLayout::Flat,
+            launchable: true,
+            events: &[("sessionStart", 5), ("stop", 5)],
+        };
+        let mine = json!({ "version": 1, "hooks": { "stop": [{ "command": "./audit.sh" }] } });
+        let (_dir, installer) = installer_for(&FLAT, Some(mine.clone()));
+        assert!(installer.install().unwrap().installed);
+        let settings = read(&installer);
+        assert_eq!(settings["hooks"]["stop"].as_array().unwrap().len(), 2);
+        assert!(settings["hooks"]["sessionStart"][0]["command"].as_str().unwrap().contains("warroom-hook"));
+        installer.uninstall().unwrap();
+        assert_eq!(read(&installer), mine);
+
+        let (_dir, fresh) = installer_for(&FLAT, None);
+        fresh.install().unwrap();
+        fresh.uninstall().unwrap();
+        assert_eq!(read(&fresh), json!({}));
+    }
+
+    #[test]
+    fn antigravity_gets_one_named_block_with_the_event_as_argument() {
+        static NAMED: HookSpec = HookSpec {
+            provider: ProviderKind::Antigravity,
+            layout: HookLayout::Named("agent-war-room"),
+            launchable: false,
+            events: &[("PostToolUse", 5), ("Stop", 5)],
+        };
+        let mine = json!({ "lint": { "PostToolUse": [{ "matcher": "run_command", "hooks": [{ "command": "./lint.sh" }] }] } });
+        let (_dir, installer) = installer_for(&NAMED, Some(mine.clone()));
+        let status = installer.install().unwrap();
+        assert!(status.installed && !status.launchable);
+        let block = &read(&installer)["agent-war-room"];
+        assert!(block["PostToolUse"][0]["hooks"][0]["command"].as_str().unwrap().ends_with("warroom-hook\" PostToolUse"));
+        assert!(block["Stop"][0]["command"].as_str().unwrap().ends_with(" Stop"), "flat for non-tool events");
+        installer.uninstall().unwrap();
+        assert_eq!(read(&installer), mine);
+    }
+
 }

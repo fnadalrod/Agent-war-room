@@ -5,8 +5,10 @@
 use awr_application::ports::*;
 use awr_application::view::{AttentionView, SessionView, WarRoomView};
 use awr_application::{AgentPorts, Ports, WarRoomService};
+use awr_infrastructure::antigravity::{AntigravityProvider, AntigravityTranscriptReader};
 use awr_infrastructure::claude::{ClaudeProvider, ClaudeTranscriptReader};
 use awr_infrastructure::codex::{CodexProvider, CodexTranscriptReader};
+use awr_infrastructure::cursor::{CursorProvider, CursorTranscriptReader};
 use awr_infrastructure::git::{GitCli, GitRepoResolver};
 use awr_infrastructure::ingress;
 use awr_infrastructure::launch::{DesktopLauncher, TerminalInput};
@@ -43,7 +45,7 @@ pub fn bridge() -> PathBuf {
     target.canonicalize().unwrap()
 }
 
-/// Real service (Claude and Codex wired, like the app) with its own socket and a git work folder.
+/// Real service (every agent wired, like the app) with its own socket and a git work folder.
 pub struct Room {
     work: tempfile::TempDir,
     pub runtime: PathBuf,
@@ -77,6 +79,16 @@ impl Room {
                     provider: Arc::new(CodexProvider),
                     transcripts: Arc::new(CodexTranscriptReader::new()),
                     skills: Arc::new(FsSkillCatalog::codex(&home, home.join(".codex"))),
+                },
+                AgentPorts {
+                    provider: Arc::new(CursorProvider),
+                    transcripts: Arc::new(CursorTranscriptReader::new()),
+                    skills: Arc::new(FsSkillCatalog::cursor(&home)),
+                },
+                AgentPorts {
+                    provider: Arc::new(AntigravityProvider::new(home.join(".gemini/antigravity/brain"))),
+                    transcripts: Arc::new(AntigravityTranscriptReader::new()),
+                    skills: Arc::new(FsSkillCatalog::antigravity(&home)),
                 },
             ],
             resolver: Arc::new(GitRepoResolver::new()),

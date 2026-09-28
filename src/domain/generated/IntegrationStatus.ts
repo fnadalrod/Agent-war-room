@@ -8,7 +8,11 @@ provider: string,
 /**
  * The agent's configuration folder exists (it is installed on this machine).
  */
-agent_found: boolean, installed: boolean, 
+agent_found: boolean, 
+/**
+ * The app can start and resume this agent (Antigravity only runs inside its own app).
+ */
+launchable: boolean, installed: boolean, 
 /**
  * Hook events pointing at our bridge.
  */

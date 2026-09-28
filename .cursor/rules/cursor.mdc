@@ -1,0 +1,45 @@
+---
+description: Cursor support (IDE and cursor-agent) — its own hook events and fields, how it also runs Claude's hooks, transcripts without model or tokens (those come from hooks), and what is unverified. Read before touching crates/infrastructure/src/cursor.
+globs: crates/infrastructure/src/cursor/**
+alwaysApply: false
+---
+
+# Cursor
+
+Built from Cursor's own code (cursor-agent 2026.09.26, Cursor 3.18.9) and real transcripts. **Not run
+live**: cursor-agent had no login when this was written. Shared machinery → `hooks-ingest.mdc`.
+
+## Hooks
+
+- Config: `~/.cursor/hooks.json` (also `<repo>/.cursor/hooks.json`, `/etc/cursor/hooks.json`), **flat**
+  entries: `{"version": 1, "hooks": {"stop": [{"command": "…", "timeout": 5}]}}` (`HookLayout::Flat`).
+- Events (camelCase): `sessionStart`, `sessionEnd`, `beforeSubmitPrompt`, `preToolUse`, `postToolUse`,
+  `postToolUseFailure` (`is_interrupt`), `afterAgentResponse` (`text` + `input/output/cache_read/
+  cache_write_tokens`), `afterAgentThought`, `stop` (`status`: completed|aborted|error, `loop_count`),
+  `subagentStart`/`subagentStop` (`subagent_id`, `subagent_type`, `task`, `parent_conversation_id`),
+  `preCompact` (`context_tokens`, `context_window_size`), `beforeShellExecution`… Field lists: the
+  `*RequestQuery` descriptors in cursor-agent's `hooks_pb` module.
+- Common fields (snake_case): `session_id` = `conversation_id`, `generation_id`, `hook_event_name`,
+  `cursor_version` (the bridge's fingerprint), `workspace_roots`, `user_email`, `transcript_path`,
+  `model`. Env: `CURSOR_PROJECT_DIR`, `CURSOR_VERSION`, `CURSOR_TRANSCRIPT_PATH`, `CLAUDE_PROJECT_DIR`.
+- **Cursor also runs Claude Code's hooks** (`~/.claude/settings.json`, `.claude/settings*.json`),
+  translating names (`UserPromptSubmit`→`beforeSubmitPrompt`, `Bash`→`Shell`; no `PermissionRequest`
+  or `Notification`) but sending **its own payload**. It drops a Claude hook whose command equals one
+  of its own for the same event, so ours use the same command string. That is why the bridge tells
+  agents apart by payload before the process tree.
+- No "needs you": nothing says when Cursor asks for approval. Tool calls inside a subagent carry
+  `parent_tool_call_id` and are dropped (they would look like a new session).
+
+## Transcripts (cursor/transcript.rs)
+
+`~/.cursor/projects/<slug>/agent-transcripts/<id>/<id>.jsonl` + `<id>/subagents/<sub>.jsonl`. Lines
+`{role, message: {content: [{type: text|tool_use, …}]}}` and `{type: "turn_ended", status}`; your text
+inside `<user_query>` after a `<timestamp>`. Tools: `Shell` (command, description), `Read`/`Write`/
+`StrReplace`/`Delete` (`path`), `Grep`, `Glob`, `Task`… No times, model or tokens: the model and the
+per-response tokens arrive as `HookFacts` (unpriced), the context on `preCompact`.
+
+## Unverified
+
+That `subagent_id` names the file in `subagents/`; the IDE's process name (`cursor-agent` is in the
+bridge's list for the CLI); how Cursor treats an empty stdout from every hook (the docs say optional).
+Launch/resume: `cursor-agent`, `cursor-agent --resume <id>`.

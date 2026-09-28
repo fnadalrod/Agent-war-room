@@ -27,4 +27,6 @@ pub struct Timestamp(pub i64);
 pub enum ProviderKind {
     Claude,
     Codex,
+    Cursor,
+    Antigravity,
 }

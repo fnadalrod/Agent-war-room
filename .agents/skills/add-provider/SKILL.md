@@ -15,7 +15,9 @@ Codex was added this way; copy its shape (`crates/infrastructure/src/codex/`, `c
    any trust/consent step for new hooks.
 2. `ProviderKind` gets a variant (`crates/domain/src/ids.rs`); stored events stay compatible. A new
    event kind only if no existing one fits (skill `extend-session-model`).
-3. **Hooks.** If it speaks the Claude-style protocol: a `Dialect` + an `AgentProvider` that calls
+3. **Hooks.** Own events (Cursor, Antigravity): an `AgentProvider` with its own `translate`, a
+   payload fingerprint in the bridge's `fingerprint`, and the right `HookLayout`; facts its
+   transcript lacks (model, tokens) go in `Translated.facts`. If it speaks the Claude-style protocol: a `Dialect` + an `AgentProvider` that calls
    `hooks::translate` (see `codex/provider.rs`, ~30 lines), a `HookSpec` for the installer, and its
    process name in the bridge's `AGENTS` (+ `DIALOG_WHILE_WAITING` if it shows its own dialog while
    the hook waits). Otherwise a new ingress adapter producing `IncomingSignal`s.

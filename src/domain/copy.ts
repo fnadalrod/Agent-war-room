@@ -29,6 +29,8 @@ export const copy = {
   provider: {
     claude: t("provider.claude"),
     codex: t("provider.codex"),
+    cursor: t("provider.cursor"),
+    antigravity: t("provider.antigravity"),
   } as Record<string, string>,
 
   skillSource: {
@@ -254,7 +256,12 @@ export const copy = {
     },
     connect: (agent: string) => t("integration.connect", { agent }),
     title: (agent: string) => t("integration.title", { agent }),
-    codexTrust: t("integration.codex_trust"),
+    /** Per agent, what to know before connecting it. */
+    notes: {
+      codex: t("integration.codex_trust"),
+      cursor: t("integration.cursor_note"),
+      antigravity: t("integration.antigravity_note"),
+    } as Record<string, string>,
     hooksIn: t("integration.hooks_in"),
     bridge: t("integration.bridge"),
     autostart: t("integration.autostart"),

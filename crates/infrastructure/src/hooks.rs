@@ -106,8 +106,9 @@ pub fn translate(dialect: &Dialect, payload: &Value) -> PortResult<Option<Transl
         session: SessionId(session.to_owned()),
         cwd: field("cwd").unwrap_or_default().to_owned(),
         transcript_path: field("transcript_path").map(str::to_owned),
-        kind,
+        kind: Some(kind),
         extra,
+        facts: Default::default(),
     }))
 }
 

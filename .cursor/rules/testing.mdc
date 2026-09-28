@@ -14,6 +14,7 @@ alwaysApply: false
 | Front | Vitest next to the code; fixtures in `src/test/fixtures.ts`; the store tested against the demo gateway | `src/**/*.test.ts` |
 | UI look | screenshots of the demo UI | `npm run shot -- <dir>` |
 | End to end | real `claude`/`codex` + real bridge + real socket, isolated; shared harness in `tests/e2e/mod.rs` | `claude_e2e.rs`, `codex_e2e.rs` in `crates/infrastructure/tests` (ignored) |
+| Bridge end to end | contract-shaped Cursor/Antigravity payloads through the real bridge, socket and service | `bridge_e2e.rs` (ignored, needs the built bridge, costs nothing) |
 | Live desktop | real KWin, real transcript | `kwin_live`, `transcript_live` (ignored) |
 
 ## Commands

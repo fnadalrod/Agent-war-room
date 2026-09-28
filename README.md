@@ -1,6 +1,6 @@
 # Agent War Room
 
-A control room for your coding agents, **Claude Code and Codex**. If you run several agent sessions
+A control room for your coding agents: **Claude Code, Codex, Cursor and Antigravity**. If you run several agent sessions
 at once, spread across repos, terminals and IDE windows, you end up losing track of which one is
 waiting for you. Agent War Room shows **one screen per session, grouped by repository**, that lights up
 when something needs you, when it finishes or when it looks stuck. It lives in the system tray: you
@@ -148,8 +148,16 @@ Packages end up in `target/release/bundle/` and ship `warroom-hook` next to the 
 
 ## Connecting your agents
 
-The app shows a banner for each supported agent it finds on your machine (`~/.claude`, `~/.codex`)
-that is not connected yet. Both use the same bridge; each gets hooks in its own configuration.
+The app shows a banner for each supported agent it finds on your machine (`~/.claude`, `~/.codex`,
+`~/.cursor`, `~/.gemini/config`) that is not connected yet. They all use the same bridge; each gets
+hooks in its own configuration.
+
+| | States | Approve from the room | Model / tokens | Cost | Start / resume from the room |
+|---|---|---|---|---|---|
+| Claude Code | full | yes | yes | estimated | yes |
+| Codex | full | no (answer in Codex) | yes | no price | yes |
+| Cursor | no "needs you" | no | yes (from its hooks) | no price | yes (`cursor-agent`) |
+| Antigravity | working / finished | no | model only | no | no (only inside its app) |
 
 ### Claude Code
 
@@ -181,6 +189,30 @@ default), with its own `.warroom-bak` copy. Then:
 
 Everything else works the same: states, queue, preview, subagents, skills (`$name`), model and
 effort, context, changes and commits, "Next", launching and resuming (`codex resume`).
+
+### Cursor
+
+Click **Connect Cursor**. It adds hooks to `~/.cursor/hooks.json` (with a `.warroom-bak` copy). They
+cover the Cursor app's agent and `cursor-agent` in a terminal.
+
+- Cursor **also runs Claude Code's hooks**. If both integrations are connected it notices our command
+  twice and runs it once, so nothing arrives duplicated.
+- Its transcripts have no model or tokens; they come from its hooks (`afterAgentResponse`), from the
+  moment the app is running.
+- It doesn't report when it is waiting for your approval, so Cursor sessions don't turn red.
+
+### Antigravity
+
+Click **Connect Antigravity**. It adds one named block (`agent-war-room`) to its global
+`~/.gemini/config/hooks.json`, with a `.warroom-bak` copy.
+
+- Its hooks run inside its agent loop and don't say when a conversation starts or ends: a
+  conversation appears with its first model call and finishes at each `Stop`.
+- No approvals, no tokens (the model yes), and it can't be started from the room: it lives in its
+  own app.
+
+Cursor and Antigravity are built from their own hook contracts and real transcripts, but have **not
+been tried live** yet (see [Limitations](#limitations-and-roadmap)).
 
 The first agent's menu also has **Open at login (in the tray)**, which starts the app hidden in the
 tray.
@@ -234,17 +266,18 @@ The project is split like this:
 |---|---|
 | `crates/domain` | Sessions, states, attention, subagents, skills. No dependencies but serde. |
 | `crates/application` | Use cases (`WarRoomService`), ports and the view the UI consumes. |
-| `crates/infrastructure` | Adapters: the shared hook protocol and installer; `claude/` and `codex/` (dialects, transcripts, prices); SQLite, socket, KWin, tmux, Warp, PTYs, git. |
+| `crates/infrastructure` | Adapters: the shared hook protocol, installer and JSONL reading; `claude/`, `codex/`, `cursor/`, `antigravity/` (hook translation, transcripts, prices); SQLite, socket, KWin, tmux, Warp, PTYs, git. |
 | `crates/wire` | Protocol between the bridge and the app. |
 | `crates/i18n` | Translation lookup over `locales/<lang>.json` (the front reads the same catalogs). |
 | `crates/hook-bridge` | The `warroom-hook` binary. |
 | `src-tauri` | Composition, commands and events, tray, notifications, `--next`, autostart. |
 | `src` | Layered React: domain, application, infrastructure (Tauri or demo) and UI. |
 
-Each agent is a bundle of adapters (`AgentPorts`: hook dialect, transcript reader, skill folders)
-behind ports; the domain and use cases do not know which agent they are watching. Codex was added
-without touching them except for one event (`Interrupted`); the skill `add-provider` describes how
-to add the next one. Decisions and alternatives in
+Each agent is a bundle of adapters (`AgentPorts`: hook translation, transcript reader, skill folders)
+behind ports; the domain and use cases do not know which agent they are watching. Adding Codex,
+Cursor and Antigravity took one domain event (`Interrupted`) and one port change (hooks may bring
+model and tokens, `HookFacts`); the bridge, socket, installer, JSONL reading and UI are shared. The
+skill `add-provider` describes how to add the next one. Decisions and alternatives in
 [`docs/adr/0001-architecture.md`](docs/adr/0001-architecture.md).
 
 ## Data and privacy
@@ -256,10 +289,11 @@ Everything stays on your machine; the app makes no network requests.
 | Events (append-only, 14 days) | `~/.local/share/agent-war-room/events.db` |
 | Installed bridge | `~/.local/share/agent-war-room/bin/warroom-hook` |
 | Socket (`0700` permissions) | `$XDG_RUNTIME_DIR/agent-war-room/ingress.sock` |
-| Added hooks | `~/.claude/settings.json`, `$CODEX_HOME/hooks.json` (copies in `.warroom-bak`) |
+| Added hooks | `~/.claude/settings.json`, `$CODEX_HOME/hooks.json`, `~/.cursor/hooks.json`, `~/.gemini/config/hooks.json` (copies in `.warroom-bak`) |
 
-The app **reads** the transcripts in `~/.claude/projects/` and `~/.codex/sessions/` (plus Codex's
-`session_index.jsonl` for titles), `/proc` (to locate processes and
+The app **reads** the transcripts in `~/.claude/projects/`, `~/.codex/sessions/` (plus Codex's
+`session_index.jsonl` for titles), `~/.cursor/projects/*/agent-transcripts/` and
+`~/.gemini/antigravity/brain/`, `/proc` (to locate processes and
 windows) and, when you click **Changes**, the `git log` of the session's worktree. It only **writes**
 into your sessions when you reply or approve something from the room.
 
@@ -298,6 +332,7 @@ your configuration) and cost one short call each:
 cargo build -p warroom-hook
 cargo test -p awr-infrastructure --test claude_e2e -- --ignored --nocapture
 cargo test -p awr-infrastructure --test codex_e2e -- --ignored --nocapture
+cargo test -p awr-infrastructure --test bridge_e2e -- --ignored   # Cursor/Antigravity payloads, no agent
 ```
 
 Manual tests against the desktop:
@@ -349,7 +384,10 @@ Issues and pull requests are welcome.
 
 ## Limitations and roadmap
 
-- Claude Code and Codex only. Others (Gemini CLI, opencode…) follow the skill `add-provider`.
+- Supported: Claude Code, Codex, Cursor and Antigravity. Others (Gemini CLI, opencode…) follow the
+  skill `add-provider`.
+- Cursor and Antigravity: built from their contracts and real transcripts, and tested through the
+  real bridge (`bridge_e2e.rs`), but not yet against a live Cursor or Antigravity session.
 - Codex: approvals are answered in Codex, not from the room; no cost estimate; tested with Codex CLI
   0.154.
 - Per-window "Go to" only on KDE (KWin). GNOME and generic X11 are not done.

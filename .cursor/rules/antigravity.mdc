@@ -1,0 +1,43 @@
+---
+description: Antigravity support — its named hooks.json in the global customization root, camelCase payloads without the event name, no start/end/prompt events, step transcripts, and what is unverified. Read before touching crates/infrastructure/src/antigravity.
+globs: crates/infrastructure/src/antigravity/**
+alwaysApply: false
+---
+
+# Antigravity
+
+Built from the hooks documentation embedded in Antigravity's `language_server` (2.13) and real
+transcripts. **Not run live** (the user preferred no test conversation). Shared machinery →
+`hooks-ingest.mdc`.
+
+## Hooks
+
+- Config: a hooks.json in a customization root: global `~/.gemini/config/` (where its docs put
+  mcp_config.json, workflows, skills), or `<workspace>/.agents/`. Top level = named blocks:
+  `{"agent-war-room": {"PostToolUse": [{"matcher": "", "hooks": [{command}]}], "Stop": [{command}]}}`
+  (`HookLayout::Named`): tool events grouped with a matcher, the rest flat. Commands run with `sh -c`
+  from the folder of that hooks.json, synchronously inside the agent loop.
+- Events: `PreToolUse` (must answer a `decision`: allow|deny|ask|force_ask — we don't install it, any
+  answer would change its permission flow), `PostToolUse` (`stepIdx`, `error`), `PreInvocation`
+  (`invocationNum`, `initialNumSteps`), `PostInvocation`, `Stop` (`terminationReason`, `fullyIdle`).
+  **Every hook must print JSON**: the bridge prints `{}` even when the app is closed.
+- Payloads are camelCase: `conversationId`, `workspacePaths`, `transcriptPath`,
+  `artifactDirectoryPath`, `modelName`; **no event name**, so our command passes it as an argument
+  and the bridge adds `hook_event_name`. Env: `ANTIGRAVITY_CONVERSATION_ID`.
+- No start, end or prompt: the first `PreInvocation` of a run (`invocationNum` ≤ 1) stands for your
+  prompt, later ones keep it working, `Stop` ends the turn. No "needs you", no launching or resuming
+  from the room (`launchable: false`). Liveness: the agent process is the app's `language_server`.
+
+## Transcripts (antigravity/transcript.rs)
+
+`~/.gemini/antigravity/brain/<conversationId>/.system_generated/logs/transcript.jsonl` (and
+`transcript_full.jsonl` for truncated fields): one step per line with `step_index`, `source`, `type`
+(`USER_INPUT` with `<USER_REQUEST>…</USER_REQUEST>`, `PLANNER_RESPONSE` with `content` and
+`tool_calls[{name, args}]`, `RUN_COMMAND`, `VIEW_FILE`…), `status`, `created_at` (ISO, `Z`). Tool args
+are PascalCase (`CommandLine`, `AbsolutePath`, `TargetFile`, `Query`). No model or tokens, no
+subagent files (subagents appear as `invoke_subagent`).
+
+## Unverified
+
+That `PostToolUse` carries `toolCall`; what `invocationNum` counts exactly; whether the IDE flavour
+(`~/.gemini/antigravity-ide/`) reads the same global root.
