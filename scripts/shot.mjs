@@ -3,7 +3,8 @@
 //   npm run shot -- <out-dir> [width]
 //
 // Builds nothing: run `npm run build` first if the source changed (npm run shot does it for you).
-// Writes classic.png, detail.png, subagent.png, filtered.png and pixel.png to <out-dir>.
+// Writes classic.png (full page), detail.png, changes.png, diff.png, subagent.png, filtered.png and
+// pixel.png to <out-dir>.
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
@@ -35,20 +36,28 @@ try {
   const page = await browser.newPage({ viewport: { width, height: 950 } });
   page.on("pageerror", (e) => errors.push(String(e)));
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
-  const shot = async (name) => {
+  const shot = async (name, fullPage = false) => {
     await page.waitForTimeout(500);
-    await page.screenshot({ path: `${out}/${name}.png` });
+    await page.screenshot({ path: `${out}/${name}.png`, fullPage });
     console.log(`${out}/${name}.png`);
   };
 
   await page.goto(`http://localhost:${port}/`);
-  await shot("classic");
+  await shot("classic", true);
   // Subagent first: the detail panel would cover the chips. Esc goes back to its session's
   // detail (which has subagents), a second Esc closes it.
   await page.locator(".agent-chip").first().click();
   await shot("subagent");
   await page.keyboard.press("Escape");
   await shot("detail");
+  await page.locator(".load-changes").click();
+  await page.locator(".commit").first().waitFor();
+  await page.locator(".detail-body").evaluate((el) => (el.scrollTop = 0));
+  await page.locator(".detail-body section", { has: page.locator(".changes") }).scrollIntoViewIfNeeded();
+  await shot("changes");
+  await page.locator(".commit").first().click();
+  await shot("diff");
+  await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   const chip = page.locator(".filter-chip.source").first();
   if (await chip.count()) {

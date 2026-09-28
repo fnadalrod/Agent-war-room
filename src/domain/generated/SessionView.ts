@@ -2,6 +2,7 @@
 import type { AttentionView } from "./AttentionView";
 import type { SkillView } from "./SkillView";
 import type { SubagentView } from "./SubagentView";
+import type { UsageView } from "./UsageView";
 
 export type SessionView = { id: string, provider: string, attention: AttentionView, 
 /**
@@ -23,7 +24,15 @@ command: string | null, last_prompt: string | null, last_reply: string | null, l
 /**
  * Reasoning effort of the last turn.
  */
-effort: string | null, context_tokens: number | null, worktree_path: string, branch: string | null, is_linked_worktree: boolean, subagents: Array<SubagentView>, 
+effort: string | null, context_tokens: number | null, 
+/**
+ * Context window of the current model, to show how full it is.
+ */
+context_window: number | null, usage: UsageView, 
+/**
+ * Working but silent since this moment (ms) for longer than [`STALL_AFTER_MS`]: maybe stuck.
+ */
+stalled_since: number | null, worktree_path: string, branch: string | null, is_linked_worktree: boolean, subagents: Array<SubagentView>, 
 /**
  * Skills used, most recent first.
  */

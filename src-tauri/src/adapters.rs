@@ -61,6 +61,8 @@ pub enum NoticeAction {
     Open(SessionId),
     Focus(SessionId),
     Approve(SessionId),
+    /// Freedesktop notifications can't take inline replies: open the preview with the message box focused.
+    Reply(SessionId),
 }
 
 /// Desktop notifications with buttons (freedesktop). Each session replaces its previous notification.
@@ -95,6 +97,9 @@ impl Notifier for DesktopNotifier {
             if notice.approvable {
                 n.action("approve", locale::NOTICE_APPROVE);
             }
+            if notice.attention != Attention::Working {
+                n.action("reply", locale::NOTICE_REPLY);
+            }
             match n.show() {
                 Ok(handle) => handle.wait_for_action(|action| {
                     let session = notice.session.clone();
@@ -102,6 +107,7 @@ impl Notifier for DesktopNotifier {
                         "default" => Some(NoticeAction::Open(session)),
                         "focus" => Some(NoticeAction::Focus(session)),
                         "approve" => Some(NoticeAction::Approve(session)),
+                        "reply" => Some(NoticeAction::Reply(session)),
                         _ => None, // "__closed"
                     };
                     if let Some(picked) = picked {

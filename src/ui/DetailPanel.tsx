@@ -6,7 +6,10 @@ import {
   deskName,
   extraActivity,
   isWritable,
+  contextRatio,
   modelAndEffort,
+  money,
+  tokenCount,
   toolDigest,
   whereItLives,
   type SessionView,
@@ -17,6 +20,8 @@ import {
 import { copy } from "../domain/copy";
 import { CheckIcon, CopyIcon, GoIcon, PlayIcon, RobotIcon, TerminalIcon, XIcon } from "./icons";
 import { Markdown } from "./Markdown";
+import { ChangesSection, DiffView } from "./Changes";
+import { ContextBar } from "./ContextBar";
 import { QuickInput } from "./QuickInput";
 import { SkillTag } from "./SkillTag";
 import { since } from "./useStore";
@@ -28,12 +33,18 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
   const s = detail.data?.session ?? fallback;
 
   const inAgent = detail.agent != null;
+  const hasDiff = detail.diff != null;
   useEffect(() => {
-    // Esc: from a subagent, back to the session; from the session, close.
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && (inAgent ? store.backToSession() : store.closeDetail());
+    // Esc closes the innermost thing: a diff, then a subagent, then the preview.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (hasDiff) store.closeDiff();
+      else if (inAgent) store.backToSession();
+      else store.closeDetail();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [store, inAgent]);
+  }, [store, inAgent, hasDiff]);
 
   if (!s) return null;
   const onLink = (url: string) => store.openExternal(url);
@@ -102,6 +113,32 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
           </section>
         )}
 
+        {s.usage.total_tokens > 0 && (
+          <section>
+            <h3>{copy.detail.usage}</h3>
+            <ContextBar session={s} />
+            {contextRatio(s) != null && (
+              <p className="muted small">
+                {copy.detail.contextUsed(tokenCount(s.context_tokens!), tokenCount(s.context_window!), Math.round(contextRatio(s)! * 100))}
+              </p>
+            )}
+            <p className="usage-line">
+              <strong>{tokenCount(s.usage.total_tokens)} tok</strong> · {copy.detail.estimatedCost(money(s.usage.cost_usd))}
+              {s.usage.partial_cost && <span className="muted"> {copy.detail.partialCost}</span>}
+            </p>
+            <p className="muted small">
+              {copy.detail.tokenBreakdown(
+                tokenCount(s.usage.input_tokens),
+                tokenCount(s.usage.output_tokens),
+                tokenCount(s.usage.cache_read_tokens),
+                tokenCount(s.usage.cache_write_tokens),
+              )}
+            </p>
+          </section>
+        )}
+
+        <ChangesSection detail={detail} store={store} now={now} />
+
         {s.last_reply && (
           <section>
             <h3>{copy.detail.lastReply}</h3>
@@ -159,9 +196,10 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
 
       {isWritable(s) && (
         <footer className="detail-foot">
-          <QuickInput session={s} store={store} />
+          <QuickInput session={s} store={store} autoFocus={detail.reply} />
         </footer>
       )}
+      <DiffView detail={detail} store={store} />
     </aside>
   );
 }

@@ -1,4 +1,4 @@
-use awr_application::ports::RepoResolver;
+use awr_application::ports::{CommitInfo, GitHistory, PortError, PortResult, RepoResolver};
 use awr_domain::{RepoId, Workspace};
 use std::collections::HashMap;
 use std::path::Path;
@@ -90,6 +90,64 @@ fn outside_git(cwd: &str) -> Workspace {
     }
 }
 
+/// Largest diff sent to the UI.
+const SHOW_MAX_BYTES: usize = 400 * 1024;
+/// Most commits listed for one session.
+const LOG_MAX: &str = "200";
+
+/// Git history through the `git` CLI.
+pub struct GitCli;
+
+impl GitHistory for GitCli {
+    fn commits(&self, worktree: &str, since: i64, until: Option<i64>) -> PortResult<Vec<CommitInfo>> {
+        let since_arg = format!("--since=@{}", since.div_euclid(1000));
+        let until_arg = until.map(|u| format!("--until=@{}", u.div_euclid(1000) + 1));
+        // Record separator \x1e before each commit, unit separator \x1f between fields.
+        let mut args = vec!["log", "HEAD", "-n", LOG_MAX, "--shortstat", "--format=%x1e%H%x1f%an%x1f%at%x1f%s"];
+        args.push(&since_arg);
+        if let Some(until) = &until_arg {
+            args.push(until);
+        }
+        let out = git(worktree, &args).unwrap_or_default();
+        Ok(out.split('\x1e').filter_map(parse_commit).collect())
+    }
+
+    fn show(&self, worktree: &str, hash: &str) -> PortResult<String> {
+        let mut out = git(worktree, &["show", "--stat", "--patch", "--format=fuller", "--no-color", hash])
+            .ok_or_else(|| PortError::Failed(format!("git show {hash} failed")))?;
+        if out.len() > SHOW_MAX_BYTES {
+            let cut = (0..=SHOW_MAX_BYTES).rev().find(|i| out.is_char_boundary(*i)).unwrap_or(0);
+            out.truncate(cut);
+            out.push_str("\n…");
+        }
+        Ok(out)
+    }
+}
+
+/// `<hash>\x1f<author>\x1f<unix secs>\x1f<subject>` + an optional `--shortstat` line.
+fn parse_commit(record: &str) -> Option<CommitInfo> {
+    let mut lines = record.trim().lines();
+    let mut fields = lines.next()?.split('\x1f');
+    let (hash, author, at, subject) = (fields.next()?, fields.next()?, fields.next()?, fields.next()?);
+    let stat = lines.find(|l| l.contains("changed")).unwrap_or_default();
+    let number_before = |word: &str| {
+        stat.split(',')
+            .find(|part| part.contains(word))
+            .and_then(|part| part.split_whitespace().next())
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(0)
+    };
+    Some(CommitInfo {
+        hash: hash.to_owned(),
+        subject: subject.to_owned(),
+        author: author.to_owned(),
+        at: at.parse::<i64>().ok()? * 1000,
+        files_changed: number_before("changed"),
+        insertions: number_before("insertion"),
+        deletions: number_before("deletion"),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,6 +196,43 @@ mod tests {
         git(&dir, &["checkout", "-q", "--detach"]);
         let ws = GitRepoResolver::new().resolve(dir.to_str().unwrap());
         assert!(ws.branch.unwrap().starts_with('@'));
+    }
+
+    #[test]
+    fn lists_commits_in_a_time_window_with_their_stats_and_shows_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        git(repo, &["init", "-q", "-b", "main"]);
+        let commit = |file: &str, body: &str, msg: &str, date: &str| {
+            std::fs::write(repo.join(file), body).unwrap();
+            git(repo, &["add", "."]);
+            let ok = Command::new("git")
+                .arg("-C")
+                .arg(repo)
+                .args(["-c", "user.name=Ana", "-c", "user.email=a@a", "commit", "-q", "-m", msg])
+                .env("GIT_AUTHOR_DATE", date)
+                .env("GIT_COMMITTER_DATE", date)
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok);
+        };
+        commit("a.txt", "one\n", "before the session", "2026-01-01T10:00:00Z");
+        commit("b.txt", "two\nthree\n", "fix login", "2026-01-01T12:00:00Z");
+
+        let noon_minus_1h = 1_767_265_200_000; // 2026-01-01T11:00:00Z
+        let wt = repo.to_str().unwrap();
+        let commits = GitCli.commits(wt, noon_minus_1h, None).unwrap();
+        assert_eq!(commits.len(), 1);
+        let c = &commits[0];
+        assert_eq!((c.subject.as_str(), c.author.as_str()), ("fix login", "Ana"));
+        assert_eq!((c.files_changed, c.insertions, c.deletions), (1, 2, 0));
+        assert_eq!(c.at, 1_767_268_800_000);
+        assert!(GitCli.commits(wt, noon_minus_1h, Some(noon_minus_1h + 1)).unwrap().is_empty());
+
+        let shown = GitCli.show(wt, &c.hash).unwrap();
+        assert!(shown.contains("+three") && shown.contains("fix login"));
+        assert!(GitCli.show(wt, "0000000").is_err());
     }
 
     #[test]

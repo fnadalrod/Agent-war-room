@@ -13,6 +13,9 @@ export type { RoomView };
 export type { SubagentView } from "./generated/SubagentView";
 export type { IntegrationStatus } from "./generated/IntegrationStatus";
 export type { SessionDetail } from "./generated/SessionDetail";
+export type { SessionChanges } from "./generated/SessionChanges";
+export type { CommitView } from "./generated/CommitView";
+export type { UsageView } from "./generated/UsageView";
 export type { SubagentPreview } from "./generated/SubagentPreview";
 export type { TimelineEntryView } from "./generated/TimelineEntryView";
 
@@ -212,4 +215,36 @@ export function filterOptions(view: WarRoomView): {
 
 export function toggle<T>(list: T[], item: T): T[] {
   return list.includes(item) ? list.filter((x) => x !== item) : [...list, item];
+}
+
+// ---------- Usage, context and stalls ----------
+
+/** 1234 → "1,2k"; 12_345_678 → "12,3M". Compact counts for badges. */
+export function tokenCount(n: number): string {
+  if (n < 1000) return String(n);
+  const [value, unit] = n >= 1_000_000 ? [n / 1_000_000, "M"] : [n / 1000, "k"];
+  const digits = value >= 100 ? 0 : 1;
+  return `${value.toFixed(digits).replace(".", ",").replace(/,0$/, "")}${unit}`;
+}
+
+/** "$0,42", "$12". */
+export function money(usd: number): string {
+  if (usd >= 100) return `$${Math.round(usd)}`;
+  return `$${usd.toFixed(2).replace(".", ",")}`;
+}
+
+/** How full the context is, 0..1, if the window is known. */
+export function contextRatio(s: SessionView): number | null {
+  if (s.context_tokens == null || !s.context_window) return null;
+  return Math.min(1, s.context_tokens / s.context_window);
+}
+
+/** Level for coloring the context bar. */
+export function contextLevel(ratio: number): "ok" | "warn" | "full" {
+  return ratio >= 0.85 ? "full" : ratio >= 0.6 ? "warn" : "ok";
+}
+
+/** Minutes since a working session went silent, if it looks stuck. */
+export function stalledMinutes(s: SessionView, now: number): number | null {
+  return s.stalled_since == null ? null : Math.max(0, Math.round((now - s.stalled_since) / 60_000));
 }

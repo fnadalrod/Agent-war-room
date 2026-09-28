@@ -2,6 +2,7 @@ import {
   type Filter,
   type IntegrationStatus,
   NO_FILTER,
+  type SessionChanges,
   type SessionDetail,
   type SessionView,
   type SkillSourceView,
@@ -26,6 +27,12 @@ export type OpenDetail = {
   id: string;
   data: SessionDetail | null;
   agent: { id: string; data: SubagentPreview | null } | null;
+  /** Put the cursor in the message box (came from a notification's "Reply"). */
+  reply?: boolean;
+  /** "What did it change": null until asked for (it runs git and scans transcripts). */
+  changes?: { data: SessionChanges | null } | null;
+  /** A commit's diff being viewed. */
+  diff?: { hash: string; short: string; text: string | null } | null;
 };
 
 /** In-app terminal open in the panel. */
@@ -102,7 +109,7 @@ export class WarRoomStore {
       this.set({ view });
       this.refreshDetailIfChanged(view);
     });
-    const offOpen = await this.rooms.onOpenRequest((id) => this.openDetail(id));
+    const offOpen = await this.rooms.onOpenRequest((id, reply) => this.openDetail(id, { reply }));
     await this.run(async () => {
       const [view, integration] = await Promise.all([this.rooms.load(), this.integration.status()]);
       this.set({ view, integration });
@@ -166,9 +173,66 @@ export class WarRoomStore {
   }
 
   /** Opens a session preview (or switches it to another session). */
-  openDetail(id: string) {
-    this.set({ detail: { id, data: this.state.detail?.id === id ? this.state.detail.data : null, agent: null } });
+  openDetail(id: string, options: { reply?: boolean } = {}) {
+    const same = this.state.detail?.id === id;
+    this.set({
+      detail: {
+        id,
+        data: same ? this.state.detail!.data : null,
+        agent: null,
+        reply: options.reply ?? false,
+        changes: same ? this.state.detail!.changes : null,
+      },
+    });
     void this.loadDetail(id);
+  }
+
+  /** Jumps to what has waited longest (same as the global shortcut). */
+  goNext() {
+    void this.rooms.focusNext().then(
+      (id) => id == null && this.notify({ text: copy.topbar.nothingWaiting, tone: "ok" }),
+      (e) => this.notify({ text: String(e), tone: "warn" }),
+    );
+  }
+
+  /** Loads the open session's edited files and commits. */
+  loadChanges() {
+    const open = this.state.detail;
+    if (!open) return;
+    this.set({ detail: { ...open, changes: { data: null } } });
+    void this.rooms.sessionChanges(open.id).then(
+      (data) => {
+        const now = this.state.detail;
+        if (now?.id === open.id) this.set({ detail: { ...now, changes: { data } } });
+      },
+      (e) => {
+        const now = this.state.detail;
+        if (now?.id === open.id) this.set({ detail: { ...now, changes: null } });
+        this.notify({ text: String(e), tone: "warn" });
+      },
+    );
+  }
+
+  /** Shows one commit's diff over the preview. */
+  openDiff(hash: string, short: string) {
+    const open = this.state.detail;
+    if (!open) return;
+    this.set({ detail: { ...open, diff: { hash, short, text: null } } });
+    void this.rooms.commitDiff(open.id, hash).then(
+      (text) => {
+        const now = this.state.detail;
+        if (now?.id === open.id && now.diff?.hash === hash) this.set({ detail: { ...now, diff: { hash, short, text } } });
+      },
+      (e) => {
+        this.closeDiff();
+        this.notify({ text: String(e), tone: "warn" });
+      },
+    );
+  }
+
+  closeDiff() {
+    const open = this.state.detail;
+    if (open) this.set({ detail: { ...open, diff: null } });
   }
 
   /** Opens a subagent preview (inside its session panel). */

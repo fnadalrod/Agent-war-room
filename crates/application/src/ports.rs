@@ -74,6 +74,34 @@ pub trait ViewPublisher: Send + Sync {
 }
 
 /// What the transcript tells about a session that the hooks don't carry.
+/// Tokens spent and their estimated cost at API prices. Each API message is counted once.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Usage {
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_write_tokens: u64,
+    /// Estimated cost in millionths of a dollar.
+    pub cost_micros: u64,
+    /// Messages whose model has no known price (not included in the cost).
+    pub unpriced_messages: u32,
+}
+
+impl Usage {
+    pub fn tokens(&self) -> u64 {
+        self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_write_tokens
+    }
+
+    pub fn add(&mut self, other: &Usage) {
+        self.input_tokens += other.input_tokens;
+        self.output_tokens += other.output_tokens;
+        self.cache_read_tokens += other.cache_read_tokens;
+        self.cache_write_tokens += other.cache_write_tokens;
+        self.cost_micros += other.cost_micros;
+        self.unpriced_messages += other.unpriced_messages;
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TranscriptSummary {
     /// Title the agent itself generates for the session.
@@ -91,6 +119,12 @@ pub struct TranscriptSummary {
     /// Context tokens of the last turn (input + cache).
     pub context_tokens: Option<u64>,
     pub subagents: Vec<SubagentDetail>,
+    /// Whole session, subagents included.
+    pub usage: Usage,
+    /// Same, only messages from today (local time).
+    pub usage_today: Usage,
+    /// Context window of the current model, if known.
+    pub context_window: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -132,6 +166,15 @@ pub struct AgentTranscript {
     pub timeline: Vec<TimelineItem>,
 }
 
+/// A file the agent (or one of its subagents) edited or created.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TouchedFile {
+    pub path: String,
+    pub edits: u32,
+    /// Written whole at least once (Write), usually a new file.
+    pub written: bool,
+}
+
 pub trait TranscriptReader: Send + Sync {
     /// Incremental read: calling it often must be cheap.
     fn read(&self, transcript_path: &str, subagent_ids: &[String]) -> Option<TranscriptSummary>;
@@ -139,6 +182,28 @@ pub trait TranscriptReader: Send + Sync {
     fn recent(&self, transcript_path: &str, limit: usize) -> Vec<TimelineItem>;
     /// Transcript of a subagent of the session whose main transcript is `transcript_path`.
     fn subagent(&self, transcript_path: &str, agent_id: &str, limit: usize) -> Option<AgentTranscript>;
+    /// Files edited in the session (main transcript and every subagent). Full scan: on demand only.
+    fn touched_files(&self, transcript_path: &str) -> Vec<TouchedFile>;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitInfo {
+    pub hash: String,
+    pub subject: String,
+    pub author: String,
+    /// Milliseconds since epoch.
+    pub at: i64,
+    pub files_changed: u32,
+    pub insertions: u32,
+    pub deletions: u32,
+}
+
+/// Git history of a worktree.
+pub trait GitHistory: Send + Sync {
+    /// Commits reachable from HEAD made in `[since, until]` (milliseconds), newest first.
+    fn commits(&self, worktree: &str, since: i64, until: Option<i64>) -> PortResult<Vec<CommitInfo>>;
+    /// `git show` of one commit (patch with stat), possibly truncated.
+    fn show(&self, worktree: &str, hash: &str) -> PortResult<String>;
 }
 
 /// Where to jump to see a session.

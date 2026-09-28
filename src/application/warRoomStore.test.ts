@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createDemo } from "../infrastructure/demoGateway";
 import { aSession } from "../test/fixtures";
 import { NO_FILTER, type Filter } from "../domain/attention";
+import { copy } from "../domain/copy";
 import { WarRoomStore } from "./warRoomStore";
 
 function storeWith(overrides: Partial<ReturnType<typeof createDemo>["rooms"]> = {}) {
@@ -53,6 +54,26 @@ describe("WarRoomStore", () => {
     expect(saved).toEqual({ ...NO_FILTER, skills: ["close-task"] });
     store.clearFilter();
     expect(saved).toEqual(NO_FILTER);
+  });
+
+  it("says so when nothing is waiting for the next jump", async () => {
+    const store = storeWith({ focusNext: vi.fn().mockResolvedValue(null) });
+    store.goNext();
+    await vi.waitFor(() => expect(store.snapshot().toast?.text).toBe(copy.topbar.nothingWaiting));
+  });
+
+  it("loads changes on demand and opens a commit diff over the preview", async () => {
+    const store = storeWith();
+    await store.start();
+    store.openDetail("a1b2c3d4-tintero-sync");
+    expect(store.snapshot().detail?.changes).toBeNull();
+    store.loadChanges();
+    await vi.waitFor(() => expect(store.snapshot().detail?.changes?.data?.commits.length).toBeGreaterThan(0));
+    const commit = store.snapshot().detail!.changes!.data!.commits[0];
+    store.openDiff(commit.hash, commit.short);
+    await vi.waitFor(() => expect(store.snapshot().detail?.diff?.text).toContain("diff --git"));
+    store.closeDiff();
+    expect(store.snapshot().detail?.diff).toBeNull();
   });
 
   it("warns without breaking when a session cannot be written to", async () => {

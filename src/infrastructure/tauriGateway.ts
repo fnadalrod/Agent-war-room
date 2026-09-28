@@ -7,7 +7,13 @@ import type {
   TerminalInfo,
   WarRoomGateway,
 } from "../application/ports";
-import type { IntegrationStatus, SessionDetail, SubagentPreview, WarRoomView } from "../domain/attention";
+import type {
+  IntegrationStatus,
+  SessionChanges,
+  SessionDetail,
+  SubagentPreview,
+  WarRoomView,
+} from "../domain/attention";
 
 /** Must match the event names in src-tauri (`adapters.rs`, `lib.rs`). */
 const VIEW_EVENT = "warroom://view";
@@ -33,7 +39,11 @@ export const tauriWarRoomGateway: WarRoomGateway = {
   detail: (id) => invoke<SessionDetail>("session_detail", { id, limit: 80 }),
   subagentDetail: (id, agent) => invoke<SubagentPreview>("subagent_detail", { id, agent }),
   openExternal: (url) => invoke("open_external", { url }),
-  onOpenRequest: (listener) => listen<string>(OPEN_DETAIL_EVENT, (e) => listener(e.payload)),
+  onOpenRequest: (listener) =>
+    listen<{ id: string; reply: boolean }>(OPEN_DETAIL_EVENT, (e) => listener(e.payload.id, e.payload.reply)),
+  focusNext: () => invoke<string | null>("focus_next"),
+  sessionChanges: (id) => invoke<SessionChanges>("session_changes", { id }),
+  commitDiff: (id, hash) => invoke<string>("commit_diff", { id, hash }),
 };
 
 function fromBase64(data: string): Uint8Array {

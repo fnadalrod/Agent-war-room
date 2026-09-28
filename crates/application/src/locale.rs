@@ -44,3 +44,17 @@ pub fn unknown_session(id: impl std::fmt::Display) -> String {
 pub fn unknown_subagent(id: &str) -> String {
     format!("subagente desconocido: {id}")
 }
+
+pub fn stalled_title(place: &str) -> String {
+    format!("{place} parece atascada")
+}
+
+pub fn stalled_body(minutes: i64, doing: Option<&str>) -> String {
+    match doing {
+        Some(doing) => format!("Sin actividad desde hace {minutes} min · {doing}"),
+        None => format!("Sin actividad desde hace {minutes} min"),
+    }
+}
+
+pub const NOTHING_WAITING: &str = "nada te está esperando";
+pub const INVALID_COMMIT: &str = "commit no válido";

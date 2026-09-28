@@ -1,4 +1,11 @@
-import type { Filter, IntegrationStatus, SessionDetail, SubagentPreview, WarRoomView } from "../domain/attention";
+import type {
+  Filter,
+  IntegrationStatus,
+  SessionChanges,
+  SessionDetail,
+  SubagentPreview,
+  WarRoomView,
+} from "../domain/attention";
 
 export type Unsubscribe = () => void;
 
@@ -31,7 +38,14 @@ export interface WarRoomGateway {
   /** Opens a link in the system browser. */
   openExternal(url: string): Promise<void>;
   /** The core asks to open a session preview (e.g. a notification was clicked). */
-  onOpenRequest(listener: (id: string) => void): Promise<Unsubscribe>;
+  /** `reply`: open it with the message box focused (the notification's "Reply" button). */
+  onOpenRequest(listener: (id: string, reply: boolean) => void): Promise<Unsubscribe>;
+  /** Jumps to what has waited longest; resolves to its id, or null if nothing waits. */
+  focusNext(): Promise<string | null>;
+  /** Files the session edited and commits in its worktree since it started. */
+  sessionChanges(id: string): Promise<SessionChanges>;
+  /** `git show` of one of those commits. */
+  commitDiff(id: string, hash: string): Promise<string>;
 }
 
 export type TerminalInfo = { id: string; label: string; cwd: string; alive: boolean };

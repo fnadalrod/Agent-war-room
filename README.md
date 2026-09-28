@@ -5,12 +5,25 @@ repositorio, que se ilumina cuando algo te necesita o ha terminado. Vive en la b
 miras cuando cambia de color. Arquitectura y decisiones en
 [`docs/adr/0001-arquitectura.md`](docs/adr/0001-arquitectura.md).
 
+![Vista clásica](docs/screenshots/classic.png)
+
+![War Room pixel art](docs/screenshots/pixel.png)
+
 ## Qué hace
 
 - **Vista previa de cada sesión:** encargo inicial y comando con que se lanzó, última respuesta
   completa en Markdown y conversación reciente con las herramientas agrupadas.
 - **Cola "Requiere tu atención"** con lo que te espera en todos los repos.
 - **Avisos con botones:** "Ver", "Ir a" y "Aprobar" desde la propia notificación.
+- **"Siguiente":** salta a lo que más lleva esperándote (primero lo que te pide algo, luego lo
+  terminado). Hay botón en la cabecera, entrada en el menú de la bandeja y comando
+  `agent-war-room --next`, pensado para un atajo global (ver abajo).
+- **Agentes atascados:** si una sesión lleva 6 minutos "trabajando" sin dar señales, se marca en
+  ámbar, sube a la cola y te avisa una vez.
+- **Consumo:** barra de contexto usado (avisa antes de que compacte), tokens y coste estimado a
+  precio de API por sesión (subagentes incluidos) y total de hoy en la cabecera.
+- **Cambios de una sesión, bajo demanda:** ficheros que editó (también sus subagentes) y commits
+  hechos en su worktree desde que empezó, con el diff de cada uno.
 - **Estado de cada agente** a partir de los hooks de Claude Code:
   - 🔴 te necesita: permiso, pregunta o plan pendiente
   - 🔵 terminado sin revisar
@@ -51,6 +64,17 @@ Las sesiones que arranquen a partir de entonces aparecerán en la sala.
 
 Para que se abra sola al iniciar sesión (oculta, en la bandeja), actívalo en el menú de
 **Claude Code** de la cabecera.
+
+### Atajo global "siguiente" (KDE)
+
+Configuración del sistema → Teclado → Atajos → Añadir nuevo → Comando o script:
+`agent-war-room --next` (o la ruta del binario si no está instalado), y asígnale una tecla. Con la
+app abierta, el atajo salta a la ventana de la sesión que más lleva esperando; si no la encuentra,
+abre su vista previa.
+
+Los avisos de escritorio llevan "Responder": abre la vista previa con el cursor en el mensaje.
+Escribir la respuesta dentro del propio aviso no es posible, porque las notificaciones de Linux
+(freedesktop) no lo soportan.
 
 ### Instalar como paquete
 

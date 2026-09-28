@@ -1,6 +1,7 @@
 //! Claude Code adapter: hook translation and bridge installation.
 
 mod installer;
+pub mod pricing;
 mod provider;
 mod skills;
 mod tools;

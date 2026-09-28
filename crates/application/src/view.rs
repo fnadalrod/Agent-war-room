@@ -1,8 +1,8 @@
 //! Read model consumed by the front end. Exported to TS with `ts-rs` (`cargo test -p awr-application`).
 
 use crate::locale;
-use crate::ports::TranscriptSummary;
-use awr_domain::{Attention, Session, SessionId, SessionStatus, WaitReason, WarRoom};
+use crate::ports::{TranscriptSummary, Usage};
+use awr_domain::{Attention, Session, SessionId, SessionStatus, WaitReason, WarRoom, Timestamp};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use ts_rs::TS;
@@ -36,6 +36,76 @@ impl From<Attention> for AttentionView {
 pub struct WarRoomView {
     pub aggregate: AttentionView,
     pub rooms: Vec<RoomView>,
+    /// Tokens and estimated cost of every known session today.
+    pub today: UsageView,
+}
+
+/// A working session with no activity for this long is flagged as possibly stuck.
+pub const STALL_AFTER_MS: i64 = 6 * 60 * 1000;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, TS)]
+#[ts(export)]
+pub struct UsageView {
+    #[ts(type = "number")]
+    pub input_tokens: u64,
+    #[ts(type = "number")]
+    pub output_tokens: u64,
+    #[ts(type = "number")]
+    pub cache_read_tokens: u64,
+    #[ts(type = "number")]
+    pub cache_write_tokens: u64,
+    #[ts(type = "number")]
+    pub total_tokens: u64,
+    /// Estimated at API prices; subscriptions don't pay this, but it compares sessions.
+    pub cost_usd: f64,
+    /// Some messages used a model without a known price.
+    pub partial_cost: bool,
+}
+
+impl From<&Usage> for UsageView {
+    fn from(u: &Usage) -> Self {
+        Self {
+            input_tokens: u.input_tokens,
+            output_tokens: u.output_tokens,
+            cache_read_tokens: u.cache_read_tokens,
+            cache_write_tokens: u.cache_write_tokens,
+            total_tokens: u.tokens(),
+            cost_usd: u.cost_micros as f64 / 1_000_000.0,
+            partial_cost: u.unpriced_messages > 0,
+        }
+    }
+}
+
+/// On-demand "what did it change": files it edited and commits made in its worktree meanwhile.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[ts(export)]
+pub struct SessionChanges {
+    pub worktree: String,
+    pub files: Vec<TouchedFileView>,
+    pub commits: Vec<CommitView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct TouchedFileView {
+    /// Relative to the worktree when inside it.
+    pub path: String,
+    pub edits: u32,
+    pub written: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct CommitView {
+    pub hash: String,
+    pub short: String,
+    pub subject: String,
+    pub author: String,
+    #[ts(type = "number")]
+    pub at: i64,
+    pub files_changed: u32,
+    pub insertions: u32,
+    pub deletions: u32,
 }
 
 /// One room per repository.
@@ -70,6 +140,13 @@ pub struct SessionView {
     pub effort: Option<String>,
     #[ts(type = "number | null")]
     pub context_tokens: Option<u64>,
+    /// Context window of the current model, to show how full it is.
+    #[ts(type = "number | null")]
+    pub context_window: Option<u64>,
+    pub usage: UsageView,
+    /// Working but silent since this moment (ms) for longer than [`STALL_AFTER_MS`]: maybe stuck.
+    #[ts(type = "number | null")]
+    pub stalled_since: Option<i64>,
     pub worktree_path: String,
     pub branch: Option<String>,
     pub is_linked_worktree: bool,
@@ -219,6 +296,7 @@ pub fn project(
     room: &WarRoom,
     summaries: &HashMap<SessionId, TranscriptSummary>,
     approvable: &HashSet<SessionId>,
+    now: Timestamp,
 ) -> WarRoomView {
     let mut by_repo: BTreeMap<String, RoomView> = BTreeMap::new();
     for session in room.sessions() {
@@ -228,7 +306,7 @@ pub fn project(
             attention: AttentionView::Offline,
             sessions: Vec::new(),
         });
-        entry.sessions.push(session_view(session, summaries.get(&session.id), approvable.contains(&session.id)));
+        entry.sessions.push(session_view(session, summaries.get(&session.id), approvable.contains(&session.id), now));
     }
 
     let mut rooms: Vec<RoomView> = by_repo
@@ -247,10 +325,25 @@ pub fn project(
         .collect();
     rooms.sort_by(|a, b| b.attention.cmp(&a.attention).then_with(|| a.repo_name.cmp(&b.repo_name)));
 
-    WarRoomView { aggregate: room.aggregate_attention().into(), rooms }
+    let mut today = Usage::default();
+    for summary in summaries.values() {
+        today.add(&summary.usage_today);
+    }
+    WarRoomView { aggregate: room.aggregate_attention().into(), rooms, today: (&today).into() }
 }
 
-pub(crate) fn session_view(s: &Session, summary: Option<&TranscriptSummary>, can_approve: bool) -> SessionView {
+/// When a working session went silent, if it has been silent long enough to look stuck.
+pub fn stalled_since(s: &Session, now: Timestamp) -> Option<i64> {
+    let working = matches!(s.status, SessionStatus::Working { .. } | SessionStatus::Compacting);
+    (working && now.0 - s.last_activity_at.0 >= STALL_AFTER_MS).then_some(s.last_activity_at.0)
+}
+
+pub(crate) fn session_view(
+    s: &Session,
+    summary: Option<&TranscriptSummary>,
+    can_approve: bool,
+    now: Timestamp,
+) -> SessionView {
     let summary = summary.cloned().unwrap_or_default();
     let detail = |id: &str| summary.subagents.iter().find(|d| d.id == id).cloned().unwrap_or_default();
     let mut view = SessionView {
@@ -267,6 +360,9 @@ pub(crate) fn session_view(s: &Session, summary: Option<&TranscriptSummary>, can
         model: summary.model.clone(),
         effort: summary.effort.clone(),
         context_tokens: summary.context_tokens,
+        context_window: summary.context_window,
+        usage: (&summary.usage).into(),
+        stalled_since: stalled_since(s, now),
         worktree_path: s.workspace.worktree_path.clone(),
         branch: s.workspace.branch.clone(),
         is_linked_worktree: s.workspace.is_linked_worktree,

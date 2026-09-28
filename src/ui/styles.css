@@ -782,9 +782,15 @@ button.linkish:hover:not(:disabled) {
   list-style: none;
 }
 
+.agent-strip li {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .agent-chip {
   gap: 5px;
   max-width: 100%;
+  overflow: hidden;
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--surface-2);
@@ -1315,4 +1321,180 @@ button.linkish:hover:not(:disabled) {
   .queue li {
     flex-wrap: wrap;
   }
+}
+
+/* ---------- Usage, stalls, next, changes ---------- */
+.small {
+  font-size: 12px;
+}
+
+.today {
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+button.next {
+  --c: var(--needs-you);
+}
+
+.context-bar {
+  height: 4px;
+  margin-top: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+
+.context-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--working);
+}
+
+.context-bar[data-level="warn"] span {
+  background: #f59e0b;
+}
+
+.context-bar[data-level="full"] span {
+  background: var(--needs-you);
+}
+
+.badge.stalled {
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+  color: #fbbf24;
+}
+
+.card[data-stalled="true"] {
+  border-top-color: #f59e0b;
+  box-shadow: 0 0 0 1px color-mix(in srgb, #f59e0b 30%, transparent);
+}
+
+.queue li[data-stalled="true"],
+.queue li[data-stalled="true"] .dot {
+  --c: #f59e0b;
+}
+
+.badge.stalled {
+  white-space: nowrap;
+}
+
+.usage-line {
+  margin: 8px 0 2px;
+}
+
+.changes h4 {
+  margin: 12px 0 6px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.commit-list,
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+}
+
+.commit {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: baseline;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
+.commit code {
+  color: var(--finished);
+}
+
+.commit-subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commit-stats {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.file-list li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 3px 8px;
+}
+
+.file-list code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+}
+
+.diff-overlay header {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pad {
+  padding: 16px;
+}
+
+pre.diff {
+  flex: 1;
+  margin: 0;
+  padding: 12px 16px;
+  overflow: auto;
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+pre.diff [data-line="add"] {
+  color: #86efac;
+  background: color-mix(in srgb, var(--working) 10%, transparent);
+}
+
+pre.diff [data-line="del"] {
+  color: #fca5a5;
+  background: color-mix(in srgb, var(--needs-you) 10%, transparent);
+}
+
+pre.diff [data-line="hunk"] {
+  color: var(--finished);
+}
+
+pre.diff [data-line="file"] {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.card-top > .muted {
+  white-space: nowrap;
 }

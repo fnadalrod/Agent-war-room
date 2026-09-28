@@ -10,15 +10,17 @@ use tauri::tray::{TrayIcon, TrayIconBuilder};
 const SIZE: u32 = 32;
 
 pub fn create(app: &AppHandle) -> tauri::Result<TrayIcon> {
+    let next = MenuItem::with_id(app, "next", locale::TRAY_NEXT, true, None::<&str>)?;
     let open = MenuItem::with_id(app, "open", locale::TRAY_OPEN, true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", locale::TRAY_QUIT, true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &quit])?;
+    let menu = Menu::with_items(app, &[&next, &open, &quit])?;
 
     TrayIconBuilder::with_id("war-room")
         .icon(lamp(AttentionView::Offline))
         .tooltip("Agent War Room")
         .menu(&menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
+            "next" => crate::go_next(app),
             "open" => crate::show_main(app),
             "quit" => app.exit(0),
             _ => {}

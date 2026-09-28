@@ -4,7 +4,16 @@ import type { SessionView } from "../domain/attention";
 import { copy } from "../domain/copy";
 
 /** Quick message to the session, as if typed into its terminal. */
-export function QuickInput({ session, store }: { session: SessionView; store: WarRoomStore }) {
+export function QuickInput({
+  session,
+  store,
+  autoFocus,
+}: {
+  session: SessionView;
+  store: WarRoomStore;
+  /** Came from a notification's "Reply": the cursor goes straight here. */
+  autoFocus?: boolean;
+}) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -19,6 +28,7 @@ export function QuickInput({ session, store }: { session: SessionView; store: Wa
   return (
     <form className="quick-input" onSubmit={submit} onClick={(e) => e.stopPropagation()}>
       <input
+        autoFocus={autoFocus}
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder={copy.quickInput.placeholder}

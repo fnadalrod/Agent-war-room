@@ -13,6 +13,9 @@ export const COLOR: Record<AttentionView, string> = {
   offline: "#56637a",
 };
 
+/** Working but silent for too long: amber, between "working" and "needs you". */
+const STALLED = "#f59e0b";
+
 const SCREEN_BG: Record<AttentionView, string> = {
   needs_you: "#450a0a",
   finished: "#082f49",
@@ -272,6 +275,7 @@ function paintDesk(ctx: CanvasRenderingContext2D, d: DeskSpot, p: Paint) {
   if (lit) floorLight(ctx, x + 24, y + 38, 20, 6, COLOR[s.attention], s.attention === "needs_you" && p.frame % 8 < 4 ? 0.22 : 0.12);
 
   paintMonitor(ctx, s, x + 10, y + 3, p.frame);
+  if (s.stalled_since != null && p.frame % 10 < 7) frameRect(ctx, x + 9, y + 2, 30, 21, STALLED);
   // Desk: top with edge, front and legs.
   rect(ctx, x + 4, y + 25, 40, 1, "#64748b");
   rect(ctx, x + 4, y + 26, 40, 3, "#475569");
@@ -459,7 +463,10 @@ function paintSubagents(ctx: CanvasRenderingContext2D, d: DeskSpot, p: Paint) {
 function paintBubble(ctx: CanvasRenderingContext2D, s: SessionView, x: number, y: number, frame: number) {
   let symbol: string | null = null;
   let ink = COLOR[s.attention];
-  if (s.attention === "needs_you") {
+  if (s.stalled_since != null) {
+    symbol = frame % 10 < 7 ? "?" : null;
+    ink = STALLED;
+  } else if (s.attention === "needs_you") {
     symbol = frame % 8 < 6 ? "!" : null;
     ink = "#b91c1c";
   } else if (s.attention === "finished") {

@@ -4,19 +4,21 @@
 //! `<project>/<session>/subagents/agent-<id>.jsonl` with an `agent-<id>.meta.json` next to it.
 
 use super::tools::tool_label;
+use super::pricing;
 use awr_application::ports::{
-    AgentTranscript, SubagentDetail, TimelineItem, TimelineKind, TranscriptReader, TranscriptSummary,
+    AgentTranscript, SubagentDetail, TouchedFile, Usage, TimelineItem, TimelineKind, TranscriptReader, TranscriptSummary,
 };
 use serde_json::Value;
-use std::collections::HashMap;
+use chrono::{Local, NaiveDate, TimeZone};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-/// The first read of a long transcript starts this far from the end: the title and the last
-/// prompt are repeated often, so the tail is enough.
-const INITIAL_TAIL_BYTES: u64 = 512 * 1024;
+/// The first read covers the whole transcript so token totals are complete; only absurdly large
+/// ones start this far from the end (the title and last prompt repeat often, so the tail suffices).
+const INITIAL_TAIL_BYTES: u64 = 64 * 1024 * 1024;
 /// Safety cap for a reply; it is kept as is (Markdown, line breaks).
 const REPLY_MAX_CHARS: usize = 20_000;
 /// Head of the file searched for the session's first prompt.
@@ -35,6 +37,9 @@ pub struct ClaudeTranscriptReader {
 struct Tail {
     offset: u64,
     facts: Facts,
+    /// API message ids already counted: each message is written as several lines (one per content
+    /// block), all repeating the same usage.
+    seen_messages: HashSet<String>,
 }
 
 #[derive(Default, Clone)]
@@ -47,6 +52,9 @@ struct Facts {
     model: Option<String>,
     effort: Option<String>,
     context_tokens: Option<u64>,
+    usage: Usage,
+    /// Usage per local calendar day, for "today".
+    daily: BTreeMap<NaiveDate, Usage>,
 }
 
 impl ClaudeTranscriptReader {
@@ -112,7 +120,21 @@ impl TranscriptReader for ClaudeTranscriptReader {
             })
             .collect();
 
+        let today = Local::now().date_naive();
+        let mut usage = facts.usage;
+        let mut usage_today = facts.daily.get(&today).copied().unwrap_or_default();
+        // Every subagent file, not only the ones still listed: finished ones also cost.
+        for sub in subagent_transcripts(&subagent_dir) {
+            if let Some(f) = self.facts(&sub) {
+                usage.add(&f.usage);
+                usage_today.add(&f.daily.get(&today).copied().unwrap_or_default());
+            }
+        }
+
         Some(TranscriptSummary {
+            context_window: facts.model.as_deref().and_then(pricing::context_window),
+            usage,
+            usage_today,
             title: facts.custom_title.or(facts.ai_title),
             first_prompt: self.first_prompt(main),
             last_prompt: facts.last_prompt,
@@ -135,6 +157,37 @@ impl TranscriptReader for ClaudeTranscriptReader {
         items
     }
 
+    fn touched_files(&self, transcript_path: &str) -> Vec<TouchedFile> {
+        let main = Path::new(transcript_path);
+        let mut files = vec![main.to_path_buf()];
+        files.extend(subagent_transcripts(&main.with_extension("").join("subagents")));
+        let mut touched: BTreeMap<String, TouchedFile> = BTreeMap::new();
+        for file in files {
+            let Ok(lines) = head_lines(&file, u64::MAX) else { continue };
+            for entry in lines.iter().filter(|e| e.get("type").and_then(Value::as_str) == Some("assistant")) {
+                for block in entry.pointer("/message/content").and_then(Value::as_array).into_iter().flatten() {
+                    let Some(name) = block.get("name").and_then(Value::as_str) else { continue };
+                    if !matches!(name, "Edit" | "MultiEdit" | "Write" | "NotebookEdit") {
+                        continue;
+                    }
+                    let input = block.get("input");
+                    let path = ["file_path", "notebook_path"]
+                        .iter()
+                        .find_map(|k| input.and_then(|i| i.get(*k)).and_then(Value::as_str));
+                    let Some(path) = path else { continue };
+                    let entry = touched.entry(path.to_owned()).or_insert_with(|| TouchedFile {
+                        path: path.to_owned(),
+                        edits: 0,
+                        written: false,
+                    });
+                    entry.edits += 1;
+                    entry.written |= name == "Write";
+                }
+            }
+        }
+        touched.into_values().collect()
+    }
+
     fn subagent(&self, transcript_path: &str, agent_id: &str, limit: usize) -> Option<AgentTranscript> {
         // The id ends up in a path: only its alphabet, no `..` or `/`.
         if agent_id.is_empty() || !agent_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
@@ -154,6 +207,68 @@ impl TranscriptReader for ClaudeTranscriptReader {
         let skip = timeline.len().saturating_sub(limit);
         timeline.drain(..skip);
         Some(AgentTranscript { first_prompt, last_reply, timeline })
+    }
+}
+
+/// `agent-*.jsonl` files in a session's `subagents/` directory.
+fn subagent_transcripts(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
+    let mut files: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            name.starts_with("agent-") && name.ends_with(".jsonl")
+        })
+        .collect();
+    files.sort();
+    files
+}
+
+/// Adds an API message's usage and estimated cost once, however many lines repeat it.
+fn count_usage(facts: &mut Facts, seen: &mut HashSet<String>, entry: &Value) {
+    let Some(usage) = entry.pointer("/message/usage") else { return };
+    if let Some(id) = entry.pointer("/message/id").and_then(Value::as_str)
+        && !seen.insert(id.to_owned())
+    {
+        return;
+    }
+    let n = |k: &str| usage.get(k).and_then(Value::as_u64).unwrap_or(0);
+    let (write_5m, write_1h) = match usage.get("cache_creation") {
+        Some(split) => (
+            split.get("ephemeral_5m_input_tokens").and_then(Value::as_u64).unwrap_or(0),
+            split.get("ephemeral_1h_input_tokens").and_then(Value::as_u64).unwrap_or(0),
+        ),
+        None => (n("cache_creation_input_tokens"), 0),
+    };
+    let mut message = Usage {
+        input_tokens: n("input_tokens"),
+        output_tokens: n("output_tokens"),
+        cache_read_tokens: n("cache_read_input_tokens"),
+        cache_write_tokens: write_5m + write_1h,
+        ..Usage::default()
+    };
+    // $/MTok × tokens = millionths of a dollar.
+    match model_of(entry).or_else(|| facts.model.clone()).as_deref().and_then(pricing::price) {
+        Some(p) => {
+            let micros = message.input_tokens as f64 * p.input
+                + message.output_tokens as f64 * p.output
+                + message.cache_read_tokens as f64 * p.cache_read
+                + write_5m as f64 * p.cache_write_5m()
+                + write_1h as f64 * p.cache_write_1h();
+            message.cost_micros = micros.round() as u64;
+        }
+        None => message.unpriced_messages = 1,
+    }
+    facts.usage.add(&message);
+    let day = entry
+        .get("timestamp")
+        .and_then(Value::as_str)
+        .and_then(parse_iso_ms)
+        .and_then(|ms| Local.timestamp_millis_opt(ms).single())
+        .map(|t| t.date_naive());
+    if let Some(day) = day {
+        facts.daily.entry(day).or_default().add(&message);
     }
 }
 
@@ -293,14 +408,14 @@ fn advance(path: &Path, tail: &mut Tail) -> std::io::Result<()> {
     }
     for line in lines.filter(|l| !l.is_empty()) {
         if let Ok(entry) = serde_json::from_slice::<Value>(line) {
-            absorb(&mut tail.facts, &entry);
+            absorb(&mut tail.facts, &mut tail.seen_messages, &entry);
         }
     }
     tail.offset += last_newline as u64 + 1;
     Ok(())
 }
 
-fn absorb(facts: &mut Facts, entry: &Value) {
+fn absorb(facts: &mut Facts, seen: &mut HashSet<String>, entry: &Value) {
     let text = |key: &str| entry.get(key).and_then(Value::as_str).map(str::to_owned);
     match entry.get("type").and_then(Value::as_str) {
         Some("ai-title") => facts.ai_title = text("aiTitle").or(facts.ai_title.take()),
@@ -314,7 +429,10 @@ fn absorb(facts: &mut Facts, entry: &Value) {
                 facts.last_prompt = Some(prompt.to_owned());
             }
         }
-        Some("assistant") => absorb_assistant(facts, entry),
+        Some("assistant") => {
+            absorb_assistant(facts, entry);
+            count_usage(facts, seen, entry);
+        }
         _ => {}
     }
 }
@@ -578,6 +696,65 @@ mod tests {
 
         assert!(reader.subagent(path.to_str().unwrap(), "../../etc/passwd", 10).is_none());
         assert!(reader.subagent(path.to_str().unwrap(), "nobody", 10).is_none());
+    }
+
+    #[test]
+    fn counts_each_api_message_once_and_prices_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.jsonl");
+        let block = |text: &str| {
+            line(json!({
+                "type": "assistant",
+                "timestamp": "2026-09-27T10:00:00.000Z",
+                "message": {
+                    "id": "msg_1",
+                    "model": "claude-opus-5-5",
+                    "content": [{ "type": "text", "text": text }],
+                    "usage": {
+                        "input_tokens": 1_000,
+                        "output_tokens": 1_000_000,
+                        "cache_read_input_tokens": 1_000_000,
+                        "cache_creation": { "ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 1_000_000 }
+                    }
+                }
+            }))
+        };
+        // Same message written as three lines (one per content block).
+        append(&path, &block("a"));
+        append(&path, &block("b"));
+        append(&path, &block("c"));
+        let subs = dir.path().join("s/subagents");
+        std::fs::create_dir_all(&subs).unwrap();
+        append(&subs.join("agent-old.jsonl"), &line(json!({
+            "type": "assistant",
+            "message": { "id": "msg_sub", "model": "claude-haiku-4-5", "content": [], "usage": { "input_tokens": 1_000_000, "output_tokens": 0 } }
+        })));
+
+        let s = ClaudeTranscriptReader::new().read(path.to_str().unwrap(), &[]).unwrap();
+        assert_eq!(s.usage.output_tokens, 1_000_000, "counted once");
+        assert_eq!(s.usage.input_tokens, 1_001_000, "includes finished subagents not listed");
+        // opus-5-5: 1k×$4 + 1M out×$20 + 1M read×$0.20 + 1M 1h-write×$8 = $28.204; haiku 1M in = $1.
+        assert_eq!(s.usage.cost_micros, 29_204_000);
+        assert_eq!(s.context_window, Some(1_000_000));
+    }
+
+    #[test]
+    fn lists_files_edited_by_the_session_and_its_subagents() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.jsonl");
+        let tool = |name: &str, file: &str| {
+            line(json!({ "type": "assistant", "message": { "content": [{ "type": "tool_use", "name": name, "input": { "file_path": file } }] } }))
+        };
+        append(&path, &tool("Edit", "/r/a.rs"));
+        append(&path, &tool("Edit", "/r/a.rs"));
+        append(&path, &tool("Read", "/r/ignored.rs"));
+        let subs = dir.path().join("s/subagents");
+        std::fs::create_dir_all(&subs).unwrap();
+        append(&subs.join("agent-x.jsonl"), &tool("Write", "/r/new.md"));
+
+        let files = ClaudeTranscriptReader::new().touched_files(path.to_str().unwrap());
+        let got: Vec<_> = files.iter().map(|f| (f.path.as_str(), f.edits, f.written)).collect();
+        assert_eq!(got, vec![("/r/a.rs", 2, false), ("/r/new.md", 1, true)]);
     }
 
     #[test]

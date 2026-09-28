@@ -63,6 +63,9 @@ Run the app: `npm run app`. Package: `npm run package` (bundles the bridge as a 
 | "Go to" a window | `crates/infrastructure/src/desktop/` (KWin script, tmux, Warp URL) |
 | Approvals from the app | bridge `main.rs` + `infrastructure/src/ingress.rs` + `service.rs::decide` |
 | Pixel art | `src/ui/pixel/` (layout.ts is pure & tested; paint.ts draws) |
+| Tokens, cost, context window | `crates/infrastructure/src/claude/pricing.rs` (price table) + `transcript.rs::count_usage` |
+| "Stuck" sessions | `crates/application/src/view.rs::stalled_since` + `service.rs::check_stalled` |
+| Files/commits of a session | `service.rs::session_changes` → `transcript.rs::touched_files` + `git.rs::GitCli` |
 
 ## Context hygiene
 

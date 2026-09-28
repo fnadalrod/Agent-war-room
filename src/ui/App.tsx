@@ -1,10 +1,12 @@
 import { lazy, Suspense, useState } from "react";
 import type { WarRoomStore } from "../application/warRoomStore";
+import { money, tokenCount } from "../domain/attention";
 import { applyFilter, archivedCount, countBy } from "../domain/attention";
 import { copy } from "../domain/copy";
 import { AttentionQueue } from "./AttentionQueue";
 import { DetailPanel } from "./DetailPanel";
 import { FilterBar } from "./FilterBar";
+import { GoIcon } from "./icons";
 import { IntegrationBadge, IntegrationBar } from "./IntegrationBar";
 import { WarRoomScene } from "./pixel/WarRoomScene";
 import { RoomPanel } from "./RoomPanel";
@@ -46,6 +48,14 @@ export function App({ store }: { store: WarRoomStore }) {
         )}
 
         <div className="topbar-tools">
+          {fullView && fullView.today.total_tokens > 0 && (
+            <span className="today" title={copy.topbar.todayTitle}>
+              {copy.topbar.today(tokenCount(fullView.today.total_tokens), money(fullView.today.cost_usd))}
+            </span>
+          )}
+          <button className="primary next" onClick={() => store.goNext()} title={copy.topbar.nextTitle}>
+            <GoIcon size={14} /> {copy.topbar.next}
+          </button>
           {view && countBy(view, "finished") > 0 && (
             <button className="ghost" onClick={() => store.acknowledgeAll()}>
               {copy.topbar.allSeen}

@@ -269,6 +269,7 @@ dependencies = [
  "awr-application",
  "awr-domain",
  "awr-wire",
+ "chrono",
  "portable-pty",
  "rusqlite",
  "serde",

@@ -11,10 +11,12 @@ import type {
   AttentionView,
   IntegrationStatus,
   RoomView,
+  SessionChanges,
   SessionDetail,
   SessionView,
   SubagentPreview,
   TimelineEntryView,
+  UsageView,
   WarRoomView,
 } from "../domain/attention";
 
@@ -23,6 +25,7 @@ const minutes = (m: number) => Date.now() - m * 60_000;
 /** Status labels come from the core in Spanish (crates/application/src/locale.rs); mirror them. */
 const STATUS = {
   thinking: "Pensando",
+  asksQuestion: "Te pregunta",
   asksPermission: "Pide permiso",
   finished: "Terminado",
   yourTurn: "Te toca",
@@ -60,6 +63,21 @@ function demoTimeline(s: SessionView): TimelineEntryView[] {
   ];
 }
 
+function usage(totalTokens: number, costUsd: number): UsageView {
+  const out = Math.round(totalTokens * 0.01);
+  const write = Math.round(totalTokens * 0.03);
+  const input = Math.round(totalTokens * 0.001);
+  return {
+    input_tokens: input,
+    output_tokens: out,
+    cache_read_tokens: totalTokens - out - write - input,
+    cache_write_tokens: write,
+    total_tokens: totalTokens,
+    cost_usd: costUsd,
+    partial_cost: false,
+  };
+}
+
 function session(p: Partial<SessionView> & Pick<SessionView, "id" | "attention" | "status_label">): SessionView {
   return {
     provider: "claude",
@@ -72,6 +90,9 @@ function session(p: Partial<SessionView> & Pick<SessionView, "id" | "attention" 
     model: "claude-opus-5-5",
     effort: "high",
     context_tokens: 84_000,
+    context_window: 1_000_000,
+    usage: usage(6_200_000, 3.1),
+    stalled_since: null,
     worktree_path: "/home/demo/code/app",
     branch: "main",
     is_linked_worktree: false,
@@ -93,6 +114,22 @@ function session(p: Partial<SessionView> & Pick<SessionView, "id" | "attention" 
   };
 }
 
+type Agent = SessionView["subagents"][number];
+
+function agent(id: string, kind: string, description: string, tool: string | null, model = "claude-haiku-4-5", running = true): Agent {
+  return {
+    id,
+    kind,
+    description,
+    last_tool: tool,
+    model,
+    effort: model.includes("haiku") ? null : "medium",
+    running,
+    started_at: minutes(running ? 4 : 20),
+    finished_at: running ? null : minutes(12),
+  };
+}
+
 function initialRooms(): RoomView[] {
   return [
     {
@@ -111,6 +148,8 @@ function initialRooms(): RoomView[] {
           worktree_path: "/code/tintero",
           can_approve: true,
           status_since: minutes(2),
+          context_tokens: 312_000,
+          usage: usage(28_400_000, 14.2),
           skills: [
             { name: "run-task", source: "project", by_user: true, by_agent: false, count: 1, last_at: minutes(20) },
             { name: "close-task", source: "project", by_user: false, by_agent: true, count: 2, last_at: minutes(4) },
@@ -127,10 +166,12 @@ function initialRooms(): RoomView[] {
           branch: "feat/inky",
           is_linked_worktree: true,
           in_warp: true,
+          context_tokens: 540_000,
+          usage: usage(41_000_000, 19.8),
           subagents: [
-            { id: "x1", kind: "Explore", description: "Find usages of the header", last_tool: "Grep · InkyHeader", model: "claude-haiku-4-5", effort: null, running: true, started_at: minutes(3), finished_at: null },
-            { id: "x2", kind: "general-purpose", description: "Review styles", last_tool: "Read · header.scss", model: "claude-opus-5-5", effort: "medium", running: true, started_at: minutes(2), finished_at: null },
-            { id: "x3", kind: "Explore", description: "Component map", last_tool: null, model: "claude-haiku-4-5", effort: null, running: false, started_at: minutes(9), finished_at: minutes(5) },
+            agent("x1", "Explore", "Find usages of the header", "Grep · InkyHeader"),
+            agent("x2", "general-purpose", "Review styles", "Read · header.scss", "claude-opus-5-5"),
+            agent("x3", "Explore", "Component map", null, "claude-haiku-4-5", false),
           ],
         }),
         session({
@@ -147,6 +188,22 @@ function initialRooms(): RoomView[] {
           last_reply: DEMO_REPLY,
           worktree_path: "/code/tintero",
           status_since: minutes(6),
+          model: "claude-sonnet-5",
+          effort: "medium",
+          usage: usage(9_800_000, 2.6),
+        }),
+        session({
+          id: "a9b8c7d6-tintero-i18n",
+          attention: "working",
+          status_label: "Bash",
+          last_action: "Bash · npm run build:i18n -- --watch",
+          title: "Migrate i18n keys",
+          worktree_path: "/code/Tintero2Repo",
+          branch: "chore/i18n",
+          stalled_since: minutes(9),
+          last_activity_at: minutes(9),
+          status_since: minutes(9),
+          usage: usage(4_100_000, 1.9),
         }),
       ],
     },
@@ -166,7 +223,73 @@ function initialRooms(): RoomView[] {
           skills: [{ name: "run-epic", source: "project", by_user: true, by_agent: true, count: 2, last_at: minutes(2) }],
           worktree_path: "/code/kainban",
           tmux_pane: "%4",
-          pty_id: null,
+          usage: usage(12_600_000, 3.4),
+        }),
+        session({
+          id: "k2k2k2k2-kainban-notify",
+          attention: "working",
+          status_label: STATUS.thinking,
+          last_action: "Agent · Split the notifications epic",
+          title: "Epic: in-app notifications",
+          worktree_path: "/code/kainban-wt-notify",
+          branch: "epic/notifications",
+          is_linked_worktree: true,
+          context_tokens: 880_000,
+          usage: usage(96_000_000, 47.3),
+          skills: [{ name: "refine", source: "project", by_user: false, by_agent: true, count: 4, last_at: minutes(3) }],
+          subagents: [
+            agent("n1", "general-purpose", "Backend: notification table", "Edit · 000015_notifications.sql", "claude-opus-5-5"),
+            agent("n2", "general-purpose", "Frontend: bell component", "Write · bell.component.ts", "claude-opus-5-5"),
+            agent("n3", "Explore", "Where events are emitted", "Grep · publish("),
+            agent("n4", "Explore", "Existing websocket code", null, "claude-haiku-4-5", false),
+          ],
+        }),
+      ],
+    },
+    {
+      repo_id: "/code/git-pro-reviewer/.git",
+      repo_name: "git-pro-reviewer",
+      attention: "finished",
+      sessions: [
+        session({
+          id: "g1g1g1g1-gpr-review",
+          attention: "finished",
+          status_label: STATUS.finished,
+          title: "Review PR #42: diff viewer",
+          last_reply: "## Review\n\n3 issues found, 1 blocking: the diff viewer drops the last hunk when the file has no trailing newline.",
+          worktree_path: "/code/git-pro-reviewer",
+          status_since: minutes(14),
+          usage: usage(7_300_000, 3.0),
+          skills: [{ name: "code-review", source: "builtin", by_user: true, by_agent: false, count: 1, last_at: minutes(25) }],
+        }),
+        session({
+          id: "g2g2g2g2-gpr-tauri",
+          attention: "working",
+          status_label: STATUS.thinking,
+          last_action: "Read · tauri.conf.json",
+          title: "Upgrade Tauri plugins",
+          worktree_path: "/code/git-pro-reviewer",
+          model: "claude-sonnet-5",
+          effort: "low",
+          usage: usage(2_100_000, 0.4),
+          subagents: [agent("t1", "Explore", "Breaking changes in plugins", "WebFetch · tauri.app/release")],
+        }),
+      ],
+    },
+    {
+      repo_id: "/code/TinteroBackend/.git",
+      repo_name: "TinteroBackend",
+      attention: "needs_you",
+      sessions: [
+        session({
+          id: "b9b9b9b9-backend-sync",
+          attention: "needs_you",
+          status_label: STATUS.asksQuestion,
+          title: "Sync conflicts strategy",
+          last_action: "AskUserQuestion",
+          worktree_path: "/code/TinteroBackend",
+          status_since: minutes(4),
+          usage: usage(5_500_000, 2.2),
         }),
       ],
     },
@@ -183,6 +306,7 @@ function initialRooms(): RoomView[] {
           worktree_path: "/code/agentwarroom",
           pty_id: "pty-demo-1",
           muted: true,
+          usage: usage(120_000_000, 47.7),
         }),
         session({
           id: "f6a7b8c9-awr-old",
@@ -191,11 +315,40 @@ function initialRooms(): RoomView[] {
           title: "Hooks prototype",
           worktree_path: "/code/agentwarroom",
           alive: false,
+          usage: usage(1_200_000, 0.5),
         }),
       ],
     },
   ];
 }
+
+const DEMO_DIFF = `commit 3f9c2ab71e0d4c55a2e1b9f0c7d6e5a4b3c2d1e0
+Author:     Francisco <f@example.com>
+Date:       Sun Sep 28 01:12:00 2026 +0200
+
+    fix(sync): keep offline edits when the socket reconnects
+
+ src/app/sync/outbox.ts      | 18 ++++++++++++------
+ e2e/sync-offline.spec.ts    | 31 +++++++++++++++++++++++++++++++
+ 2 files changed, 43 insertions(+), 6 deletions(-)
+
+diff --git a/src/app/sync/outbox.ts b/src/app/sync/outbox.ts
+--- a/src/app/sync/outbox.ts
++++ b/src/app/sync/outbox.ts
+@@ -41,9 +41,15 @@ export class Outbox {
+   async flush() {
+-    this.pending = [];
+-    await this.socket.send(this.pending);
++    const batch = [...this.pending];
++    try {
++      await this.socket.send(batch);
++      this.pending = this.pending.slice(batch.length);
++    } catch (error) {
++      // Keep them: the next reconnect retries the same batch.
++      this.log.warn("flush failed", error);
++    }
+   }
+`;
 
 const ORDER: AttentionView[] = ["offline", "idle", "working", "finished", "needs_you"];
 const rank = (a: AttentionView) => ORDER.indexOf(a);
@@ -205,7 +358,11 @@ function project(rooms: RoomView[]): WarRoomView {
   const best = (list: SessionView[]) =>
     list.filter(onWatch).reduce<AttentionView>((acc, s) => (rank(s.attention) > rank(acc) ? s.attention : acc), "offline");
   const next = rooms.map((r) => ({ ...r, attention: best(r.sessions) }));
-  return { aggregate: best(next.flatMap((r) => r.sessions)), rooms: next };
+  const today = next.flatMap((r) => r.sessions).reduce(
+    (acc, s) => ({ ...acc, total_tokens: acc.total_tokens + s.usage.total_tokens, cost_usd: acc.cost_usd + s.usage.cost_usd }),
+    usage(0, 0),
+  );
+  return { aggregate: best(next.flatMap((r) => r.sessions)), rooms: next, today };
 }
 
 export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationGateway; terminals: TerminalGateway } {
@@ -290,6 +447,27 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
       },
       openExternal: async (url) => void window.open(url, "_blank", "noopener"),
       onOpenRequest: async () => () => {},
+      focusNext: async () => {
+        const waiting = rooms
+          .flatMap((r) => r.sessions)
+          .filter((x) => !x.muted && !x.archived && (x.attention === "needs_you" || x.attention === "finished"))
+          .sort((a, b) => (a.attention === b.attention ? a.status_since - b.status_since : a.attention === "needs_you" ? -1 : 1));
+        return waiting[0]?.id ?? null;
+      },
+      sessionChanges: async (id): Promise<SessionChanges> => ({
+        worktree: find(id)?.worktree_path ?? "/code/app",
+        files: [
+          { path: "src/app/sync/outbox.ts", edits: 6, written: false },
+          { path: "e2e/sync-offline.spec.ts", edits: 1, written: true },
+          { path: "src/app/sync/socket.ts", edits: 2, written: false },
+          { path: "docs/tasks/sync.md", edits: 1, written: false },
+        ],
+        commits: [
+          { hash: "3f9c2ab71e0d4c55", short: "3f9c2ab7", subject: "fix(sync): keep offline edits when the socket reconnects", author: "Francisco", at: minutes(3), files_changed: 2, insertions: 43, deletions: 6 },
+          { hash: "8d1e0f9a2b3c4d5e", short: "8d1e0f9a", subject: "test(sync): reproduce lost offline edits", author: "Francisco", at: minutes(25), files_changed: 1, insertions: 31, deletions: 0 },
+        ],
+      }),
+      commitDiff: async () => DEMO_DIFF,
     },
     integration: {
       status: async () => status,

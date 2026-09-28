@@ -20,6 +20,11 @@ pub fn tray_summary(parts: &[String]) -> String {
 pub const NOTICE_OPEN: &str = "Ver";
 pub const NOTICE_FOCUS: &str = "Ir a";
 pub const NOTICE_APPROVE: &str = "Aprobar";
+pub const NOTICE_REPLY: &str = "Responder";
+
+// Tray menu.
+
+pub const TRAY_NEXT: &str = "Ir al siguiente que te necesita";
 
 // Command errors.
 

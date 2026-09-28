@@ -38,6 +38,11 @@ export const copy = {
     max: "máximo",
   } as Record<string, string>,
 
+  stalled: {
+    label: (minutes: number) => `¿Atascada? ${minutes} min`,
+    long: (minutes: number) => `¿Atascada? ${minutes} min sin actividad`,
+    title: "Sigue trabajando pero no da señales: puede estar colgada o esperando algo que no avisa",
+  },
   session: {
     /** "esfuerzo alto". */
     effort: (name: string) => `esfuerzo ${name}`,
@@ -59,6 +64,11 @@ export const copy = {
   },
 
   topbar: {
+    next: "Siguiente",
+    nextTitle: "Ir a lo que más lleva esperándote (también: agent-war-room --next)",
+    nothingWaiting: "Nada te está esperando",
+    today: (tokens: string, cost: string) => `Hoy ${tokens} · ${cost}`,
+    todayTitle: "Tokens y coste estimado a precio de API de todas las sesiones de hoy",
     summary: "Resumen",
     allSeen: "Todo visto",
     view: "Vista",
@@ -168,6 +178,23 @@ export const copy = {
     tools: (n: number, digest: string) => `${n} herramientas · ${digest}`,
     you: "Tú",
     agent: "Agente",
+    usage: "Consumo",
+    contextUsed: (used: string, window: string, pct: number) => `Contexto ${used} de ${window} (${pct}%)`,
+    tokenBreakdown: (input: string, output: string, cacheRead: string, cacheWrite: string) =>
+      `entrada ${input} · salida ${output} · caché leída ${cacheRead} · caché escrita ${cacheWrite}`,
+    estimatedCost: (cost: string) => `${cost} estimado a precio de API`,
+    partialCost: "(algún modelo sin precio conocido)",
+    changes: "Cambios",
+    showChanges: "Ver ficheros y commits",
+    changesHint: "Ficheros que editó (también sus subagentes) y commits en su worktree desde que empezó.",
+    files: (n: number) => (n === 1 ? "1 fichero" : `${n} ficheros`),
+    noFiles: "No ha editado ficheros.",
+    edits: (n: number) => (n === 1 ? "1 edición" : `${n} ediciones`),
+    written: "creado/reescrito",
+    commits: (n: number) => (n === 1 ? "1 commit" : `${n} commits`),
+    noCommits: "Sin commits en su worktree durante la sesión.",
+    commitStats: (files: number, add: number, del: number) => `${files} fich. · +${add} −${del}`,
+    diffTitle: (short: string) => `Commit ${short}`,
   },
 
   subagent: {

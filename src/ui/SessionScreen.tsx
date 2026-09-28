@@ -1,11 +1,13 @@
 import type { WarRoomStore } from "../application/warRoomStore";
 import {
   agentName,
-  contextLabel,
   deskName,
   extraActivity,
   isWritable,
   modelAndEffort,
+  money,
+  stalledMinutes,
+  tokenCount,
   plainText,
   whereItLives,
   type SessionView,
@@ -23,6 +25,7 @@ import {
   RobotIcon,
   TerminalIcon,
 } from "./icons";
+import { ContextBar } from "./ContextBar";
 import { QuickInput } from "./QuickInput";
 import { SkillTags } from "./SkillTag";
 import { since } from "./useStore";
@@ -31,11 +34,18 @@ type Props = { session: SessionView; store: WarRoomStore; now: number };
 
 /** A session card. Clicking the body opens the preview. */
 export function SessionScreen({ session: s, store, now }: Props) {
+  const stalled = stalledMinutes(s, now);
   const excerpt = s.attention !== "working" && s.last_reply ? plainText(s.last_reply) : null;
   const label = s.title ?? deskName(s);
 
   return (
-    <article className="card" data-attention={s.attention} data-muted={s.muted} data-archived={s.archived}>
+    <article
+      className="card"
+      data-attention={s.attention}
+      data-muted={s.muted}
+      data-archived={s.archived}
+      data-stalled={stalled != null}
+    >
       <button className="card-body" onClick={() => store.openDetail(s.id)} title={copy.actions.openPreview}>
         <div className="card-top">
           <span className="chip" data-attention={s.attention}>
@@ -43,6 +53,11 @@ export function SessionScreen({ session: s, store, now }: Props) {
           </span>
           <span className="muted">{since(s.status_since, now)}</span>
           <span className="spacer" />
+          {stalled != null && (
+            <span className="badge stalled" title={copy.stalled.title}>
+              {copy.stalled.label(stalled)}
+            </span>
+          )}
           {s.subagents.some((a) => a.running) && (
             <span className="badge" title={copy.card.subagentsWorking}>
               <RobotIcon size={13} /> {s.subagents.filter((a) => a.running).length}
@@ -58,6 +73,7 @@ export function SessionScreen({ session: s, store, now }: Props) {
         <SkillTags skills={s.skills} store={store} />
         {extraActivity(s) && <p className="card-activity">{extraActivity(s)}</p>}
         {excerpt && <p className="card-excerpt">{excerpt}</p>}
+        <ContextBar session={s} />
       </button>
 
       {s.subagents.length > 0 && <AgentStrip session={s} store={store} />}
@@ -81,7 +97,11 @@ export function SessionScreen({ session: s, store, now }: Props) {
           {s.is_linked_worktree && <span className="tag">{copy.session.worktree}</span>}
         </div>
         <div className="card-meta">
-          {[modelAndEffort(s.model, s.effort), contextLabel(s) && copy.session.context(contextLabel(s)!), whereItLives(s)]
+          {[
+            modelAndEffort(s.model, s.effort),
+            s.usage.total_tokens > 0 && `${tokenCount(s.usage.total_tokens)} tok · ${money(s.usage.cost_usd)}`,
+            whereItLives(s),
+          ]
             .filter(Boolean)
             .join(" · ")}
         </div>

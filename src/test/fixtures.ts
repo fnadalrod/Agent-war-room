@@ -16,6 +16,9 @@ export function aSession(p: Partial<SessionView> = {}): SessionView {
     model: null,
     effort: null,
     context_tokens: null,
+    context_window: null,
+    usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, total_tokens: 0, cost_usd: 0, partial_cost: false },
+    stalled_since: null,
     worktree_path: "/code/app",
     branch: "main",
     is_linked_worktree: false,
@@ -42,5 +45,6 @@ export function aRoom(name: string, sessions: SessionView[], attention: Attentio
 }
 
 export function aView(rooms: RoomView[], aggregate: AttentionView = "idle"): WarRoomView {
-  return { aggregate, rooms };
+  const today = { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, total_tokens: 0, cost_usd: 0, partial_cost: false };
+  return { aggregate, rooms, today };
 }

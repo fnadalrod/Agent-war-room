@@ -3,7 +3,7 @@
 use crate::locale;
 use awr_application::WarRoomService;
 use awr_application::ports::{FocusOutcome, IntegrationInstaller, LaunchOutcome, LaunchTarget, PortResult};
-use awr_application::view::{IntegrationStatus, SessionDetail, SubagentPreview, WarRoomView};
+use awr_application::view::{IntegrationStatus, SessionChanges, SessionDetail, SubagentPreview, WarRoomView};
 use awr_domain::SessionId;
 use awr_infrastructure::pty::{PtyInfo, PtyManager};
 use std::sync::Arc;
@@ -207,4 +207,22 @@ pub async fn subagent_detail(
     agent: String,
 ) -> Result<SubagentPreview, String> {
     blocking(&service, move |s| s.subagent_detail(SessionId(id), &agent, 80)).await
+}
+
+/// Jumps to the session that has waited longest. Returns its id, or `None` if nothing waits.
+#[tauri::command]
+pub async fn focus_next(service: State<'_, Arc<WarRoomService>>) -> Result<Option<String>, String> {
+    blocking(&service, |s| s.focus_next()).await.map(|next| next.map(|(id, _)| id.0))
+}
+
+/// Files the session edited and commits in its worktree since it started. On demand.
+#[tauri::command]
+pub async fn session_changes(service: State<'_, Arc<WarRoomService>>, id: String) -> Result<SessionChanges, String> {
+    blocking(&service, move |s| s.session_changes(SessionId(id))).await
+}
+
+/// `git show` of one of those commits.
+#[tauri::command]
+pub async fn commit_diff(service: State<'_, Arc<WarRoomService>>, id: String, hash: String) -> Result<String, String> {
+    blocking(&service, move |s| s.commit_diff(SessionId(id), &hash)).await
 }

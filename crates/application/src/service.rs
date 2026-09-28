@@ -1,10 +1,10 @@
 use crate::locale;
 use crate::ports::{
-    AgentLauncher, AgentProvider, ApprovalDecision, ApprovalResponder, Clock, EventStore, FocusOutcome, FocusTarget,
+    AgentLauncher, AgentProvider, ApprovalDecision, ApprovalResponder, Clock, EventStore, FocusOutcome, GitHistory, FocusTarget,
     LaunchOutcome, LaunchRequest, LaunchTarget, Notice, Notifier, PortError, PortResult, ProcessProbe, RepoResolver,
     SessionInput, SkillCatalog, TranscriptReader, TranscriptSummary, ViewPublisher, WindowNavigator,
 };
-use crate::view::{self, SessionDetail, SubagentPreview, WarRoomView};
+use crate::view::{self, CommitView, SessionChanges, SessionDetail, SubagentPreview, TouchedFileView, WarRoomView};
 use awr_domain::{
     Attention, AttentionChange, SessionContext, SessionEvent, SessionEventKind, SessionId, SessionStatus, TerminalHost,
     Timestamp, WarRoom,
@@ -41,6 +41,7 @@ pub struct Ports {
     pub launcher: Arc<dyn AgentLauncher>,
     pub input: Arc<dyn SessionInput>,
     pub skills: Arc<dyn SkillCatalog>,
+    pub git: Arc<dyn GitHistory>,
 }
 
 pub struct WarRoomService {
@@ -49,33 +50,115 @@ pub struct WarRoomService {
     summaries: Mutex<HashMap<SessionId, TranscriptSummary>>,
     /// Permissions resolvable from the app. Ephemeral: they live as long as the hook connection.
     approvals: Mutex<HashMap<SessionId, Arc<dyn ApprovalResponder>>>,
+    /// Sessions already notified as possibly stuck (until they show activity again).
+    stalled: Mutex<HashSet<SessionId>>,
     ports: Ports,
 }
 
 impl WarRoomService {
     pub fn new(ports: Ports) -> Self {
-        Self { room: Mutex::new(WarRoom::new()), summaries: Mutex::default(), approvals: Mutex::default(), ports }
+        Self {
+            room: Mutex::new(WarRoom::new()),
+            summaries: Mutex::default(),
+            approvals: Mutex::default(),
+            stalled: Mutex::default(),
+            ports,
+        }
     }
 
     /// Rebuilds the state from the store without notifying anything. Returns the events applied.
+    /// Transcripts are not read here (full scans can take a while): call
+    /// [`Self::refresh_all_summaries`] afterwards, off the startup path.
     pub fn restore(&self) -> PortResult<usize> {
         let now = self.ports.clock.now().0;
         self.ports.store.prune(Timestamp(now - RETENTION_MS))?;
         let since = Timestamp(now - RESTORE_WINDOW_MS);
         let events = self.ports.store.load_since(since)?;
         let count = events.len();
-        let ids: Vec<SessionId> = {
+        {
             let mut room = self.room();
             for event in events {
                 room.apply(event);
             }
-            room.sessions().map(|s| s.id.clone()).collect()
-        };
+        }
+        self.publish();
+        Ok(count)
+    }
+
+    /// Reads every known session's transcript and republishes. Slow on first run (full scans).
+    pub fn refresh_all_summaries(&self) {
+        let ids: Vec<SessionId> = self.room().sessions().map(|s| s.id.clone()).collect();
         for id in &ids {
             self.refresh_summary(id);
         }
         self.publish();
-        Ok(count)
+    }
+
+    /// The session that has waited for you the longest: permissions and questions first, then
+    /// finished turns. Muted and archived sessions don't count.
+    pub fn next_waiting(&self) -> Option<SessionId> {
+        let room = self.room();
+        room.sessions()
+            .filter(|s| s.is_on_watch() && s.attention().is_alerting())
+            .min_by_key(|s| (std::cmp::Reverse(s.attention()), s.status_since))
+            .map(|s| s.id.clone())
+    }
+
+    /// Jumps to [`Self::next_waiting`]. `Ok(None)` when nothing is waiting.
+    pub fn focus_next(&self) -> PortResult<Option<(SessionId, FocusOutcome)>> {
+        let Some(id) = self.next_waiting() else { return Ok(None) };
+        let outcome = self.focus(id.clone())?;
+        Ok(Some((id, outcome)))
+    }
+
+    /// What the session changed: files it edited (transcript) and commits in its worktree since it
+    /// started (git). On demand: both are relatively expensive.
+    pub fn session_changes(&self, id: SessionId) -> PortResult<SessionChanges> {
+        let (transcript, worktree, since, until) = {
+            let room = self.room();
+            let s = known(&room, &id)?;
+            let until = (!s.is_alive()).then_some(s.last_activity_at.0);
+            (s.transcript_path.clone(), s.workspace.worktree_path.clone(), s.started_at.0, until)
+        };
+        let prefix = format!("{}/", worktree.trim_end_matches('/'));
+        let mut files: Vec<TouchedFileView> = transcript
+            .map(|path| self.ports.transcripts.touched_files(&path))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|f| TouchedFileView {
+                path: f.path.strip_prefix(&prefix).map(str::to_owned).unwrap_or(f.path),
+                edits: f.edits,
+                written: f.written,
+            })
+            .collect();
+        files.sort_by(|a, b| b.edits.cmp(&a.edits).then_with(|| a.path.cmp(&b.path)));
+        // A minute of slack: the session may be registered slightly after its first commit.
+        let commits = self
+            .ports
+            .git
+            .commits(&worktree, since - 60_000, until)?
+            .into_iter()
+            .map(|c| CommitView {
+                short: c.hash.chars().take(8).collect(),
+                hash: c.hash,
+                subject: c.subject,
+                author: c.author,
+                at: c.at,
+                files_changed: c.files_changed,
+                insertions: c.insertions,
+                deletions: c.deletions,
+            })
+            .collect();
+        Ok(SessionChanges { worktree, files, commits })
+    }
+
+    /// `git show` of one commit in the session's worktree.
+    pub fn commit_diff(&self, id: SessionId, hash: &str) -> PortResult<String> {
+        if hash.len() < 7 || hash.len() > 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(PortError::Failed(locale::INVALID_COMMIT.into()));
+        }
+        let worktree = known(&self.room(), &id)?.workspace.worktree_path.clone();
+        self.ports.git.show(&worktree, hash)
     }
 
     pub fn ingest(&self, signal: IncomingSignal) -> PortResult<()> {
@@ -180,7 +263,7 @@ impl WarRoomService {
             let room = self.room();
             let session = known(&room, &id)?;
             let can_approve = self.approvals().contains_key(&id);
-            let view = view::session_view(session, self.summaries().get(&id), can_approve);
+            let view = view::session_view(session, self.summaries().get(&id), can_approve, self.ports.clock.now());
             (view, session.transcript_path.clone())
         };
         let timeline = transcript
@@ -195,7 +278,7 @@ impl WarRoomService {
             let room = self.room();
             let session = known(&room, &id)?;
             let can_approve = self.approvals().contains_key(&id);
-            let view = view::session_view(session, self.summaries().get(&id), can_approve);
+            let view = view::session_view(session, self.summaries().get(&id), can_approve, self.ports.clock.now());
             let agent = view
                 .subagents
                 .into_iter()
@@ -303,15 +386,56 @@ impl WarRoomService {
         for id in &active {
             changed |= self.refresh_summary(id);
         }
+        changed |= self.check_stalled(now);
         if changed {
             self.publish();
         }
         Ok(())
     }
 
+    /// Notifies once when a working session goes silent for too long, and forgets it when it moves
+    /// again. Returns whether the set of stuck sessions changed (the view must be republished).
+    fn check_stalled(&self, now: Timestamp) -> bool {
+        let stuck: Vec<(SessionId, i64, bool)> = self
+            .room()
+            .sessions()
+            .filter_map(|s| view::stalled_since(s, now).map(|since| (s.id.clone(), since, s.is_on_watch())))
+            .collect();
+        let stuck_ids: HashSet<SessionId> = stuck.iter().map(|(id, ..)| id.clone()).collect();
+        let fresh: Vec<(SessionId, i64, bool)> = {
+            let mut known = self.stalled.lock().unwrap_or_else(|p| p.into_inner());
+            let before = known.len();
+            known.retain(|id| stuck_ids.contains(id));
+            let fresh: Vec<_> = stuck.into_iter().filter(|(id, ..)| known.insert(id.clone())).collect();
+            if fresh.is_empty() && known.len() == before {
+                return false;
+            }
+            fresh
+        };
+        for (id, since, on_watch) in fresh {
+            if on_watch && let Some(notice) = self.stalled_notice(&id, now.0 - since) {
+                self.ports.notifier.notify(&notice);
+            }
+        }
+        true
+    }
+
+    fn stalled_notice(&self, id: &SessionId, silent_ms: i64) -> Option<Notice> {
+        let room = self.room();
+        let session = room.get(id)?;
+        let doing = self.summaries().get(id).and_then(|s| s.last_action.clone());
+        Some(Notice {
+            session: id.clone(),
+            attention: Attention::Working,
+            title: locale::stalled_title(&place_of(session)),
+            body: locale::stalled_body(silent_ms / 60_000, doing.as_deref()),
+            approvable: false,
+        })
+    }
+
     pub fn view(&self) -> WarRoomView {
         let approvable: HashSet<SessionId> = self.approvals().keys().cloned().collect();
-        view::project(&self.room(), &self.summaries(), &approvable)
+        view::project(&self.room(), &self.summaries(), &approvable, self.ports.clock.now())
     }
 
     fn intent(&self, id: SessionId, kind: SessionEventKind) -> PortResult<()> {
@@ -368,10 +492,7 @@ impl WarRoomService {
     fn notice_for(&self, change: &AttentionChange) -> Option<Notice> {
         let room = self.room();
         let session = room.get(&change.session)?;
-        let place = match &session.workspace.branch {
-            Some(branch) => format!("{} · {branch}", session.workspace.repo_name),
-            None => session.workspace.repo_name.clone(),
-        };
+        let place = place_of(session);
         let summary = self.summaries().get(&change.session).cloned().unwrap_or_default();
         let (title, fallback) = match change.to {
             Attention::NeedsYou => (locale::needs_you_title(&place), locale::NEEDS_YOU_FALLBACK_BODY),
@@ -399,6 +520,14 @@ impl WarRoomService {
 
 fn folder_name(path: &str) -> String {
     path.rsplit('/').find(|p| !p.is_empty()).unwrap_or(path).to_string()
+}
+
+/// "repo · branch", how notices name a session.
+fn place_of(session: &awr_domain::Session) -> String {
+    match &session.workspace.branch {
+        Some(branch) => format!("{} · {branch}", session.workspace.repo_name),
+        None => session.workspace.repo_name.clone(),
+    }
 }
 
 /// The session, or the error the UI shows for an unknown one.
@@ -502,6 +631,13 @@ mod tests {
 
     struct FakeTranscripts(Mutex<TranscriptSummary>);
     impl TranscriptReader for FakeTranscripts {
+        fn touched_files(&self, _: &str) -> Vec<crate::ports::TouchedFile> {
+            vec![
+                crate::ports::TouchedFile { path: "/code/app/src/a.rs".into(), edits: 1, written: false },
+                crate::ports::TouchedFile { path: "/code/app/src/b.rs".into(), edits: 3, written: true },
+                crate::ports::TouchedFile { path: "/elsewhere/c.md".into(), edits: 1, written: false },
+            ]
+        }
         fn read(&self, _: &str, _: &[String]) -> Option<TranscriptSummary> {
             Some(self.0.lock().unwrap().clone())
         }
@@ -580,8 +716,31 @@ mod tests {
         }
     }
 
+    /// Records the window it was asked for; returns one commit.
+    #[derive(Default)]
+    struct FakeGit(Mutex<Vec<(String, i64, Option<i64>)>>);
+    impl GitHistory for FakeGit {
+        fn commits(&self, worktree: &str, since: i64, until: Option<i64>) -> PortResult<Vec<crate::ports::CommitInfo>> {
+            self.0.lock().unwrap().push((worktree.into(), since, until));
+            Ok(vec![crate::ports::CommitInfo {
+                hash: "0123456789abcdef".into(),
+                subject: "fix login".into(),
+                author: "me".into(),
+                at: 5,
+                files_changed: 2,
+                insertions: 10,
+                deletions: 1,
+            }])
+        }
+        fn show(&self, _: &str, hash: &str) -> PortResult<String> {
+            Ok(format!("commit {hash}"))
+        }
+    }
+
     struct Harness {
         svc: WarRoomService,
+        clock: Arc<TickClock>,
+        git: Arc<FakeGit>,
         store: Arc<MemoryStore>,
         rec: Arc<Recorder>,
         transcript: Arc<FakeTranscripts>,
@@ -590,11 +749,13 @@ mod tests {
     fn harness_with(store: Arc<MemoryStore>, alive: bool) -> Harness {
         let rec = Arc::new(Recorder::default());
         let transcript = Arc::new(FakeTranscripts(Mutex::default()));
+        let clock = Arc::new(TickClock(AtomicI64::new(1_000_000_000_000)));
+        let git = Arc::new(FakeGit::default());
         let svc = WarRoomService::new(Ports {
             providers: vec![Arc::new(FakeProvider)],
             resolver: Arc::new(FixedResolver),
             store: store.clone(),
-            clock: Arc::new(TickClock(AtomicI64::new(1_000_000_000_000))),
+            clock: clock.clone(),
             probe: Arc::new(Probe(alive)),
             notifier: rec.clone(),
             publisher: rec.clone(),
@@ -603,8 +764,9 @@ mod tests {
             launcher: rec.clone(),
             input: rec.clone(),
             skills: Arc::new(RepoSkills),
+            git: git.clone(),
         });
-        Harness { svc, store, rec, transcript }
+        Harness { svc, clock, git, store, rec, transcript }
     }
 
     fn harness() -> Harness {
@@ -868,6 +1030,66 @@ mod tests {
         assert_eq!(s.skills[0].name, "close-task");
         assert_eq!(s.skills[0].source, crate::view::SkillSourceView::Project, "the catalog settles the source");
         assert!(s.skills[0].by_user && !s.skills[0].by_agent);
+    }
+
+    #[test]
+    fn next_waiting_prefers_what_needs_you_then_the_oldest_finished() {
+        let h = harness();
+        for s in ["done-old", "done-new", "asks"] {
+            h.svc.ingest(signal(s, "prompt")).unwrap();
+        }
+        h.svc.ingest(signal("done-old", "stop")).unwrap();
+        h.svc.ingest(signal("done-new", "stop")).unwrap();
+        assert_eq!(h.svc.next_waiting(), Some(id("done-old")));
+
+        h.svc.ingest(signal("asks", "ask")).unwrap();
+        assert_eq!(h.svc.next_waiting(), Some(id("asks")));
+
+        h.svc.mute(id("asks")).unwrap();
+        assert_eq!(h.svc.next_waiting(), Some(id("done-old")), "muted ones don't count");
+    }
+
+    #[test]
+    fn a_silent_working_session_is_flagged_and_notified_once() {
+        let h = harness();
+        h.svc.ingest(signal("a", "prompt")).unwrap();
+        h.svc.tick().unwrap();
+        assert!(h.svc.view().rooms[0].sessions[0].stalled_since.is_none());
+
+        h.clock.0.fetch_add(crate::view::STALL_AFTER_MS + 1_000, Ordering::SeqCst);
+        h.svc.tick().unwrap();
+        h.svc.tick().unwrap();
+        assert!(h.svc.view().rooms[0].sessions[0].stalled_since.is_some());
+        let notices = h.rec.notices.lock().unwrap();
+        assert_eq!(notices.len(), 1, "notified once");
+        assert_eq!(notices[0].title, locale::stalled_title("app · main"));
+        drop(notices);
+
+        h.svc.ingest(signal("a", "stop")).unwrap();
+        h.svc.tick().unwrap();
+        assert!(h.svc.view().rooms[0].sessions[0].stalled_since.is_none());
+    }
+
+    #[test]
+    fn changes_list_files_relative_to_the_worktree_and_commits_since_the_start() {
+        let h = harness();
+        h.svc.ingest(signal("a", "prompt")).unwrap();
+        let changes = h.svc.session_changes(id("a")).unwrap();
+        let files: Vec<_> = changes.files.iter().map(|f| (f.path.as_str(), f.edits)).collect();
+        assert_eq!(files, vec![("src/b.rs", 3), ("/elsewhere/c.md", 1), ("src/a.rs", 1)]);
+        assert_eq!(changes.commits[0].short, "01234567");
+        let (worktree, since, until) = h.git.0.lock().unwrap()[0].clone();
+        assert_eq!(worktree, "/code/app");
+        assert!(since < 1_000_000_000_000 && until.is_none(), "from just before the start, still open");
+    }
+
+    #[test]
+    fn commit_diffs_only_accept_real_hashes() {
+        let h = harness();
+        h.svc.ingest(signal("a", "prompt")).unwrap();
+        assert_eq!(h.svc.commit_diff(id("a"), "0123456789ab").unwrap(), "commit 0123456789ab");
+        assert!(h.svc.commit_diff(id("a"), "HEAD; rm -rf").is_err());
+        assert!(h.svc.commit_diff(id("a"), "abc").is_err());
     }
 
     #[test]
