@@ -33,13 +33,13 @@ function hitTest(office: Office, actors: Map<string, Actor>, p: Point): Hit | nu
     for (const d of zone.desks) {
       const i = d.session.subagents.slice(0, d.slots.length).findIndex((_, n) => {
         const f = miniFeet(d, n);
-        return p.x >= f.x - 4 && p.x <= f.x + 4 && p.y >= f.y - 10 && p.y <= f.y + 1;
+        return p.x >= f.x - 4 && p.x <= f.x + 4 && p.y >= f.y - 11 && p.y <= f.y + 1;
       });
       if (i >= 0) return { session: d.session, agent: d.session.subagents[i] };
     }
   }
   for (const actor of actors.values()) {
-    if (p.x >= actor.x - 6 && p.x <= actor.x + 5 && p.y >= actor.y - 18 && p.y <= actor.y + 1) {
+    if (p.x >= actor.x - 7 && p.x <= actor.x + 6 && p.y >= actor.y - 19 && p.y <= actor.y + 1) {
       const d = office.zones.flatMap((z) => z.desks).find((d) => d.session.id === actor.id);
       if (d) return { session: d.session, agent: null };
     }

@@ -5,7 +5,7 @@ import { copy } from "../../domain/copy";
 import { drawText, fit, textWidth } from "./font";
 import { type Desk, type Office, type Prop, type Rect, type Zone, TILE, WALL_ROWS, feetOf } from "./office";
 import { type Actor, hash } from "./sim";
-import { MINI, drawSprite, lounging, palette, seated, body } from "./sprites";
+import { MINI, body, drawSprite, lounging, palette, seated, waving } from "./sprites";
 
 export const COLOR: Record<AttentionView, string> = {
   needs_you: "#f25555",
@@ -346,11 +346,6 @@ export function coinStack(usd: number): number {
   return [1, 5, 20, 50].filter((t) => usd >= t).length + 1;
 }
 
-function mug(ctx: CanvasRenderingContext2D, x: number, y: number) {
-  rect(ctx, x, y, 3, 3, "#e8e1d0");
-  rect(ctx, x + 3, y + 1, 1, 1, "#e8e1d0");
-}
-
 function monitor(ctx: CanvasRenderingContext2D, x: number, y: number, s: SessionView, frame: number) {
   rect(ctx, x + 6, y + 10, 4, 2, UI.metalDark);
   rect(ctx, x, y, 16, 11, "#0b101c");
@@ -408,9 +403,9 @@ function nameplate(ctx: CanvasRenderingContext2D, d: Desk) {
 
 function chair(ctx: CanvasRenderingContext2D, fx: number, fy: number) {
   // Seen from behind: the backrest hides the seated operator's waist.
-  rect(ctx, fx - 5, fy - 6, 10, 5, "#1b2233");
-  rect(ctx, fx - 5, fy - 6, 10, 1, "#33405e");
-  withAlpha(ctx, 0.6, () => rect(ctx, fx - 4, fy - 4, 8, 1, UI.cyanDim));
+  rect(ctx, fx - 6, fy - 6, 12, 5, "#1b2233");
+  rect(ctx, fx - 6, fy - 6, 12, 1, "#33405e");
+  withAlpha(ctx, 0.6, () => rect(ctx, fx - 5, fy - 4, 10, 1, UI.cyanDim));
   rect(ctx, fx - 1, fy - 1, 2, 2, "#0b0f19");
   rect(ctx, fx - 4, fy + 1, 2, 1, "#0b0f19");
   rect(ctx, fx + 2, fy + 1, 2, 1, "#0b0f19");
@@ -456,11 +451,14 @@ function propFront(ctx: CanvasRenderingContext2D, prop: Prop, frame = 0) {
   const y = prop.y * TILE;
   switch (prop.kind) {
     case "sofa":
-      rect(ctx, x, y + 6, 32, 7, "#176173");
-      rect(ctx, x + 2, y + 6, 13, 3, "#1d7d93");
-      rect(ctx, x + 17, y + 6, 13, 3, "#1d7d93");
-      rect(ctx, x, y + 2, 3, 11, "#0f3f4c");
-      rect(ctx, x + 29, y + 2, 3, 11, "#0f3f4c");
+      // Seat cushions low enough to show whoever sits there from the chest up.
+      rect(ctx, x, y + 10, 32, 4, "#176173");
+      rect(ctx, x + 2, y + 10, 13, 1, "#1d7d93");
+      rect(ctx, x + 17, y + 10, 13, 1, "#1d7d93");
+      rect(ctx, x, y + 4, 3, 10, "#0f3f4c");
+      rect(ctx, x + 29, y + 4, 3, 10, "#0f3f4c");
+      rect(ctx, x, y + 4, 3, 1, "#1d7d93");
+      rect(ctx, x + 29, y + 4, 3, 1, "#1d7d93");
       break;
     case "plant": {
       const leaf = ["#2f8f5a", "#46a870", "#1f6f45"];
@@ -489,38 +487,23 @@ function propFront(ctx: CanvasRenderingContext2D, prop: Prop, frame = 0) {
 function agent(ctx: CanvasRenderingContext2D, actor: Actor, session: SessionView | undefined, st: PaintState) {
   const seed = hash(actor.id);
   const pal = palette(session?.provider ?? "claude", seed);
-  const x = Math.round(actor.x) - 5;
+  const x = Math.round(actor.x) - 6;
+  const feet = Math.round(actor.y);
   const typing = session?.attention === "working" && !stalled(session);
   withAlpha(ctx, actor.leaving || session?.archived ? 0.5 : 1, () => {
     // Soft shadow under the feet.
-    withAlpha(ctx, 0.25, () => rect(ctx, x + 1, Math.round(actor.y) - 1, 8, 2, "#000"));
+    withAlpha(ctx, 0.3, () => rect(ctx, x + 2, feet - 1, 8, 2, "#000"));
     if (actor.pose === "desk") {
-      const top = Math.round(actor.y) - 16;
-      drawSprite(ctx, seated(typing, Math.floor(st.frame / 2)), x, top, pal);
-      // Operators wear headsets.
-      rect(ctx, x + 2, top + 1, 6, 1, "#0b0f19");
-      rect(ctx, x, top + 3, 1, 3, "#0b0f19");
-      rect(ctx, x + 9, top + 3, 1, 3, "#0b0f19");
-      rect(ctx, x + 9, top + 4, 1, 1, UI.cyan);
-      if (session?.attention === "needs_you") raisedHand(ctx, x + 9, top, pal, st.frame);
+      const sprite = session?.attention === "needs_you" ? waving(Math.floor(st.frame / 3)) : seated(typing, Math.floor(st.frame / 2));
+      drawSprite(ctx, sprite, x, feet - 18, pal);
     } else if (actor.pose === "sofa") {
-      drawSprite(ctx, lounging, x, Math.round(actor.y) - 15, pal);
+      drawSprite(ctx, lounging, x, feet - 16, pal);
     } else {
       const walking = actor.pose === "walk";
       const bob = walking && Math.floor(actor.walked / 4) % 2 === 1 ? -1 : 0;
-      const top = Math.round(actor.y) - 14 + bob;
-      drawSprite(ctx, body(actor.dir, walking, Math.floor(actor.walked / 4)), x, top, pal, actor.dir === "left");
-      // Idle agents in the lounge sometimes hold a coffee.
-      if (!walking && seed % 2 === 0 && actor.dir === "down") mug(ctx, x + 8, top + 9);
+      drawSprite(ctx, body(actor.dir, walking, Math.floor(actor.walked / 4)), x, feet - 17 + bob, pal, actor.dir === "left");
     }
   });
-}
-
-function raisedHand(ctx: CanvasRenderingContext2D, x: number, top: number, pal: Record<string, string>, frame: number) {
-  const wave = frame % 6 < 3 ? 0 : 1;
-  rect(ctx, x + wave, top - 3, 2, 11, pal.k);
-  rect(ctx, x + wave, top - 2, 1, 9, pal.c);
-  rect(ctx, x + wave - 1, top - 5, 3, 3, pal.s);
 }
 
 function mini(ctx: CanvasRenderingContext2D, session: SessionView, agent: SubagentView, fx: number, fy: number, st: PaintState) {
@@ -528,8 +511,8 @@ function mini(ctx: CanvasRenderingContext2D, session: SessionView, agent: Subage
   const pal = palette(session.provider, seed);
   const bob = agent.running && (st.frame + seed) % 6 < 3 ? -1 : 0;
   withAlpha(ctx, agent.running ? 1 : 0.55, () => {
-    withAlpha(ctx, 0.25, () => rect(ctx, fx - 3, fy - 1, 6, 1, "#000"));
-    drawSprite(ctx, MINI, fx - 3, fy - 8 + bob, pal);
+    withAlpha(ctx, 0.3, () => rect(ctx, fx - 3, fy - 1, 7, 1, "#000"));
+    drawSprite(ctx, MINI, fx - 3, fy - 9 + bob, pal);
   });
   if (st.selectedAgent === agent.id || st.hoveredAgent === agent.id) frameRect(ctx, fx - 5, fy - 10, 10, 11, st.selectedAgent === agent.id ? "#facc15" : "#ffffffaa");
 }
@@ -580,8 +563,9 @@ function toolBubble(ctx: CanvasRenderingContext2D, agent: SubagentView, fx: numb
 /** What the agent is saying, above its head. */
 function bubble(ctx: CanvasRenderingContext2D, actor: Actor, s: SessionView, frame: number) {
   if (actor.pose === "walk") return;
-  const top = Math.round(actor.y) - (actor.pose === "desk" ? 16 : 14) - 11;
-  const x = Math.round(actor.x) - 4;
+  const top = Math.round(actor.y) - (actor.pose === "desk" ? 18 : actor.pose === "sofa" ? 16 : 17) - 11;
+  // Beside the waving hand when it needs you, above the head otherwise.
+  const x = Math.round(actor.x) - 4 - (s.attention === "needs_you" && actor.pose === "desk" ? 6 : 0);
   let text: string | null = null;
   let color = "#1b1523";
   if (s.muted) [text, color] = ["ZZ", "#64748b"];

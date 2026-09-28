@@ -1,39 +1,109 @@
 // Character sprites as pixel maps (one letter per pixel, "." is transparent), recoloured per agent.
-// 10×14 chibi agents seen from the front, back and side, plus a 6×8 mini for subagents.
+// 12×17 chibi agents seen from the front, back and side (arms hang along the torso, hands at its
+// bottom corners), seated from behind with a headset, and a 7×9 mini for subagents.
 
-/** Palette keys: k outline, s/S skin, h/H hair, e eyes, r cheeks, c/C shirt, p/P trousers, b shoes. */
+/** Palette keys: k outline, s skin, h/H hair, e eyes, r cheeks, c/C shirt, p trousers, b shoes,
+ *  m headset, l its light. */
 export type Palette = Record<string, string>;
 export type Sprite = string[];
 
-const HEAD_FRONT = ["..kkkkkk..", ".khhhhhhk.", "khhhhhhhhk", "khssssssHk", "kssessessk", "ksrssssrsk", ".kssssssk."];
-const HEAD_BACK = ["..kkkkkk..", ".khhhhhhk.", "khhhhhhhhk", "khhhhhhhHk", "khhhhhhhHk", "kHhhhhhhHk", ".khhhhhHk."];
-const HEAD_SIDE = ["..kkkkk...", ".khhhhhk..", "khhhhhhhk.", "khhhssssk.", "khhhssesk.", "khhsssrsk.", ".kkssssk.."];
-
-const BODY = ["..kcccck..", ".kcccccck.", "kscccccCsk", ".kcccccCk.", ".kpppppPk."];
-const BODY_SIDE = ["..kcccck..", "..kcccck..", "..kccsck..", "..kcccCk..", "..kppppk.."];
-const BODY_TYPING = ["..kcccck..", ".kcccccck.", "kcsccccsCk", ".kcccccCk.", ".kpppppPk."];
-
-const LEGS = { stand: [".kpk..kPk.", ".kbk..kbk."], a: [".kpk..kPk.", ".kbk...kk."], b: [".kpk..kPk.", "..kk..kbk."] };
-const LEGS_SIDE = { stand: ["..kpkpk...", "..kbkbk..."], a: [".kpk.kpk..", "kbk...kbk."], b: ["...kpk....", "...kbk...."] };
+const HEAD_FRONT = [
+  "...kkkkkk...",
+  "..khhhhhhk..",
+  ".khhhhhhhhk.",
+  ".khhhhhhhHk.",
+  ".khsshhsshk.",
+  ".kssssssssk.",
+  ".ksseSsesSk.",
+  ".ksrssssrsk.",
+  "..kssssssk..",
+  "...kkkkkk...",
+];
+const HEAD_BACK = [
+  "...kkkkkk...",
+  "..khhhhhhk..",
+  ".khhhhhhhhk.",
+  ".khhhhhhhHk.",
+  ".khhhhhhhHk.",
+  ".khhhhhhhHk.",
+  ".kHhhhhhhHk.",
+  ".kHhhhhhHHk.",
+  "..kHhhhhHk..",
+  "...kkkkkk...",
+];
+const HEAD_SIDE = [
+  "...kkkkk....",
+  "..khhhhhk...",
+  ".khhhhhhhk..",
+  ".khhhhhhhk..",
+  ".khhhhhssk..",
+  ".khhhhsssk..",
+  ".khhhhsesk..",
+  ".kHhhsssrk..",
+  "..kHssssk...",
+  "...kkkkk....",
+];
+const TORSO = ["..kcccccck..", ".kCccccccCk.", ".kCccccccCk.", ".ksccccccsk.", "..kppppppk.."];
+const TORSO_SIDE = ["...kcccck...", "...kcCcck...", "...kcCcck...", "...kcscck...", "...kppppk..."];
+const LEGS = {
+  stand: ["..kpp..ppk..", "..kbb..bbk.."],
+  a: ["..kpp..ppk..", "..kbb...kk.."],
+  b: ["..kpp..ppk..", "...kk..bbk.."],
+};
+const LEGS_SIDE = {
+  stand: ["...kppk.....", "...kbbk....."],
+  a: ["..kpk.kpk...", "..kbk.kbk..."],
+  b: ["...kppk.....", "...kbbk....."],
+};
+const SEATED = [
+  "...kkkkkk...",
+  "..kmmmmmmk..",
+  ".khhhhhhhhk.",
+  ".khhhhhhhHk.",
+  ".mhhhhhhhHm.",
+  ".mhhhhhhhHl.",
+  ".kHhhhhhhHk.",
+  ".kHhhhhhHHk.",
+  "..kHhhhhHk..",
+  "..kkkkkkkk..",
+  ".kcccccccck.",
+  ".kCccccccCk.",
+  ".kCccccccCk.",
+];
+/** Typing: the shoulders shift as the hands move (out of sight, on the console). */
+const SEATED_TYPING = [...SEATED.slice(0, 10), ".kcccccccck.", ".kCcccccccCk", ".kcCccccCck."];
 
 export type Facing = "down" | "up" | "left" | "right";
 
 /** A standing or walking agent; `frame` alternates the legs while walking. */
 export function body(facing: Facing, walking: boolean, frame: number): Sprite {
   const legs = !walking ? "stand" : frame % 2 === 0 ? "a" : "b";
-  if (facing === "left" || facing === "right") return [...HEAD_SIDE, ...BODY_SIDE, ...LEGS_SIDE[legs]];
-  return [...(facing === "up" ? HEAD_BACK : HEAD_FRONT), ...BODY, ...LEGS[legs]];
+  if (facing === "left" || facing === "right") return [...HEAD_SIDE, ...TORSO_SIDE, ...LEGS_SIDE[legs]];
+  return [...(facing === "up" ? HEAD_BACK : HEAD_FRONT), ...TORSO, ...LEGS[legs]];
 }
 
-/** Seated at the desk, seen from behind; hands move while typing. */
+/** Seated at the console, seen from behind, with a headset; the shoulders move while typing. */
 export function seated(typing: boolean, frame: number): Sprite {
-  return [...HEAD_BACK, ...(typing && frame % 2 === 1 ? BODY_TYPING : BODY)];
+  return typing && frame % 2 === 1 ? SEATED_TYPING : SEATED;
+}
+
+/** Seated with the right hand up, waving beside the head (13 wide). */
+export function waving(frame: number): Sprite {
+  const up = frame % 2 === 1;
+  const arm: Record<number, string> = up
+    ? { 2: "kk", 3: "sk", 4: "sk", 5: "ck", 6: "ck", 7: "ck", 8: "ck", 9: "ck" }
+    : { 3: "kk", 4: "sk", 5: "sk", 6: "ck", 7: "ck", 8: "ck", 9: "ck" };
+  return SEATED.map((row, i) => {
+    const wide = `${row}.`;
+    if (i === 10) return `${wide.slice(0, 10)}cck`;
+    return arm[i] ? wide.slice(0, 11) + arm[i] : wide;
+  });
 }
 
 /** Seated on a sofa, facing us (the sofa hides the legs). */
-export const lounging: Sprite = [...HEAD_FRONT, ...BODY];
+export const lounging: Sprite = [...HEAD_FRONT, ...TORSO];
 
-export const MINI: Sprite = [".kkkk.", "khhhhk", "ksesek", ".kssk.", "kcccck", "scccCs", ".kppk.", ".k..k."];
+export const MINI: Sprite = ["..kkk..", ".khhhk.", "khhhhhk", "ksesesk", ".ksssk.", "kcccccK", "kCcccCk", ".kpkpk.", ".kk.kk."];
 
 export const SKIN = [
   ["#f6d2b3", "#e2b18f"],
@@ -69,7 +139,23 @@ export function palette(provider: string, seed: number): Palette {
   const [s, S] = SKIN[seed % SKIN.length];
   const [h, H] = HAIR[(seed >>> 3) % HAIR.length];
   const [c, C] = SHIRTS[provider] ?? OTHER_SHIRTS[(seed >>> 6) % OTHER_SHIRTS.length];
-  return { k: "#1b1523", s, S, h, H, e: "#1b1523", r: "#e79a8f", c, C, p: "#3b4058", P: "#2c3044", b: "#241c2c" };
+  return {
+    k: "#140f1c",
+    K: "#140f1c",
+    s,
+    S,
+    h,
+    H,
+    e: "#140f1c",
+    r: "#e79a8f",
+    c,
+    C,
+    p: "#343a52",
+    P: "#272c40",
+    b: "#1d1824",
+    m: "#0b0f19",
+    l: "#22d3ee",
+  };
 }
 
 /** Draws a sprite with its top-left at (x, y); `flip` mirrors it (left-facing). */

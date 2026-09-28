@@ -19,9 +19,11 @@ console and the crew lounge. Classic and pixel views show the same state; the pi
   finished / stuck → its seat; idle → a lounge spot that changes every ~15–23 s; closed → no agent),
   `step()` walks actors there at 3 tiles/s. New agents come in through the door, gone ones walk out.
   On the first frame and on a new width the scene re-seats everyone instead (no parade).
-- **`sprites.ts`**: 10×14 chibi agents as pixel maps (front, back, side; walk frames; seated from
-  behind with typing hands; lounging), recoloured per agent. **The shirt is the agent**: Claude
-  orange, Codex white, Cursor charcoal, Antigravity blue; hair and skin come from `hash(id)`.
+- **`sprites.ts`**: 12×17 chibi agents as pixel maps (front, back, side, walk frames), seated from
+  behind with a headset, waving (hand up beside the head, part of the sprite), lounging, and a 7×9
+  mini. Arms hang inside the silhouette: nothing may stick out of the torso's outline
+  (`sprites.test.ts` checks it). Never draw limbs as separate overlays. **The shirt is the agent**:
+  Claude orange, Codex white, Cursor charcoal, Antigravity blue; hair and skin from `hash(id)`.
 - **`paint.ts`**: dark panel floor with a faint grid; screen wall (telemetry with today's usage, main
   screen with counters, a trajectory and the ticker of what needs you, MET clock), tiers with a lit
   step and a sign ("REPO n · tokens"), then everything standing sorted by its feet `y` (console →
