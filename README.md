@@ -8,7 +8,7 @@ only look at it when it changes color.
 
 ![Classic view: several repos, sessions and subagents](docs/screenshots/classic.png)
 
-![Pixel-art War Room: the same state as an office where each agent works at its desk or rests in the lounge](docs/screenshots/pixel.png)
+![Pixel-art War Room: a mission control where each agent works at its console or rests in the crew lounge](docs/screenshots/pixel.png)
 
 - **Fully local.** No server, no account: it reads the agents' hooks and transcripts on your
   machine.
@@ -109,10 +109,12 @@ made in its worktree since it started**, with each one's diff. Nothing is comput
   comes back on its own if you write to it, and can be restored for 3 days.
 - **Mute**: still visible, but without notifications.
 - **Today.** The header adds up the day's tokens and estimated cost across all sessions.
-- **Two views of the same state:** the classic one (cards) and the pixel-art **War Room**, an office
-  where each agent walks to its desk when it works, raises its hand when it needs you and goes to the
-  lounge when it is idle; its shirt says which agent it is (Claude orange, Codex white, Cursor
-  charcoal, Antigravity blue). Switch from the header.
+- **Two views of the same state:** the classic one (cards) and the pixel-art **War Room**, a mission
+  control where each agent walks to its console when it works, raises its hand when it needs you and
+  goes to the crew lounge when it is idle; its shirt says which agent it is (Claude orange, Codex
+  white, Cursor charcoal, Antigravity blue). Usage is drawn: context fill on each monitor, token and
+  cost bars on each console, totals per repo and for today on the screen wall; running subagents show
+  what they are doing. Busy repos fold their closed sessions into a cabinet. Switch from the header.
 
 Desktop notifications come with buttons: **View**, **Go to**, **Approve** and **Reply**.
 

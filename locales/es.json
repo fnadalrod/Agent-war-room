@@ -317,7 +317,9 @@
       "canvas_label": "Sala de control: un puesto por sesión, coloreado por su estado",
       "subagent_of": " — subagente de {session}",
       "subagent_of_unknown": " — subagente de la sesión",
-      "empty": "Sala vacía: los puestos aparecerán cuando un agente arranque."
+      "empty": "Sala vacía: los puestos aparecerán cuando un agente arranque.",
+      "today": "HOY",
+      "cabinet_tip": "{n} sesiones cerradas · clic para verlas"
     },
     "provider": {
       "claude": "Claude Code",

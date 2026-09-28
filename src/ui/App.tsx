@@ -103,6 +103,10 @@ export function App({ store }: { store: WarRoomStore }) {
             showArchived={showArchived}
             selectedId={state.detail?.id ?? null}
             selectedAgent={state.detail?.agent?.id ?? null}
+            onShowRepo={(repoId) => {
+              store.showOnlyRepo(repoId);
+              setMode("classic");
+            }}
           />
         )}
 

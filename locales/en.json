@@ -317,7 +317,9 @@
       "canvas_label": "Control room: one desk per session, colored by its state",
       "subagent_of": " — subagent of {session}",
       "subagent_of_unknown": " — subagent of the session",
-      "empty": "Empty room: desks will appear when an agent starts."
+      "empty": "Empty room: desks will appear when an agent starts.",
+      "today": "TODAY",
+      "cabinet_tip": "{n} closed sessions · click to list them"
     },
     "provider": {
       "claude": "Claude Code",

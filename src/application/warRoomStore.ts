@@ -81,6 +81,11 @@ export class WarRoomStore {
     this.filters?.save(filter);
   }
 
+  /** Only this repo (e.g. from the pixel room's cabinet of closed sessions). */
+  showOnlyRepo(repoId: string) {
+    this.setFilter({ ...this.state.filter, repos: [repoId] });
+  }
+
   toggleRepoFilter(repoId: string) {
     this.setFilter({ ...this.state.filter, repos: toggle(this.state.filter.repos, repoId) });
   }

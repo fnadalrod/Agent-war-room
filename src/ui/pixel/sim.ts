@@ -60,8 +60,7 @@ export function goals(office: Office, now: number): Map<string, Goal> {
       key: `spot:${spot.tile.x},${spot.tile.y}`,
       tile: spot.tile,
       pose: spot.pose === "sit" ? "sofa" : "stand",
-      // On the sofa, facing us; standing, facing the coffee machine or the shelf.
-      face: spot.pose === "sit" ? "down" : "up",
+      face: spot.face,
     });
   }
   return out;

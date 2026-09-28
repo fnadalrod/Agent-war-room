@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { aRoom, aSession, aView } from "../../test/fixtures";
-import { deskAtPoint, feetOf, findPath, layoutOffice, pixelScale, TILE, WALL_ROWS } from "./office";
+import { cabinetAtPoint, deskAtPoint, FOLD_AFTER, feetOf, findPath, layoutOffice, pixelScale, TILE, WALL_ROWS } from "./office";
 import { type Actor, goals, step } from "./sim";
 
 const sessions = (prefix: string, n: number, attention: "working" | "idle" = "working") =>
@@ -45,6 +45,28 @@ describe("layoutOffice", () => {
     expect(layoutOffice(view, 400, true).zones[0].desks).toHaveLength(2);
   });
 
+  it("a busy repo keeps desks for live sessions and puts the closed ones in a cabinet", () => {
+    const live = sessions("l", 3);
+    const closed = Array.from({ length: 4 }, (_, i) => aSession({ id: `c${i}`, attention: "offline" }));
+    const office = layoutOffice(aView([aRoom("busy", [...live, ...closed])]), 480, false);
+    const zone = office.zones[0];
+    expect(zone.desks.map((d) => d.session.id)).toEqual(["l0", "l1", "l2"]);
+    expect(zone.folded).toHaveLength(4);
+    expect(cabinetAtPoint(office, { x: zone.cabinet!.x * TILE + 8, y: zone.cabinet!.y * TILE + 8 })?.room.repo_name).toBe("busy");
+    // A small repo keeps every desk, closed or not.
+    const small = layoutOffice(aView([aRoom("small", [...live, closed[0]])]), 480, false).zones[0];
+    expect(small.desks).toHaveLength(FOLD_AFTER);
+    expect(small.cabinet).toBeNull();
+  });
+
+  it("the lounge grows until every idle agent has a spot of its own", () => {
+    const office = layoutOffice(aView([aRoom("lazy", sessions("i", 30, "idle"))]), 400, false);
+    expect(office.spots.length).toBeGreaterThanOrEqual(30);
+    const taken = new Set([...goals(office, 0).values()].map((g) => g.key));
+    expect(taken.size).toBe(30);
+    for (const s of office.spots) expect(findPath(office, office.door, s.tile).length).toBeGreaterThan(0);
+  });
+
   it("picks a comfortable scale", () => {
     expect([pixelScale(600), pixelScale(1200), pixelScale(2000)]).toEqual([2, 3, 4]);
   });
@@ -84,5 +106,16 @@ describe("sim", () => {
     expect(actors.get("w")?.pose).toBe("desk");
     for (let t = 0; t < 300; t++) step(actors, office, new Map(), 100, true);
     expect(actors.size).toBe(0);
+  });
+});
+
+describe("what the room shows", () => {
+  it("usage grows on a log scale and tools read at a glance", async () => {
+    const { coinStack, paperStack, toolGlyph } = await import("./paint");
+    expect([0, 500_000, 5_000_000, 40_000_000, 500_000_000].map(paperStack)).toEqual([0, 1, 2, 4, 5]);
+    expect([0, 0.4, 3, 60].map(coinStack)).toEqual([0, 1, 2, 5]);
+    expect(["Bash · npm test", "run_command", "Read · a.rs", "view_file", "StrReplace", "Grep · x", "WebFetch", "Task", "TodoWrite", null].map(toolGlyph)).toEqual(
+      ["$", "$", "R", "R", "E", "S", "W", "A", null, null],
+    );
   });
 });

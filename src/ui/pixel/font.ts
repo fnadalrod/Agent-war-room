@@ -53,6 +53,7 @@ const GLYPHS: Record<string, number[]> = {
   "#": [0b101, 0b111, 0b101, 0b111, 0b101],
   "'": [0b010, 0b010, 0, 0, 0],
   "·": [0, 0, 0b010, 0, 0],
+  $: [0b011, 0b110, 0b010, 0b011, 0b110],
 };
 
 export const GLYPH_W = 3;

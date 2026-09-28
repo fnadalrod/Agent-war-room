@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { WarRoomStore } from "../../application/warRoomStore";
-import { agentName, deskName, providerName, type WarRoomView } from "../../domain/attention";
+import { agentName, deskName, money, providerName, tokenCount, unpriced, usageLabel, type WarRoomView } from "../../domain/attention";
 import { copy } from "../../domain/copy";
-import { type Hit, type Office, type Point, deskAtPoint, layoutOffice, pixelScale } from "./office";
+import { type Hit, type Office, type Point, type Zone, cabinetAtPoint, deskAtPoint, layoutOffice, pixelScale } from "./office";
 import { miniFeet, paintOffice } from "./paint";
 import { type Actor, goals, step } from "./sim";
 
@@ -12,11 +12,22 @@ type Props = {
   showArchived: boolean;
   selectedId: string | null;
   selectedAgent: string | null;
+  /** Show a repo's sessions in the classic view (from its cabinet of closed ones). */
+  onShowRepo: (repoId: string) => void;
 };
 
 const FPS = 20;
 
-/** What is under a point: a subagent, then an agent wherever it walks, then a desk. */
+type SceneHit = { kind: "session"; hit: Hit } | { kind: "cabinet"; zone: Zone };
+
+/** What is under a point: a cabinet, a subagent, an agent wherever it walks, then a desk. */
+function sceneHit(office: Office, actors: Map<string, Actor>, p: Point): SceneHit | null {
+  const zone = cabinetAtPoint(office, p);
+  if (zone) return { kind: "cabinet", zone };
+  const hit = hitTest(office, actors, p);
+  return hit ? { kind: "session", hit } : null;
+}
+
 function hitTest(office: Office, actors: Map<string, Actor>, p: Point): Hit | null {
   for (const zone of office.zones) {
     for (const d of zone.desks) {
@@ -38,11 +49,13 @@ function hitTest(office: Office, actors: Map<string, Actor>, p: Point): Hit | nu
 }
 
 /** The office in pixel art. Click: preview; double click: go to the session. */
-export function WarRoomScene({ view, store, showArchived, selectedId, selectedAgent }: Props) {
+export function WarRoomScene({ view, store, showArchived, selectedId, selectedAgent, onShowRepo }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [cssWidth, setCssWidth] = useState(1200);
-  const [hovered, setHovered] = useState<Hit | null>(null);
+  const [hoveredAt, setHovered] = useState<SceneHit | null>(null);
+  const hovered = hoveredAt?.kind === "session" ? hoveredAt.hit : null;
+  const hoveredZone = hoveredAt?.kind === "cabinet" ? hoveredAt.zone : null;
   const actors = useRef(new Map<string, Actor>());
 
   const scale = pixelScale(cssWidth);
@@ -67,9 +80,12 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
     [view],
   );
 
+  const today = view.today.total_tokens > 0
+    ? `${tokenCount(view.today.total_tokens).toUpperCase()}${unpriced(view.today) ? "" : ` ${money(view.today.cost_usd)}`}`
+    : null;
   // Live state for the paint loop, so it is not restarted on every render.
-  const live = useRef({ office, selectedId, selectedAgent, alerts, hovered: null as Hit | null });
-  live.current = { office, selectedId, selectedAgent, alerts, hovered };
+  const live = useRef({ office, selectedId, selectedAgent, alerts, today, hovered: null as Hit | null, cabinet: null as string | null });
+  live.current = { office, selectedId, selectedAgent, alerts, today, hovered, cabinet: hoveredZone?.room.repo_id ?? null };
 
   useEffect(() => {
     const el = box.current;
@@ -92,7 +108,7 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
       const c = canvas.current;
       const ctx = c?.getContext("2d");
       if (!c || !ctx) return;
-      const { office, selectedId, selectedAgent, hovered, alerts } = live.current;
+      const { office, selectedId, selectedAgent, hovered, alerts, today, cabinet } = live.current;
       // Agents already there when the room opens are in place; later ones come through the door.
       // A new width moves every desk: re-seat everyone rather than have them all walk.
       const relaid = laidOutFor !== office.width;
@@ -111,6 +127,8 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
         hovered: hovered?.session.id ?? null,
         hoveredAgent: hovered?.agent?.id ?? null,
         alerts,
+        today,
+        hoveredCabinet: cabinet,
         actors: actors.current,
       });
     };
@@ -121,7 +139,7 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
   const at = (e: React.MouseEvent) => {
     const r = e.currentTarget.getBoundingClientRect();
     const p = { x: ((e.clientX - r.left) / r.width) * office.width, y: ((e.clientY - r.top) / r.height) * office.height };
-    return hitTest(office, actors.current, p);
+    return sceneHit(office, actors.current, p);
   };
 
   return (
@@ -129,22 +147,26 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
       <div className="pixel-stage" ref={box}>
         <canvas
           ref={canvas}
-          style={{ width: office.width * scale, height: office.height * scale, cursor: hovered ? "pointer" : "default" }}
+          style={{ width: office.width * scale, height: office.height * scale, cursor: hoveredAt ? "pointer" : "default" }}
           onMouseMove={(e) => setHovered(at(e))}
           onMouseLeave={() => setHovered(null)}
           onClick={(e) => {
-            const hit = at(e);
+            const found = at(e);
+            if (found?.kind === "cabinet") return onShowRepo(found.zone.room.repo_id);
+            const hit = found?.hit ?? null;
             if (!hit) store.closeDetail();
             else if (hit.agent) store.openSubagent(hit.session.id, hit.agent.id);
             else store.openDetail(hit.session.id);
           }}
           onDoubleClick={(e) => {
-            const hit = at(e);
+            const found = at(e);
+            const hit = found?.kind === "session" ? found.hit : null;
             if (hit?.session.alive && !hit.agent) store.goTo(hit.session);
           }}
           role="img"
           aria-label={copy.pixel.canvasLabel}
         />
+        {hoveredZone && <div className="pixel-tip">{copy.pixel.cabinetTip(hoveredZone.folded.length)}</div>}
         {hovered && (
           <div className="pixel-tip">
             {hovered.agent ? (
@@ -158,7 +180,11 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
             ) : (
               <>
                 <strong>{hovered.session.title ?? hovered.session.worktree_path}</strong> · {hovered.session.status_label}
-                <span className="muted"> · {providerName(hovered.session.provider)}</span>
+                <span className="muted">
+                  {" · "}
+                  {providerName(hovered.session.provider)}
+                  {hovered.session.usage.total_tokens > 0 && ` · ${usageLabel(hovered.session.usage)}`}
+                </span>
               </>
             )}
           </div>

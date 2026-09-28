@@ -1,9 +1,9 @@
 // Pixel-art painting of the office. Logical coordinates; the canvas is scaled with `pixelated`.
 import type { AttentionView, SessionView, SubagentView } from "../../domain/attention";
-import { deskName } from "../../domain/attention";
+import { contextLevel, contextRatio, deskName, tokenCount } from "../../domain/attention";
 import { copy } from "../../domain/copy";
 import { drawText, fit, textWidth } from "./font";
-import { type Desk, type Office, type Prop, type Rect, TILE, WALL_ROWS, feetOf } from "./office";
+import { type Desk, type Office, type Prop, type Rect, type Zone, TILE, WALL_ROWS, feetOf } from "./office";
 import { type Actor, hash } from "./sim";
 import { MINI, drawSprite, lounging, palette, seated, body } from "./sprites";
 
@@ -17,9 +17,23 @@ export const COLOR: Record<AttentionView, string> = {
 /** Working but silent for too long: amber, between "working" and "needs you". */
 const STALLED = "#f59e0b";
 
-const WOOD = { base: "#8a6444", dark: "#7f5c3e", light: "#946c4a", seam: "#6e4f34" };
-const WALL = { face: "#3a4063", light: "#4a5178", trim: "#262a42", base: "#2c3150" };
-const RUGS = ["#4b5d8a", "#6a4c7d", "#3f6f63", "#7a5a3a", "#4e6b8f", "#7d4f55"];
+/** Mission control: dark metal, cyan light. */
+const UI = {
+  floor: "#0c1322",
+  seam: "#121b2e",
+  panel: "#0f1829",
+  wall: "#080d18",
+  wallPanel: "#0d1424",
+  cyan: "#22d3ee",
+  cyanDim: "#0e7490",
+  metal: "#1c2436",
+  metalTop: "#283249",
+  metalEdge: "#3a4868",
+  metalDark: "#121826",
+  text: "#cfe8f3",
+};
+/** Each repo's tier gets its own accent. */
+const TIERS = ["#22d3ee", "#a78bfa", "#34d399", "#f472b6", "#60a5fa", "#fbbf24"];
 
 export type PaintState = {
   frame: number;
@@ -30,6 +44,10 @@ export type PaintState = {
   hoveredAgent: string | null;
   /** Titles of what needs you, for the wall board ticker. */
   alerts: string[];
+  /** Today's tokens and cost, already formatted ("324M $135"), for the board. */
+  today: string | null;
+  /** The cabinet under the cursor, to highlight it. */
+  hoveredCabinet: string | null;
   actors: Map<string, Actor>;
 };
 
@@ -64,7 +82,7 @@ export function paintOffice(ctx: CanvasRenderingContext2D, office: Office, st: P
   ctx.imageSmoothingEnabled = false;
   floor(ctx, office);
   wall(ctx, office, st);
-  for (const zone of office.zones) rug(ctx, zone.rect, RUGS[hash(zone.room.repo_id) % RUGS.length], zone.room.repo_name, zone.desks.length);
+  for (const zone of office.zones) rug(ctx, zone, TIERS[hash(zone.room.repo_id) % TIERS.length]);
   loungeRug(ctx, office);
 
   // Everything that stands on the floor, back to front.
@@ -83,10 +101,13 @@ export function paintOffice(ctx: CanvasRenderingContext2D, office: Office, st: P
       });
     }
   }
+  for (const zone of office.zones) {
+    if (zone.cabinet) drawables.push({ y: zone.cabinet.y * TILE + TILE - 1, draw: () => cabinet(ctx, zone, st) });
+  }
   for (const prop of office.props) {
     const top = prop.y * TILE;
-    drawables.push({ y: top + 5, draw: () => propBack(ctx, prop) });
-    drawables.push({ y: top + TILE - 2.5, draw: () => propFront(ctx, prop) });
+    drawables.push({ y: top + 5, draw: () => propBack(ctx, prop, st.frame) });
+    drawables.push({ y: top + TILE - 2.5, draw: () => propFront(ctx, prop, st.frame) });
   }
   const sessions = new Map(office.zones.flatMap((z) => z.desks.map((d) => [d.session.id, d.session] as const)));
   for (const actor of st.actors.values()) {
@@ -101,87 +122,90 @@ export function paintOffice(ctx: CanvasRenderingContext2D, office: Office, st: P
     const session = sessions.get(actor.id);
     if (session) bubble(ctx, actor, session, st.frame);
   }
+  for (const zone of office.zones) {
+    for (const d of zone.desks) {
+      d.session.subagents.slice(0, d.slots.length).forEach((agent, i) => {
+        const feet = miniFeet(d, i);
+        // In the aisle the bubble goes to the side, clear of the name.
+        if (agent.running) toolBubble(ctx, agent, feet.x, feet.y, st.frame, d.slots[i].y > d.seat.y);
+      });
+    }
+  }
   for (const zone of office.zones) for (const d of zone.desks) marks(ctx, d, st);
 }
 
 // ---------- Room ----------
 
 function floor(ctx: CanvasRenderingContext2D, office: Office) {
-  rect(ctx, 0, 0, office.width, office.height, WOOD.base);
+  rect(ctx, 0, 0, office.width, office.height, UI.floor);
+  // Floor panels with seams, and a faint light grid every fourth panel.
   for (let r = WALL_ROWS; r < office.rows; r++) {
-    for (let y = 0; y < TILE; y += 4) {
-      const py = r * TILE + y;
-      rect(ctx, 0, py + 3, office.width, 1, WOOD.dark);
-      // Staggered plank joints.
-      const offset = ((r * 4 + y) * 7) % 23;
-      for (let x = offset; x < office.width; x += 23 + ((r + y) % 3) * 4) rect(ctx, x, py, 1, 3, WOOD.seam);
-      if ((r + y) % 3 === 0) rect(ctx, 0, py, office.width, 1, WOOD.light);
+    for (let c = 0; c < office.cols; c++) {
+      const x = c * TILE;
+      const y = r * TILE;
+      if ((r + c) % 2 === 0) rect(ctx, x + 1, y + 1, TILE - 2, TILE - 2, UI.panel);
+      rect(ctx, x, y, TILE, 1, UI.seam);
+      rect(ctx, x, y, 1, TILE, UI.seam);
     }
   }
-  // Side walls' shadow on the floor.
-  withAlpha(ctx, 0.25, () => {
-    rect(ctx, 0, WALL_ROWS * TILE, office.width, 3, "#000");
-    rect(ctx, 0, WALL_ROWS * TILE, 3, office.height, "#000");
-    rect(ctx, office.width - 3, WALL_ROWS * TILE, 3, office.height, "#000");
+  withAlpha(ctx, 0.08, () => {
+    for (let c = 0; c < office.cols; c += 4) rect(ctx, c * TILE, WALL_ROWS * TILE, 1, office.height, UI.cyan);
+    for (let r = WALL_ROWS; r < office.rows; r += 4) rect(ctx, 0, r * TILE, office.width, 1, UI.cyan);
   });
-}
-
-function sky(hour: number): { top: string; bottom: string; night: boolean } {
-  if (hour >= 21 || hour < 6) return { top: "#0b1026", bottom: "#1c2350", night: true };
-  if (hour < 8) return { top: "#f6a86b", bottom: "#fbd49a", night: false };
-  if (hour >= 19) return { top: "#5b3f82", bottom: "#e0866b", night: false };
-  return { top: "#6fb7ef", bottom: "#b8e0fb", night: false };
+  // The light of the screen wall falls on the front rows.
+  for (let i = 0; i < 6; i++) withAlpha(ctx, 0.05 - i * 0.008, () => rect(ctx, 0, WALL_ROWS * TILE + i * 6, office.width, 6, UI.cyan));
+  // Vignette at the sides.
+  withAlpha(ctx, 0.35, () => {
+    rect(ctx, 0, WALL_ROWS * TILE, 4, office.height, "#000");
+    rect(ctx, office.width - 4, WALL_ROWS * TILE, 4, office.height, "#000");
+  });
 }
 
 function wall(ctx: CanvasRenderingContext2D, office: Office, st: PaintState) {
   const h = WALL_ROWS * TILE;
-  rect(ctx, 0, 0, office.width, h, WALL.face);
-  rect(ctx, 0, 0, office.width, 3, WALL.trim);
-  for (let x = 0; x < office.width; x += 8) rect(ctx, x, 3, 1, h - 7, WALL.light);
-  rect(ctx, 0, h - 4, office.width, 4, WALL.base);
+  rect(ctx, 0, 0, office.width, h, UI.wall);
+  for (let x = 0; x < office.width; x += 24) rect(ctx, x, 0, 1, h, UI.wallPanel);
+  // Ceiling lights.
+  for (let x = 12; x < office.width; x += 48) withAlpha(ctx, 0.6, () => rect(ctx, x, 1, 18, 1, "#7dd3fc"));
 
-  const { top, bottom, night } = sky(st.now.getHours());
-  const boardW = Math.min(150, office.width - 80);
-  const boardX = Math.floor((office.width - boardW) / 2);
-  // Windows left and right of the board.
-  for (let x = 40; x + 30 < office.width - 8; x += 44) {
-    if (x + 30 > boardX - 6 && x < boardX + boardW + 6) continue;
-    window_(ctx, x, 9, 30, 24, top, bottom, night, x);
+  // The screen wall: telemetry on the left, the main screen, mission clock on the right.
+  const main = Math.min(190, Math.floor(office.width * 0.5));
+  const mainX = Math.floor((office.width - main) / 2);
+  const side = Math.min(90, mainX - 30);
+  mainScreen(ctx, office, mainX, 5, main, h - 12, st);
+  if (side >= 44) {
+    telemetry(ctx, mainX - side - 6, 9, side, h - 20, st);
+    missionClock(ctx, mainX + main + 6, 9, side, h - 20, st.now);
   }
-  door(ctx, office.door.x * TILE, h);
-  board(ctx, office, boardX, 6, boardW, h - 14, st);
-  clock(ctx, office.width - 20, 10, st.now);
+  // Console-grade edge where the wall meets the floor.
+  rect(ctx, 0, h - 3, office.width, 3, UI.metalDark);
+  withAlpha(ctx, 0.6, () => rect(ctx, 0, h - 3, office.width, 1, UI.cyanDim));
+  door(ctx, office.door.x * TILE, h, st.frame);
 }
 
-function window_(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, top: string, bottom: string, night: boolean, seed: number) {
-  rect(ctx, x - 2, y - 2, w + 4, h + 4, "#5c4631");
-  rect(ctx, x, y, w, Math.floor(h / 2), top);
-  rect(ctx, x, y + Math.floor(h / 2), w, Math.ceil(h / 2), bottom);
-  if (night) for (let i = 0; i < 5; i++) rect(ctx, x + Math.floor(rand(seed + i) * w), y + Math.floor(rand(seed * 3 + i) * 8), 1, 1, "#fff8d0");
-  else rect(ctx, x + 4 + (seed % 9), y + 4, 6, 2, "#ffffffcc");
-  // Skyline.
-  for (let bx = 0; bx < w; bx += 5) {
-    const bh = 4 + Math.floor(rand(seed + bx) * 9);
-    rect(ctx, x + bx, y + h - bh, 4, bh, night ? "#141a38" : "#5d7aa0");
-    if (night && rand(seed + bx * 7) > 0.5) rect(ctx, x + bx + 1, y + h - bh + 2, 1, 1, "#ffd76a");
+function screenFrame(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+  rect(ctx, x - 2, y - 2, w + 4, h + 4, "#1a2234");
+  rect(ctx, x - 1, y - 1, w + 2, h + 2, "#05080f");
+  rect(ctx, x, y, w, h, "#061020");
+  // Scanlines.
+  withAlpha(ctx, 0.18, () => {
+    for (let yy = y; yy < y + h; yy += 2) rect(ctx, x, yy, w, 1, "#000");
+  });
+}
+
+function mainScreen(ctx: CanvasRenderingContext2D, office: Office, x: number, y: number, w: number, h: number, st: PaintState) {
+  screenFrame(ctx, x, y, w, h);
+  // A trajectory over a dotted grid, drawn a little more every frame.
+  withAlpha(ctx, 0.35, () => {
+    for (let gx = x + 4; gx < x + w - 2; gx += 8) for (let gy = y + 3; gy < y + h - 2; gy += 6) rect(ctx, gx, gy, 1, 1, UI.cyanDim);
+  });
+  const lead = (st.frame * 2) % (w - 8);
+  for (let i = 0; i < w - 8; i++) {
+    const py = y + Math.floor(h / 2) + Math.round(Math.sin((i / (w - 8)) * Math.PI * 2) * (h / 4));
+    if (i <= lead) withAlpha(ctx, 0.25 + 0.75 * (i / Math.max(1, lead)), () => rect(ctx, x + 4 + i, py, 1, 1, UI.cyan));
+    if (i === lead) rect(ctx, x + 3 + i, py - 1, 3, 3, "#e0f7ff");
   }
-  rect(ctx, x + Math.floor(w / 2), y, 1, h, "#5c4631");
-  rect(ctx, x, y + Math.floor(h / 2), w, 1, "#5c4631");
-  rect(ctx, x - 3, y + h + 2, w + 6, 2, "#6e5639");
-}
-
-function door(ctx: CanvasRenderingContext2D, x: number, wallBottom: number) {
-  rect(ctx, x + 1, wallBottom - 30, 14, 30, "#5c4631");
-  rect(ctx, x + 3, wallBottom - 28, 10, 28, "#7a5a3c");
-  rect(ctx, x + 4, wallBottom - 26, 8, 10, "#8a6848");
-  rect(ctx, x + 11, wallBottom - 14, 1, 2, "#e8c872");
-  rect(ctx, x, wallBottom, 16, 4, "#4a3a5a");
-}
-
-function board(ctx: CanvasRenderingContext2D, office: Office, x: number, y: number, w: number, h: number, st: PaintState) {
-  rect(ctx, x - 2, y - 2, w + 4, h + 4, "#1b1f2e");
-  rect(ctx, x, y, w, h, "#0f1422");
-  drawText(ctx, copy.pixel.title, x + Math.floor((w - textWidth(copy.pixel.title)) / 2), y + 3, "#e5e7eb");
+  drawText(ctx, copy.pixel.title, x + Math.floor((w - textWidth(copy.pixel.title)) / 2), y + 3, UI.text);
   const counts = { needs_you: 0, finished: 0, working: 0 } as Record<string, number>;
   for (const zone of office.zones) for (const d of zone.desks) if (!d.session.archived && d.session.attention in counts) counts[d.session.attention]++;
   const parts: Array<[string, string]> = [
@@ -197,7 +221,8 @@ function board(ctx: CanvasRenderingContext2D, office: Office, x: number, y: numb
   }
   // Ticker of what needs you, or all quiet.
   const ticker = st.alerts.length ? st.alerts.join("  ·  ") : copy.pixel.allQuiet;
-  const color = st.alerts.length ? (st.frame % 10 < 6 ? COLOR.needs_you : "#fca5a5") : "#64748b";
+  const color = st.alerts.length ? (st.frame % 10 < 6 ? COLOR.needs_you : "#fca5a5") : "#3b8aa0";
+  if (st.alerts.length) withAlpha(ctx, st.frame % 10 < 6 ? 0.25 : 0.1, () => rect(ctx, x, y + h - 9, w, 9, COLOR.needs_you));
   ctx.save();
   ctx.beginPath();
   ctx.rect(x + 2, y + h - 8, w - 4, 7);
@@ -206,72 +231,119 @@ function board(ctx: CanvasRenderingContext2D, office: Office, x: number, y: numb
   const tx0 = st.alerts.length && tw > w - 8 ? x + w - ((st.frame * 1.5) % (tw + w)) : x + Math.floor((w - tw) / 2);
   drawText(ctx, ticker, tx0, y + h - 7, color);
   ctx.restore();
+  withAlpha(ctx, 0.12, () => rect(ctx, x - 6, y + h + 2, w + 12, 3, UI.cyan));
 }
 
-function clock(ctx: CanvasRenderingContext2D, x: number, y: number, now: Date) {
-  rect(ctx, x - 1, y - 1, 14, 14, "#1b1f2e");
-  rect(ctx, x, y, 12, 12, "#f1efe6");
-  const hand = (turn: number, len: number, color: string) => {
-    for (let i = 1; i <= len; i++) rect(ctx, x + 6 + Math.round(Math.sin(turn) * i), y + 6 - Math.round(Math.cos(turn) * i), 1, 1, color);
-  };
-  hand(((now.getHours() % 12) / 12) * 2 * Math.PI, 3, "#1b1f2e");
-  hand((now.getMinutes() / 60) * 2 * Math.PI, 5, "#1b1f2e");
-  hand((now.getSeconds() / 60) * 2 * Math.PI, 5, "#e11d48");
+/** Left screen: today's usage and a live-looking bar graph. */
+function telemetry(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, st: PaintState) {
+  screenFrame(ctx, x, y, w, h);
+  drawText(ctx, copy.pixel.today, x + 3, y + 3, UI.cyanDim);
+  if (st.today) drawText(ctx, fit(st.today, w - 6), x + 3, y + 10, "#fcd34d");
+  for (let i = 0; i < Math.floor((w - 6) / 4); i++) {
+    const bh = 2 + Math.floor(rand(i * 7 + Math.floor(st.frame / 4)) * (h - 20));
+    rect(ctx, x + 3 + i * 4, y + h - 2 - bh, 3, bh, i % 5 === 0 ? "#fcd34d" : UI.cyanDim);
+  }
 }
 
-function rug(ctx: CanvasRenderingContext2D, r: Rect, color: string, name: string, count: number) {
+/** Right screen: the time, like a mission clock. */
+function missionClock(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, now: Date) {
+  screenFrame(ctx, x, y, w, h);
+  drawText(ctx, "MET", x + 3, y + 3, UI.cyanDim);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const time = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  drawText(ctx, time, x + Math.floor((w - textWidth(time)) / 2), y + Math.floor(h / 2) - 2, "#34d399");
+  // Blinking status lights.
+  for (let i = 0; i < 6; i++) rect(ctx, x + 4 + i * 6, y + h - 5, 3, 2, rand(i + now.getSeconds()) > 0.4 ? "#34d399" : "#064e3b");
+}
+
+function door(ctx: CanvasRenderingContext2D, x: number, wallBottom: number, frame: number) {
+  // A sliding door with a light strip.
+  rect(ctx, x, wallBottom - 30, 16, 30, UI.metalDark);
+  rect(ctx, x + 2, wallBottom - 28, 12, 27, "#1a2335");
+  rect(ctx, x + 7, wallBottom - 28, 1, 27, "#0a0f1a");
+  rect(ctx, x + 2, wallBottom - 30, 12, 1, frame % 20 < 10 ? UI.cyan : UI.cyanDim);
+}
+
+/** Each repo is a raised tier with a lit front edge and an illuminated sign. */
+function rug(ctx: CanvasRenderingContext2D, zone: Zone, accent: string) {
+  const r: Rect = zone.rect;
+  const name = zone.room.repo_name;
+  const count = zone.desks.length + zone.folded.length;
+  const tokens = zone.room.sessions.reduce((n, s) => n + s.usage.total_tokens, 0);
   const x = r.x * TILE + 2;
   const y = r.y * TILE + 4;
   const w = r.w * TILE - 4;
   const h = r.h * TILE - 6;
-  withAlpha(ctx, 0.55, () => rect(ctx, x, y, w, h, color));
-  withAlpha(ctx, 0.35, () => {
-    frameRect(ctx, x + 2, y + 2, w - 4, h - 4, "#ffffff");
-    for (let yy = y + 6; yy < y + h - 4; yy += 6) rect(ctx, x + 4, yy, w - 8, 1, "#00000055");
-  });
-  // Name plaque, hanging over the rug's top edge (the monitors stand just below).
-  const label = fit(`${name.toUpperCase()} ${count}`, w - 10);
+  rect(ctx, x, y, w, h, "#142038");
+  rect(ctx, x, y, w, 1, "#2a3a5e");
+  // Step down at the front, with the tier's light.
+  rect(ctx, x, y + h, w, 3, "#070b14");
+  withAlpha(ctx, 0.7, () => rect(ctx, x, y + h, w, 1, accent));
+  withAlpha(ctx, 0.15, () => rect(ctx, x, y + h + 3, w, 3, accent));
+  // Sign.
+  const label = fit(`${name.toUpperCase()} ${count}${tokens > 0 ? ` · ${tokenCount(tokens).toUpperCase()}` : ""}`, w - 10);
   const lw = textWidth(label) + 8;
-  rect(ctx, x + 3, y - 8, lw, 9, "#1b1f2e");
-  rect(ctx, x + 3, y - 8, 2, 9, color);
-  drawText(ctx, label, x + 8, y - 6, "#e5e7eb");
+  rect(ctx, x + 3, y - 8, lw, 9, "#050a14");
+  frameRect(ctx, x + 3, y - 8, lw, 9, accent);
+  drawText(ctx, label, x + 7, y - 6, accent);
 }
 
 function loungeRug(ctx: CanvasRenderingContext2D, office: Office) {
-  // Under the furniture row too, which stands on the rug's back edge.
+  // The crew lounge: a softer, darker area behind the consoles.
   const r = office.lounge;
   const y = r.y * TILE - 10;
   const h = r.h * TILE + 8;
-  withAlpha(ctx, 0.4, () => rect(ctx, r.x * TILE + 6, y, r.w * TILE - 12, h, "#3f6f63"));
-  withAlpha(ctx, 0.3, () => frameRect(ctx, r.x * TILE + 8, y + 2, r.w * TILE - 16, h - 4, "#d9f2e6"));
+  rect(ctx, r.x * TILE + 6, y, r.w * TILE - 12, h, "#0f1a2a");
+  withAlpha(ctx, 0.5, () => frameRect(ctx, r.x * TILE + 6, y, r.w * TILE - 12, h, "#1f3b4d"));
+  withAlpha(ctx, 0.35, () => rect(ctx, r.x * TILE + 6, y, r.w * TILE - 12, 1, UI.cyan));
 }
 
 // ---------- Furniture ----------
 
+/** A console: one per seat, cell-wide, so a row of them reads as one continuous bank. */
 function desk(ctx: CanvasRenderingContext2D, d: Desk, st: PaintState) {
-  const { x, y, w, h } = d.desk;
+  const { x, w } = d.cell;
   const s = d.session;
-  const dim = s.archived ? 0.45 : 1;
-  withAlpha(ctx, dim, () => {
-    // Shadow, top, front panel, legs.
-    withAlpha(ctx, 0.3, () => rect(ctx, x + 1, y + h, w, 2, "#000"));
-    rect(ctx, x, y, w, 6, "#b07b4f");
-    rect(ctx, x, y, w, 1, "#c99468");
-    rect(ctx, x, y + 6, w, h - 6, "#8a5c38");
-    rect(ctx, x + 1, y + h - 1, 2, 1, "#5a3a22");
-    rect(ctx, x + w - 3, y + h - 1, 2, 1, "#5a3a22");
-    // A drawer handle on the front panel.
-    rect(ctx, x + Math.floor(w / 2) - 3, y + 9, 6, 1, "#6b4428");
-    monitor(ctx, x + Math.floor(w / 2) - 8, y - 9, s, st.frame);
-    // Keyboard and something personal on the desk.
-    rect(ctx, x + Math.floor(w / 2) - 5, y + 3, 10, 2, "#2b2f3a");
-    const deco = hash(s.id) % 3;
-    if (deco === 0) mug(ctx, x + w - 6, y + 1);
-    else if (deco === 1) {
-      rect(ctx, x + 2, y + 1, 3, 3, "#6b4e2e");
-      rect(ctx, x + 1, y - 2, 5, 3, "#4f9d69");
-    } else rect(ctx, x + w - 7, y + 2, 5, 2, "#e8e1d0");
+  const top = d.desk.y;
+  withAlpha(ctx, s.archived ? 0.45 : 1, () => {
+    // Back housing, sloped work surface, front face with a light strip.
+    rect(ctx, x + 1, top, w - 2, 4, UI.metalDark);
+    rect(ctx, x + 1, top + 4, w - 2, 6, UI.metalTop);
+    rect(ctx, x + 1, top + 4, w - 2, 1, UI.metalEdge);
+    rect(ctx, x + 1, top + 10, w - 2, 4, UI.metal);
+    withAlpha(ctx, s.attention === "offline" ? 0.2 : 0.55, () => rect(ctx, x + 1, top + 10, w - 2, 1, UI.cyan));
+    withAlpha(ctx, 0.35, () => rect(ctx, x + 1, top + 14, w - 2, 2, "#000"));
+    // Blinking indicator lights along the housing.
+    if (s.attention !== "offline") {
+      for (let i = 0; i < 4; i++) {
+        const on = rand(hash(s.id) + i * 13 + Math.floor(st.frame / 3)) > 0.45;
+        rect(ctx, x + 4 + i * 3, top + 1, 2, 1, on ? ["#34d399", "#22d3ee", "#fbbf24", "#f87171"][i] : "#1f2937");
+      }
+    }
+    monitor(ctx, x + Math.floor(w / 2) - 8, top - 9, s, st.frame);
+    // Keyboard.
+    rect(ctx, x + Math.floor(w / 2) - 6, top + 6, 12, 2, "#0b0f19");
+    withAlpha(ctx, 0.5, () => rect(ctx, x + Math.floor(w / 2) - 6, top + 6, 12, 1, UI.cyanDim));
+    // Telemetry of what it has spent: cyan bars for tokens, amber for cost (log scale).
+    const tokens = paperStack(s.usage.total_tokens);
+    const cost = coinStack(s.usage.cost_usd);
+    for (let i = 0; i < 5; i++) {
+      rect(ctx, x + 4 + i * 2, top + 8 - i, 1, 1 + i, i < tokens ? UI.cyan : "#1a2438");
+      rect(ctx, x + w - 14 + i * 2, top + 8 - i, 1, 1 + i, i < cost ? "#fbbf24" : "#1a2438");
+    }
   });
+}
+
+/** 1–5 sheets: under 1M tokens, 10M, 30M, 100M, more. */
+export function paperStack(tokens: number): number {
+  if (tokens <= 0) return 0;
+  return [1_000_000, 10_000_000, 30_000_000, 100_000_000].filter((t) => tokens >= t).length + 1;
+}
+
+/** 1–5 coins: under $1, $5, $20, $50, more; none when there is no price. */
+export function coinStack(usd: number): number {
+  if (usd <= 0) return 0;
+  return [1, 5, 20, 50].filter((t) => usd >= t).length + 1;
 }
 
 function mug(ctx: CanvasRenderingContext2D, x: number, y: number) {
@@ -280,8 +352,9 @@ function mug(ctx: CanvasRenderingContext2D, x: number, y: number) {
 }
 
 function monitor(ctx: CanvasRenderingContext2D, x: number, y: number, s: SessionView, frame: number) {
-  rect(ctx, x + 6, y + 10, 4, 2, "#2b2f3a");
-  rect(ctx, x, y, 16, 11, "#1f2330");
+  rect(ctx, x + 6, y + 10, 4, 2, UI.metalDark);
+  rect(ctx, x, y, 16, 11, "#0b101c");
+  rect(ctx, x, y, 16, 1, UI.metalEdge);
   const sx = x + 1;
   const sy = y + 1;
   const bg = { needs_you: "#4a0f14", finished: "#0b2f4a", working: "#07301a", idle: "#141a2e", offline: "#050608" }[s.attention];
@@ -304,6 +377,14 @@ function monitor(ctx: CanvasRenderingContext2D, x: number, y: number, s: Session
     rect(ctx, sx + 1 + (t < 20 ? t / 2 : 20 - t / 2), sy + 3 + ((t >> 2) % 3), 2, 2, "#475569");
   }
   withAlpha(ctx, 0.25, () => rect(ctx, sx, sy, 14, 1, "#ffffff"));
+  // Context used, on the bottom bezel: amber, then red (blinking) before it compacts.
+  const ratio = contextRatio(s);
+  if (ratio != null && s.attention !== "offline") {
+    const level = contextLevel(ratio);
+    const color = level === "full" ? (frame % 6 < 3 ? "#f25555" : "#7f1d1d") : level === "warn" ? STALLED : "#34d27a";
+    rect(ctx, x + 1, y + 10, 14, 1, "#0b0e16");
+    rect(ctx, x + 1, y + 10, Math.max(1, Math.round(14 * ratio)), 1, color);
+  }
   if (s.attention === "needs_you" && !s.muted) withAlpha(ctx, frame % 8 < 5 ? 0.35 : 0.15, () => rect(ctx, x - 2, y - 2, 20, 15, COLOR.needs_you));
 }
 
@@ -316,75 +397,87 @@ export function miniFeet(d: Desk, i: number) {
 /** The session's name on the floor, under its chair. */
 function nameplate(ctx: CanvasRenderingContext2D, d: Desk) {
   const s = d.session;
-  const name = fit((s.title ?? deskName(s)).toUpperCase(), d.cell.w - 6);
+  // Subagents in the aisle corners: leave them room.
+  const crowded = s.subagents.length > 2;
+  const name = fit((s.title ?? deskName(s)).toUpperCase(), d.cell.w - (crowded ? 20 : 6));
   const feet = feetOf(d.seat);
   const x = feet.x - Math.floor(textWidth(name) / 2);
-  withAlpha(ctx, 0.55, () => rect(ctx, x - 2, feet.y + 3, textWidth(name) + 3, 7, "#1b1523"));
-  drawText(ctx, name, x, feet.y + 4, s.attention === "offline" ? "#8b93a7" : "#e9dfcf");
+  withAlpha(ctx, 0.7, () => rect(ctx, x - 2, feet.y + 3, textWidth(name) + 3, 7, "#050a14"));
+  drawText(ctx, name, x, feet.y + 4, s.attention === "offline" ? "#475569" : UI.text);
 }
 
 function chair(ctx: CanvasRenderingContext2D, fx: number, fy: number) {
-  // Seen from behind: the backrest hides the seated agent's waist.
-  rect(ctx, fx - 5, fy - 6, 10, 5, "#2f3442");
-  rect(ctx, fx - 5, fy - 6, 10, 1, "#454b5e");
-  rect(ctx, fx - 1, fy - 1, 2, 2, "#1f232d");
-  rect(ctx, fx - 4, fy + 1, 2, 1, "#1f232d");
-  rect(ctx, fx + 2, fy + 1, 2, 1, "#1f232d");
+  // Seen from behind: the backrest hides the seated operator's waist.
+  rect(ctx, fx - 5, fy - 6, 10, 5, "#1b2233");
+  rect(ctx, fx - 5, fy - 6, 10, 1, "#33405e");
+  withAlpha(ctx, 0.6, () => rect(ctx, fx - 4, fy - 4, 8, 1, UI.cyanDim));
+  rect(ctx, fx - 1, fy - 1, 2, 2, "#0b0f19");
+  rect(ctx, fx - 4, fy + 1, 2, 1, "#0b0f19");
+  rect(ctx, fx + 2, fy + 1, 2, 1, "#0b0f19");
 }
 
-function propBack(ctx: CanvasRenderingContext2D, prop: Prop) {
+function propBack(ctx: CanvasRenderingContext2D, prop: Prop, frame = 0) {
   const x = prop.x * TILE;
   const y = prop.y * TILE;
   switch (prop.kind) {
     case "sofa":
-      rect(ctx, x + 1, y - 2, 30, 9, "#7d3c4f");
-      rect(ctx, x + 1, y - 2, 30, 1, "#9b5066");
+      rect(ctx, x + 1, y - 2, 30, 9, "#134e5e");
+      rect(ctx, x + 1, y - 2, 30, 1, "#1f7a8f");
       break;
     case "shelf":
-      rect(ctx, x + 1, y - 14, 14, 28, "#5c4631");
-      for (let row = 0; row < 3; row++) {
-        for (let b = 0; b < 4; b++) rect(ctx, x + 3 + b * 3, y - 12 + row * 9, 2, 7, RUGS[(prop.x + row * 4 + b) % RUGS.length]);
-        rect(ctx, x + 2, y - 5 + row * 9, 12, 1, "#3e2f20");
+      // A server rack, lights blinking.
+      rect(ctx, x + 1, y - 14, 14, 28, "#0b0f19");
+      frameRect(ctx, x + 1, y - 14, 14, 28, "#26324a");
+      for (let row = 0; row < 8; row++) {
+        rect(ctx, x + 3, y - 12 + row * 3, 10, 2, "#161d2c");
+        rect(ctx, x + 10, y - 12 + row * 3, 1, 1, rand(prop.x * 31 + row + Math.floor(frame / 2)) > 0.4 ? "#34d399" : "#0f3b2c");
+        rect(ctx, x + 12, y - 12 + row * 3, 1, 1, rand(prop.x * 17 + row * 3 + Math.floor(frame / 3)) > 0.7 ? "#fbbf24" : "#3b2f0f");
       }
       break;
     case "coffee":
-      rect(ctx, x + 2, y - 8, 12, 20, "#2f3442");
-      rect(ctx, x + 4, y - 5, 8, 4, "#111827");
-      rect(ctx, x + 5, y - 4, 2, 1, "#f87171");
+      rect(ctx, x + 2, y - 8, 12, 20, "#1c2436");
+      rect(ctx, x + 2, y - 8, 12, 1, "#3a4868");
+      rect(ctx, x + 4, y - 5, 8, 4, "#05080f");
+      rect(ctx, x + 5, y - 4, 3, 1, UI.cyan);
       rect(ctx, x + 6, y + 2, 4, 4, "#e8e1d0");
       break;
     case "cooler":
-      rect(ctx, x + 4, y - 12, 8, 9, "#8ecbf0");
-      rect(ctx, x + 5, y - 11, 2, 7, "#c8e9fb");
-      rect(ctx, x + 3, y - 3, 10, 15, "#e5e7eb");
+      rect(ctx, x + 4, y - 12, 8, 9, "#67c7ea");
+      rect(ctx, x + 5, y - 11, 2, 7, "#bfe9fb");
+      rect(ctx, x + 3, y - 3, 10, 15, "#cfd6e2");
       break;
     default:
       break;
   }
 }
 
-function propFront(ctx: CanvasRenderingContext2D, prop: Prop) {
+function propFront(ctx: CanvasRenderingContext2D, prop: Prop, frame = 0) {
   const x = prop.x * TILE;
   const y = prop.y * TILE;
   switch (prop.kind) {
     case "sofa":
-      rect(ctx, x, y + 6, 32, 7, "#8e4a5e");
-      rect(ctx, x + 2, y + 6, 13, 3, "#a65a70");
-      rect(ctx, x + 17, y + 6, 13, 3, "#a65a70");
-      rect(ctx, x, y + 2, 3, 11, "#6c3343");
-      rect(ctx, x + 29, y + 2, 3, 11, "#6c3343");
+      rect(ctx, x, y + 6, 32, 7, "#176173");
+      rect(ctx, x + 2, y + 6, 13, 3, "#1d7d93");
+      rect(ctx, x + 17, y + 6, 13, 3, "#1d7d93");
+      rect(ctx, x, y + 2, 3, 11, "#0f3f4c");
+      rect(ctx, x + 29, y + 2, 3, 11, "#0f3f4c");
       break;
     case "plant": {
-      const leaf = ["#3f8f5a", "#56a870", "#2f6f45"];
+      const leaf = ["#2f8f5a", "#46a870", "#1f6f45"];
       for (let i = 0; i < 9; i++) rect(ctx, x + 3 + ((i * 5) % 10), y - 8 + ((i * 3) % 9), 3, 3, leaf[i % 3]);
-      rect(ctx, x + 4, y + 3, 8, 8, "#b0603a");
-      rect(ctx, x + 4, y + 3, 8, 1, "#c97a4f");
+      rect(ctx, x + 4, y + 3, 8, 8, "#1c2436");
+      rect(ctx, x + 4, y + 3, 8, 1, "#3a4868");
       break;
     }
     case "table":
-      rect(ctx, x + 1, y + 2, 14, 6, "#9c7350");
-      rect(ctx, x + 1, y + 2, 14, 1, "#b58a63");
-      mug(ctx, x + 5, y + 3);
+      // A holo table: a slowly turning planet.
+      rect(ctx, x + 1, y + 5, 14, 5, "#1c2436");
+      rect(ctx, x + 1, y + 5, 14, 1, "#3a4868");
+      withAlpha(ctx, 0.35 + 0.15 * Math.sin(frame / 3), () => {
+        rect(ctx, x + 4, y - 4, 8, 8, UI.cyan);
+        rect(ctx, x + 3, y - 2, 10, 4, UI.cyan);
+      });
+      rect(ctx, x + 4 + (frame % 8), y - 1, 1, 2, "#e0f7ff");
       break;
     default:
       break;
@@ -404,6 +497,11 @@ function agent(ctx: CanvasRenderingContext2D, actor: Actor, session: SessionView
     if (actor.pose === "desk") {
       const top = Math.round(actor.y) - 16;
       drawSprite(ctx, seated(typing, Math.floor(st.frame / 2)), x, top, pal);
+      // Operators wear headsets.
+      rect(ctx, x + 2, top + 1, 6, 1, "#0b0f19");
+      rect(ctx, x, top + 3, 1, 3, "#0b0f19");
+      rect(ctx, x + 9, top + 3, 1, 3, "#0b0f19");
+      rect(ctx, x + 9, top + 4, 1, 1, UI.cyan);
       if (session?.attention === "needs_you") raisedHand(ctx, x + 9, top, pal, st.frame);
     } else if (actor.pose === "sofa") {
       drawSprite(ctx, lounging, x, Math.round(actor.y) - 15, pal);
@@ -436,6 +534,49 @@ function mini(ctx: CanvasRenderingContext2D, session: SessionView, agent: Subage
   if (st.selectedAgent === agent.id || st.hoveredAgent === agent.id) frameRect(ctx, fx - 5, fy - 10, 10, 11, st.selectedAgent === agent.id ? "#facc15" : "#ffffffaa");
 }
 
+/** Filing cabinet of a busy repo's closed sessions, with how many there are. */
+function cabinet(ctx: CanvasRenderingContext2D, zone: Zone, st: PaintState) {
+  const x = zone.cabinet!.x * TILE + 2;
+  const y = zone.cabinet!.y * TILE - 6;
+  withAlpha(ctx, 0.3, () => rect(ctx, x + 1, y + 21, 12, 2, "#000"));
+  rect(ctx, x, y, 12, 21, UI.metal);
+  rect(ctx, x, y, 12, 1, UI.metalEdge);
+  for (let i = 0; i < 3; i++) {
+    rect(ctx, x + 1, y + 2 + i * 6, 10, 5, UI.metalDark);
+    rect(ctx, x + 4, y + 4 + i * 6, 4, 1, UI.cyanDim);
+  }
+  const label = `+${zone.folded.length}`;
+  rect(ctx, x + 12 - textWidth(label) - 1, y - 8, textWidth(label) + 3, 7, "#1b1523");
+  drawText(ctx, label, x + 13 - textWidth(label), y - 7, "#e5e7eb");
+  if (st.hoveredCabinet === zone.room.repo_id) frameRect(ctx, x - 2, y - 10, 16, 34, "#ffffffaa");
+}
+
+/** What a running subagent is doing: $ command, R read, E edit, S search, W web, A delegate. */
+export function toolGlyph(tool: string | null): string | null {
+  const name = (tool ?? "").split("·")[0].trim().toLowerCase();
+  if (!name || /todo/.test(name)) return null;
+  if (/web|fetch|browser|url/.test(name)) return "W";
+  if (/bash|shell|run_command|exec|command/.test(name)) return "$";
+  if (/edit|write|replace|patch|notebook|delete/.test(name)) return "E";
+  if (/grep|glob|search|find|list|ls/.test(name)) return "S";
+  if (/read|view|open/.test(name)) return "R";
+  if (/task|agent|spawn/.test(name)) return "A";
+  return null;
+}
+
+function toolBubble(ctx: CanvasRenderingContext2D, agent: SubagentView, fx: number, fy: number, frame: number, side: boolean) {
+  const glyph = toolGlyph(agent.last_tool);
+  if (!glyph) return;
+  const bob = (frame + hash(agent.id)) % 6 < 3 ? -1 : 0;
+  const x = side ? fx + 4 : fx - 3;
+  const y = (side ? fy - 11 : fy - 17) + bob;
+  rect(ctx, x, y, 7, 7, "#1b1523");
+  rect(ctx, x + 1, y + 1, 5, 5, "#fdfcf7");
+  if (side) rect(ctx, x - 1, y + 4, 1, 1, "#1b1523");
+  else rect(ctx, x + 3, y + 7, 1, 1, "#1b1523");
+  drawText(ctx, glyph, x + 2, y + 1, glyph === "$" ? "#15803d" : "#1b1523");
+}
+
 /** What the agent is saying, above its head. */
 function bubble(ctx: CanvasRenderingContext2D, actor: Actor, s: SessionView, frame: number) {
   if (actor.pose === "walk") return;
@@ -447,6 +588,10 @@ function bubble(ctx: CanvasRenderingContext2D, actor: Actor, s: SessionView, fra
   else if (s.attention === "needs_you") [text, color] = ["!", COLOR.needs_you];
   else if (stalled(s)) [text, color] = ["?", STALLED];
   else if (s.attention === "finished" && !s.archived) [text, color] = [copy.pixel.finishedBubble, "#0284c7"];
+  // Chatting in the lounge: now and then one of the pair says something.
+  else if (actor.pose === "stand" && (actor.dir === "left" || actor.dir === "right") && (frame + hash(s.id)) % 40 < 12) {
+    [text, color] = ["...", "#475569"];
+  }
   if (!text) return;
   const bounce = s.attention === "needs_you" && frame % 6 < 3 ? -1 : 0;
   const w = Math.max(9, textWidth(text) + 5);
