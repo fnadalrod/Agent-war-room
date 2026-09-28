@@ -12,7 +12,7 @@ use awr_application::view::AttentionView;
 use awr_domain::SessionId;
 use awr_infrastructure::launch::inherited_agent_markers;
 use awr_infrastructure::pty::PtySpec;
-use e2e::{Room, bridge, is_busy, tmux, wait_for};
+use e2e::{Room, TmuxServer, bridge, is_busy, tmux, wait_for};
 use std::time::Duration;
 
 /// `settings.json` for these sessions only, pointing every hook we use at the bridge.
@@ -55,6 +55,7 @@ fn a_real_permission_request_is_approved_from_the_war_room() {
         .collect();
     let command = format!("XDG_RUNTIME_DIR={} claude {}", room.runtime.display(), args.join(" "));
     tmux(&tmux_socket, &["new-session", "-d", "-x", "160", "-y", "40", "-c", dir.to_str().unwrap(), &command]);
+    let _server = TmuxServer(tmux_socket.clone());
 
     let screen = || tmux(&tmux_socket, &["capture-pane", "-p"]);
     let diag = || room.diag(&screen);
@@ -94,8 +95,6 @@ fn a_real_permission_request_is_approved_from_the_war_room() {
     );
     assert!(screen().contains("Allowed by PermissionRequest hook"));
     println!("title: {:?}", room.service.view().rooms[0].sessions[0].title);
-
-    tmux(&tmux_socket, &["kill-server"]);
 }
 
 #[test]

@@ -12,7 +12,7 @@ use awr_application::ports::IntegrationInstaller;
 use awr_application::view::AttentionView;
 use awr_infrastructure::codex::{CODEX_HOOKS, codex_home};
 use awr_infrastructure::hook_installer::HookInstaller;
-use e2e::{Room, bridge, tmux, wait_for};
+use e2e::{Room, TmuxServer, bridge, tmux, wait_for};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -75,6 +75,7 @@ fn a_real_codex_session_is_followed_from_start_to_end() {
         codex_home.display()
     );
     tmux(&socket, &["new-session", "-d", "-x", "160", "-y", "45", "-c", dir.to_str().unwrap(), &command]);
+    let _server = TmuxServer(socket.clone());
     let screen = || tmux(&socket, &["capture-pane", "-p"]);
     let diag = || room.diag(&screen);
 
@@ -131,5 +132,4 @@ fn a_real_codex_session_is_followed_from_start_to_end() {
         || room.session().is_some_and(|s| s.attention == AttentionView::Offline),
         &diag,
     );
-    tmux(&socket, &["kill-server"]);
 }

@@ -21,6 +21,9 @@ the user; delete only if asked.
   Yes+auto mode, No). Pressing Down twice picked "auto mode" once.
 - **Raw PTY**: answer DA1/XTVERSION, wait ~1 s, keys may be lost otherwise (`desktop-terminals.md`).
 - **Unix socket paths < 108 bytes**: temp dirs under `/tmp`, not the scratchpad.
+- **Always tear down the agent's tmux server**, also on failure: use `TmuxServer` (tests/e2e) right
+  after `new-session`. A left-over server keeps a real agent running, spending and writing into a temp
+  folder you already deleted (it happened: five Codex sessions survived failed runs).
 - **`pkill -f pattern` kills the shell running it** if the pattern appears in that command line: use
   `pkill -f "[v]ite …"` in its own command.
 

@@ -134,6 +134,16 @@ pub fn is_busy(s: &SessionView) -> bool {
     matches!(s.attention, AttentionView::Working | AttentionView::NeedsYou)
 }
 
+/// A private tmux server that is killed when the test ends, **also when it fails**: a left-over
+/// server keeps its agent running (and writing into the temp folder) after the test is gone.
+pub struct TmuxServer(pub PathBuf);
+
+impl Drop for TmuxServer {
+    fn drop(&mut self) {
+        tmux(&self.0, &["kill-server"]);
+    }
+}
+
 pub fn tmux(socket: &Path, args: &[&str]) -> String {
     let out = Command::new("tmux").arg("-S").arg(socket).args(args).output().unwrap();
     String::from_utf8_lossy(&out.stdout).into_owned()
