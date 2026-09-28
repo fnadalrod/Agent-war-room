@@ -17,10 +17,11 @@ export type Scene = { width: number; height: number; aggregate: AttentionView; b
  * Coloca una bahía por repositorio, cada una con una rejilla de puestos, empaquetando bahías en
  * estanterías de izquierda a derecha. Respeta el orden del núcleo (lo más urgente primero).
  */
-export function layoutScene(view: WarRoomView, width: number, showArchived: boolean): Scene {
+export function layoutScene(view: WarRoomView, width: number, showArchived: boolean, minHeight = 0): Scene {
   const usable = Math.max(DESK_W + 2 * BAY_PAD, width - 2 * MARGIN);
   const maxCols = Math.max(1, Math.floor((usable - 2 * BAY_PAD) / DESK_W));
   const bays: Bay[] = [];
+  const shelves: Bay[][] = [[]];
   let x = MARGIN;
   let y = WALL_H + GAP;
   let shelfH = 0;
@@ -37,6 +38,7 @@ export function layoutScene(view: WarRoomView, width: number, showArchived: bool
       x = MARGIN;
       y += shelfH + GAP;
       shelfH = 0;
+      shelves.push([]);
     }
     const desks = sessions.map((session, i) => ({
       session,
@@ -45,12 +47,33 @@ export function layoutScene(view: WarRoomView, width: number, showArchived: bool
       w: DESK_W,
       h: DESK_H,
     }));
-    bays.push({ room, x, y, w, h, desks });
+    const bay = { room, x, y, w, h, desks };
+    bays.push(bay);
+    shelves[shelves.length - 1].push(bay);
     x += w + GAP;
     shelfH = Math.max(shelfH, h);
   }
 
-  return { width, height: Math.max(y + shelfH + MARGIN, WALL_H + 2 * GAP + DESK_H), aggregate: view.aggregate, bays };
+  // Cada estantería, centrada: la sala se ve compuesta y no pegada a la izquierda.
+  for (const shelf of shelves) {
+    if (shelf.length === 0) continue;
+    const last = shelf[shelf.length - 1];
+    const shift = Math.floor((width - MARGIN - (last.x + last.w)) / 2);
+    for (const bay of shelf) {
+      bay.x += shift;
+      for (const d of bay.desks) d.x += shift;
+    }
+  }
+
+  const content = Math.max(y + shelfH + MARGIN, WALL_H + 2 * GAP + DESK_H);
+  const height = Math.max(content, Math.floor(minHeight));
+  // Si sobra sala, el contenido se centra en el suelo en vez de quedarse pegado a la pared.
+  const drop = bays.length > 0 ? Math.floor((height - content) / 2) : 0;
+  for (const bay of bays) {
+    bay.y += drop;
+    for (const d of bay.desks) d.y += drop;
+  }
+  return { width, height, aggregate: view.aggregate, bays };
 }
 
 export function hitTest(scene: Scene, x: number, y: number): SessionView | null {
@@ -65,6 +88,6 @@ export function hitTest(scene: Scene, x: number, y: number): SessionView | null 
 /** Escala entera que da un ancho lógico razonable (unos 320–480 píxeles de arte). */
 export function pixelScale(cssWidth: number): number {
   if (cssWidth >= 1600) return 4;
-  if (cssWidth >= 900) return 3;
+  if (cssWidth >= 760) return 3;
   return 2;
 }
