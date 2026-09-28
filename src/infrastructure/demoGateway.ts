@@ -13,6 +13,7 @@ import type {
   RoomView,
   SessionDetail,
   SessionView,
+  SubagentPreview,
   TimelineEntryView,
   WarRoomView,
 } from "../domain/attention";
@@ -111,8 +112,9 @@ function initialRooms(): RoomView[] {
           is_linked_worktree: true,
           in_warp: true,
           subagents: [
-            { id: "x1", kind: "Explore", description: "Buscar usos del header", last_tool: "Grep · InkyHeader" },
-            { id: "x2", kind: "general-purpose", description: "Revisar estilos", last_tool: "Read · header.scss" },
+            { id: "x1", kind: "Explore", description: "Buscar usos del header", last_tool: "Grep · InkyHeader", running: true, started_at: minutes(3), finished_at: null },
+            { id: "x2", kind: "general-purpose", description: "Revisar estilos", last_tool: "Read · header.scss", running: true, started_at: minutes(2), finished_at: null },
+            { id: "x3", kind: "Explore", description: "Mapa de componentes", last_tool: null, running: false, started_at: minutes(9), finished_at: minutes(5) },
           ],
         }),
         session({
@@ -246,6 +248,22 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
         const s = find(id);
         if (!s) throw new Error("sesión desconocida");
         return { session: s, timeline: demoTimeline(s) };
+      },
+      subagentDetail: async (id, agent): Promise<SubagentPreview> => {
+        const a = find(id)?.subagents.find((x) => x.id === agent);
+        if (!a) throw new Error("subagente desconocido");
+        return {
+          session_id: id,
+          agent: a,
+          first_prompt: `${a.description ?? "Tarea"}: localiza todos los usos y resume dónde tocar.`,
+          last_reply: a.running ? null : "He encontrado **12 componentes**:\n\n- `InkyHeader` en 4 páginas\n- `ThemeToggle` en 2",
+          timeline: [
+            { kind: "prompt", text: `${a.description ?? "Tarea"}: localiza todos los usos y resume dónde tocar.`, at: minutes(3) },
+            { kind: "tool", text: "Grep · InkyHeader", at: minutes(3) },
+            { kind: "tool", text: "Read · app.component.html", at: minutes(2) },
+            ...(a.running ? [] : [{ kind: "reply" as const, text: "He encontrado **12 componentes**.", at: minutes(1) }]),
+          ],
+        };
       },
       openExternal: async (url) => void window.open(url, "_blank", "noopener"),
       onOpenRequest: async () => () => {},

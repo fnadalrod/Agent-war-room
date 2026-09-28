@@ -3,7 +3,7 @@
 use awr_application::WarRoomService;
 use awr_application::ports::{FocusOutcome, IntegrationInstaller, LaunchOutcome, LaunchTarget, PortResult};
 use awr_infrastructure::pty::{PtyInfo, PtyManager};
-use awr_application::view::{IntegrationStatus, SessionDetail, WarRoomView};
+use awr_application::view::{IntegrationStatus, SessionDetail, SubagentPreview, WarRoomView};
 use awr_domain::SessionId;
 use std::sync::Arc;
 use tauri::State;
@@ -196,4 +196,14 @@ pub fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<bool, Strin
     let launcher = app.autolaunch();
     if enabled { launcher.enable() } else { launcher.disable() }.map_err(|e| e.to_string())?;
     launcher.is_enabled().map_err(|e| e.to_string())
+}
+
+/// Vista previa de un subagente.
+#[tauri::command]
+pub async fn subagent_detail(
+    service: State<'_, Arc<WarRoomService>>,
+    id: String,
+    agent: String,
+) -> Result<SubagentPreview, String> {
+    blocking(&service, move |s| s.subagent_detail(SessionId(id), &agent, 80)).await
 }

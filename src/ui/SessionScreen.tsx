@@ -1,5 +1,6 @@
 import type { WarRoomStore } from "../application/warRoomStore";
 import {
+  agentName,
   ATTENTION_LABEL,
   contextLabel,
   deskName,
@@ -41,9 +42,9 @@ export function SessionScreen({ session: s, store, now }: Props) {
           </span>
           <span className="muted">{since(s.status_since, now)}</span>
           <span className="spacer" />
-          {s.subagents.length > 0 && (
-            <span className="badge" title={s.subagents.map((a) => a.description ?? a.kind).join("\n")}>
-              <RobotIcon size={13} /> {s.subagents.length}
+          {s.subagents.some((a) => a.running) && (
+            <span className="badge" title="Subagentes trabajando">
+              <RobotIcon size={13} /> {s.subagents.filter((a) => a.running).length}
             </span>
           )}
           {s.muted && (
@@ -55,17 +56,9 @@ export function SessionScreen({ session: s, store, now }: Props) {
         <h3 className="card-title">{label}</h3>
         {extraActivity(s) && <p className="card-activity">{extraActivity(s)}</p>}
         {excerpt && <p className="card-excerpt">{excerpt}</p>}
-        {s.attention === "working" && s.subagents.length > 0 && (
-          <ul className="card-subagents">
-            {s.subagents.slice(0, 3).map((a) => (
-              <li key={a.id}>
-                <span className="who">{a.description ?? a.kind ?? "subagente"}</span>
-                {a.last_tool && <span className="doing">{a.last_tool}</span>}
-              </li>
-            ))}
-          </ul>
-        )}
       </button>
+
+      {s.subagents.length > 0 && <AgentStrip session={s} store={store} />}
 
       {s.can_approve && (
         <div className="card-approval">
@@ -127,5 +120,38 @@ export function SessionScreen({ session: s, store, now }: Props) {
         </div>
       </footer>
     </article>
+  );
+}
+
+const STRIP_MAX = 4;
+
+/** Subagentes de la sesión, en pequeño y clicables: abren su propia vista previa. */
+function AgentStrip({ session: s, store }: { session: SessionView; store: WarRoomStore }) {
+  const shown = s.subagents.slice(0, STRIP_MAX);
+  const rest = s.subagents.length - shown.length;
+  return (
+    <ul className="agent-strip" aria-label="Subagentes">
+      {shown.map((a) => (
+        <li key={a.id}>
+          <button
+            className="agent-chip"
+            data-running={a.running}
+            onClick={() => store.openSubagent(s.id, a.id)}
+            title={`${agentName(a)}${a.kind ? ` (${a.kind})` : ""} · ${a.running ? "trabajando" : "terminado"}`}
+          >
+            <RobotIcon size={12} />
+            <span className="agent-name">{agentName(a)}</span>
+            {a.running && a.last_tool && <span className="agent-doing">{a.last_tool}</span>}
+          </button>
+        </li>
+      ))}
+      {rest > 0 && (
+        <li>
+          <button className="agent-chip more" onClick={() => store.openDetail(s.id)} title="Ver todos en la vista previa">
+            +{rest}
+          </button>
+        </li>
+      )}
+    </ul>
   );
 }

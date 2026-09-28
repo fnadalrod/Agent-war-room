@@ -5,7 +5,7 @@
 
 use super::tools::tool_label;
 use awr_application::ports::{
-    SubagentDetail, TimelineItem, TimelineKind, TranscriptReader, TranscriptSummary,
+    AgentTranscript, SubagentDetail, TimelineItem, TimelineKind, TranscriptReader, TranscriptSummary,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -68,7 +68,7 @@ impl ClaudeTranscriptReader {
         let prompt = head_lines(path, HEAD_BYTES)
             .ok()?
             .iter()
-            .flat_map(timeline_items)
+            .flat_map(|e| timeline_items(e, false))
             .find(|i| i.kind == TimelineKind::Prompt)?
             .text;
         self.first_prompts.lock().unwrap().insert(path.to_path_buf(), prompt.clone());
@@ -124,10 +124,30 @@ impl TranscriptReader for ClaudeTranscriptReader {
         let Ok(lines) = tail_lines(Path::new(transcript_path), TIMELINE_TAIL_BYTES) else {
             return Vec::new();
         };
-        let mut items: Vec<TimelineItem> = lines.iter().flat_map(timeline_items).collect();
+        let mut items: Vec<TimelineItem> = lines.iter().flat_map(|e| timeline_items(e, false)).collect();
         let skip = items.len().saturating_sub(limit);
         items.drain(..skip);
         items
+    }
+
+    fn subagent(&self, transcript_path: &str, agent_id: &str, limit: usize) -> Option<AgentTranscript> {
+        // El id acaba en una ruta: solo su alfabeto, nada de `..` ni `/`.
+        if agent_id.is_empty() || !agent_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+            return None;
+        }
+        let path = Path::new(transcript_path).with_extension("").join("subagents").join(format!("agent-{agent_id}.jsonl"));
+        let first_prompt = head_lines(&path, HEAD_BYTES)
+            .ok()?
+            .iter()
+            .flat_map(|e| timeline_items(e, true))
+            .find(|i| i.kind == TimelineKind::Prompt)
+            .map(|i| i.text);
+        let mut timeline: Vec<TimelineItem> =
+            tail_lines(&path, TIMELINE_TAIL_BYTES).ok()?.iter().flat_map(|e| timeline_items(e, true)).collect();
+        let last_reply = timeline.iter().rev().find(|i| i.kind == TimelineKind::Reply).map(|i| i.text.clone());
+        let skip = timeline.len().saturating_sub(limit);
+        timeline.drain(..skip);
+        Some(AgentTranscript { first_prompt, last_reply, timeline })
     }
 }
 
@@ -157,9 +177,10 @@ fn tail_lines(path: &Path, bytes: u64) -> std::io::Result<Vec<Value>> {
     Ok(lines.filter_map(|l| serde_json::from_slice(l).ok()).collect())
 }
 
-fn timeline_items(entry: &Value) -> Vec<TimelineItem> {
-    // Los subagentes tienen su propio transcript; aquí solo la conversación principal.
-    if entry.get("isSidechain").and_then(Value::as_bool) == Some(true)
+/// `sidechain`: se lee el transcript de un subagente, cuyas entradas van todas marcadas así. En el
+/// principal se descartan (cada subagente tiene su propio fichero).
+fn timeline_items(entry: &Value, sidechain: bool) -> Vec<TimelineItem> {
+    if (!sidechain && entry.get("isSidechain").and_then(Value::as_bool) == Some(true))
         || entry.get("isMeta").and_then(Value::as_bool) == Some(true)
     {
         return Vec::new();
@@ -462,6 +483,28 @@ mod tests {
         append(&path, &filler.repeat(700));
         let s = ClaudeTranscriptReader::new().read(path.to_str().unwrap(), &[]).unwrap();
         assert_eq!(s.first_prompt.as_deref(), Some("Migra el login a OAuth"));
+    }
+
+    #[test]
+    fn reads_what_a_subagent_was_asked_and_did() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.jsonl");
+        append(&path, &line(json!({ "type": "ai-title", "aiTitle": "x" })));
+        let subs = dir.path().join("s/subagents");
+        std::fs::create_dir_all(&subs).unwrap();
+        let sub = subs.join("agent-a1.jsonl");
+        append(&sub, &line(json!({ "type": "user", "isSidechain": true, "message": { "content": "Busca los usos de login" } })));
+        append(&sub, &line(json!({ "type": "assistant", "isSidechain": true, "message": { "content": [{ "type": "tool_use", "name": "Grep", "input": { "pattern": "login" } }] } })));
+        append(&sub, &line(json!({ "type": "assistant", "isSidechain": true, "message": { "content": [{ "type": "text", "text": "Hay **3** usos." }] } })));
+
+        let reader = ClaudeTranscriptReader::new();
+        let t = reader.subagent(path.to_str().unwrap(), "a1", 10).unwrap();
+        assert_eq!(t.first_prompt.as_deref(), Some("Busca los usos de login"));
+        assert_eq!(t.last_reply.as_deref(), Some("Hay **3** usos."));
+        assert_eq!(t.timeline.len(), 3);
+
+        assert!(reader.subagent(path.to_str().unwrap(), "../../etc/passwd", 10).is_none());
+        assert!(reader.subagent(path.to_str().unwrap(), "nadie", 10).is_none());
     }
 
     #[test]

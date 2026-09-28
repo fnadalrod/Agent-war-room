@@ -1,6 +1,7 @@
 // Reglas de presentación puras sobre el read model. Sin React ni Tauri.
 import type { AttentionView } from "./generated/AttentionView";
 import type { SessionView } from "./generated/SessionView";
+import type { SubagentView } from "./generated/SubagentView";
 import type { WarRoomView } from "./generated/WarRoomView";
 
 export type { AttentionView, SessionView, WarRoomView };
@@ -8,6 +9,7 @@ export type { RoomView } from "./generated/RoomView";
 export type { SubagentView } from "./generated/SubagentView";
 export type { IntegrationStatus } from "./generated/IntegrationStatus";
 export type { SessionDetail } from "./generated/SessionDetail";
+export type { SubagentPreview } from "./generated/SubagentPreview";
 export type { TimelineEntryView } from "./generated/TimelineEntryView";
 
 export const ATTENTION_LABEL: Record<AttentionView, string> = {
@@ -106,4 +108,9 @@ export function toolDigest(labels: string[]): string {
     counts.set(name, (counts.get(name) ?? 0) + 1);
   }
   return [...counts].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name)).join(" · ");
+}
+
+/** Nombre de un subagente para mostrar: su descripción, su tipo o, en último caso, "subagente". */
+export function agentName(a: SubagentView): string {
+  return a.description ?? a.kind ?? "subagente";
 }

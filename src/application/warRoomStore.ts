@@ -1,10 +1,14 @@
-import type { IntegrationStatus, SessionDetail, SessionView, WarRoomView } from "../domain/attention";
+import type { IntegrationStatus, SessionDetail, SessionView, SubagentPreview, WarRoomView } from "../domain/attention";
 import type { IntegrationGateway, Launched, LaunchTarget, TerminalGateway, WarRoomGateway } from "./ports";
 
 export type Toast = { text: string; tone: "ok" | "warn" };
 
-/** Vista previa abierta: `data` es null mientras carga. */
-export type OpenDetail = { id: string; data: SessionDetail | null };
+/** Vista previa abierta: `data` es null mientras carga. `agent`: se está viendo uno de sus subagentes. */
+export type OpenDetail = {
+  id: string;
+  data: SessionDetail | null;
+  agent: { id: string; data: SubagentPreview | null } | null;
+};
 
 /** Terminal de la app abierto en el panel. */
 export type OpenTerminal = { id: string; label: string };
@@ -107,8 +111,33 @@ export class WarRoomStore {
 
   /** Abre la vista previa de una sesión (o la cambia a otra). */
   openDetail(id: string) {
-    this.set({ detail: { id, data: this.state.detail?.id === id ? this.state.detail.data : null } });
+    this.set({ detail: { id, data: this.state.detail?.id === id ? this.state.detail.data : null, agent: null } });
     void this.loadDetail(id);
+  }
+
+  /** Abre la vista previa de un subagente (dentro del panel de su sesión). */
+  openSubagent(id: string, agent: string) {
+    const same = this.state.detail?.id === id;
+    this.set({ detail: { id, data: same ? this.state.detail!.data : null, agent: { id: agent, data: null } } });
+    if (!same) void this.loadDetail(id);
+    void this.loadSubagent(id, agent);
+  }
+
+  /** Del subagente, de vuelta a su sesión. */
+  backToSession() {
+    const open = this.state.detail;
+    if (open) this.set({ detail: { ...open, agent: null } });
+  }
+
+  private async loadSubagent(id: string, agent: string) {
+    try {
+      const data = await this.rooms.subagentDetail(id, agent);
+      const open = this.state.detail;
+      if (open?.id === id && open.agent?.id === agent) this.set({ detail: { ...open, agent: { id: agent, data } } });
+    } catch (e) {
+      this.backToSession();
+      this.notify({ text: String(e), tone: "warn" });
+    }
   }
 
   closeDetail() {
@@ -123,7 +152,8 @@ export class WarRoomStore {
     try {
       const data = await this.rooms.detail(id);
       // Puede haberse cerrado o cambiado a otra mientras cargaba.
-      if (this.state.detail?.id === id) this.set({ detail: { id, data } });
+      const open = this.state.detail;
+      if (open?.id === id) this.set({ detail: { ...open, data } });
     } catch (e) {
       if (this.state.detail?.id === id) this.set({ detail: null });
       this.notify({ text: String(e), tone: "warn" });
@@ -144,8 +174,9 @@ export class WarRoomStore {
       fresh.title !== shown.title
     ) {
       // Pinta ya la tarjeta nueva y trae la conversación detrás.
-      this.set({ detail: { id: open.id, data: { ...open.data, session: fresh } } });
+      this.set({ detail: { ...open, data: { ...open.data, session: fresh } } });
       void this.loadDetail(open.id);
+      if (open.agent) void this.loadSubagent(open.id, open.agent.id);
     }
   }
 

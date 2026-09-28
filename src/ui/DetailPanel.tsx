@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { OpenDetail, WarRoomStore } from "../application/warRoomStore";
 import {
+  agentName,
   ATTENTION_LABEL,
   contextLabel,
   deskName,
@@ -10,9 +11,10 @@ import {
   toolDigest,
   whereItLives,
   type SessionView,
+  type SubagentView,
   type TimelineEntryView,
 } from "../domain/attention";
-import { CheckIcon, CopyIcon, GoIcon, PlayIcon, TerminalIcon, XIcon } from "./icons";
+import { CheckIcon, CopyIcon, GoIcon, PlayIcon, RobotIcon, TerminalIcon, XIcon } from "./icons";
 import { Markdown } from "./Markdown";
 import { QuickInput } from "./QuickInput";
 import { since } from "./useStore";
@@ -23,14 +25,21 @@ type Props = { detail: OpenDetail; fallback: SessionView | null; store: WarRoomS
 export function DetailPanel({ detail, fallback, store, now }: Props) {
   const s = detail.data?.session ?? fallback;
 
+  const inAgent = detail.agent != null;
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && store.closeDetail();
+    // Esc: del subagente vuelve a la sesión; de la sesión, cierra.
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && (inAgent ? store.backToSession() : store.closeDetail());
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [store]);
+  }, [store, inAgent]);
 
   if (!s) return null;
   const onLink = (url: string) => store.openExternal(url);
+
+  if (detail.agent) {
+    const agent = detail.agent.data?.agent ?? s.subagents.find((a) => a.id === detail.agent!.id) ?? null;
+    return <SubagentPanel session={s} agent={agent} preview={detail.agent.data} store={store} now={now} onLink={onLink} />;
+  }
 
   return (
     <aside className="detail" data-attention={s.attention} aria-label={`Vista previa: ${s.title ?? deskName(s)}`}>
@@ -104,9 +113,12 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
             <ul className="subagent-list">
               {s.subagents.map((a) => (
                 <li key={a.id}>
-                  <span className="who">{a.description ?? a.kind ?? "subagente"}</span>
-                  {a.kind && a.description && <span className="tag">{a.kind}</span>}
-                  {a.last_tool && <span className="muted">{a.last_tool}</span>}
+                  <button className="agent-row" data-running={a.running} onClick={() => store.openSubagent(s.id, a.id)}>
+                    <span className="dot" data-attention={a.running ? "working" : "offline"} />
+                    <span className="who">{agentName(a)}</span>
+                    {a.kind && a.description && <span className="tag">{a.kind}</span>}
+                    <span className="muted agent-doing">{a.running ? (a.last_tool ?? "trabajando") : "terminado"}</span>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -130,6 +142,85 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
           <QuickInput session={s} store={store} />
         </footer>
       )}
+    </aside>
+  );
+}
+
+type SubagentProps = {
+  session: SessionView;
+  agent: SubagentView | null;
+  preview: import("../domain/attention").SubagentPreview | null;
+  store: WarRoomStore;
+  now: number;
+  onLink: (url: string) => void;
+};
+
+/** Vista previa de un subagente, dentro del panel de su sesión. */
+function SubagentPanel({ session: s, agent, preview, store, now, onLink }: SubagentProps) {
+  const state = agent?.running ? "working" : "offline";
+  return (
+    <aside className="detail" data-attention={state} aria-label={`Subagente: ${agent ? agentName(agent) : ""}`}>
+      <header className="detail-head">
+        <div className="detail-status">
+          <button className="ghost back" onClick={() => store.backToSession()} title="Volver a la sesión (Esc)">
+            ← {s.title ?? deskName(s)}
+          </button>
+          <span className="spacer" />
+          <button className="icon" onClick={() => store.closeDetail()} aria-label="Cerrar vista previa" title="Cerrar">
+            <XIcon />
+          </button>
+        </div>
+        <h2>
+          <RobotIcon size={18} /> {agent ? agentName(agent) : "Subagente"}
+        </h2>
+        <p className="detail-where">
+          <span className="chip" data-attention={state}>
+            {agent?.running ? "Trabajando" : "Terminado"}
+          </span>
+          {agent?.kind && <span className="tag">{agent.kind}</span>}
+          {agent && (
+            <span className="muted">
+              {agent.running
+                ? `desde ${since(agent.started_at, now)}`
+                : `terminó ${since(agent.finished_at ?? agent.started_at, now)}`}
+            </span>
+          )}
+        </p>
+        {agent?.running && agent.last_tool && (
+          <p className="detail-activity" data-attention="working">
+            {agent.last_tool}
+          </p>
+        )}
+      </header>
+
+      <div className="detail-body">
+        {preview == null ? (
+          <p className="muted">Cargando…</p>
+        ) : (
+          <>
+            {preview.first_prompt && (
+              <section>
+                <h3>Encargo</h3>
+                <Collapsible text={preview.first_prompt} lines={8} plain />
+              </section>
+            )}
+            {preview.last_reply && (
+              <section>
+                <h3>{agent?.running ? "Última respuesta" : "Resultado"}</h3>
+                <Markdown text={preview.last_reply} onLink={onLink} />
+              </section>
+            )}
+            <section>
+              <h3>Actividad</h3>
+              {preview.timeline.length === 0 ? (
+                <p className="muted">Sin transcript todavía.</p>
+              ) : (
+                <Timeline items={preview.timeline} onLink={onLink} who={{ prompt: "Agente principal", reply: "Subagente" }} />
+              )}
+            </section>
+          </>
+        )}
+      </div>
     </aside>
   );
 }
@@ -190,20 +281,36 @@ function blocks(items: TimelineEntryView[]): Block[] {
   return out;
 }
 
-function Timeline({ items, onLink }: { items: TimelineEntryView[]; onLink: (url: string) => void }) {
+type Who = { prompt: string; reply: string };
+
+function Timeline({
+  items,
+  onLink,
+  who = { prompt: "Tú", reply: "Agente" },
+}: {
+  items: TimelineEntryView[];
+  onLink: (url: string) => void;
+  who?: Who;
+}) {
   return (
     <ol className="timeline">
       {blocks(items).map((b, i) => (
         <li key={i} className={`tl-${b.kind}`}>
           {b.kind === "prompt" && (
             <>
-              <span className="tl-who">Tú{b.at && <time> · {clock(b.at)}</time>}</span>
+              <span className="tl-who">
+                {who.prompt}
+                {b.at && <time> · {clock(b.at)}</time>}
+              </span>
               <Collapsible text={b.text} lines={8} plain />
             </>
           )}
           {b.kind === "reply" && (
             <>
-              <span className="tl-who">Agente{b.at && <time> · {clock(b.at)}</time>}</span>
+              <span className="tl-who">
+                {who.reply}
+                {b.at && <time> · {clock(b.at)}</time>}
+              </span>
               <Collapsible text={b.text} lines={14} onLink={onLink} />
             </>
           )}

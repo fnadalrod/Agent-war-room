@@ -35,6 +35,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_view,
             commands::session_detail,
+            commands::subagent_detail,
             commands::open_external,
             commands::mark_seen,
             commands::mark_all_seen,

@@ -108,11 +108,22 @@ pub struct TimelineItem {
     pub at: Option<i64>,
 }
 
+/// Lo que dice el transcript de un subagente.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentTranscript {
+    /// El encargo que le dio el agente principal.
+    pub first_prompt: Option<String>,
+    pub last_reply: Option<String>,
+    pub timeline: Vec<TimelineItem>,
+}
+
 pub trait TranscriptReader: Send + Sync {
     /// Lectura incremental: llamarla a menudo debe ser barato.
     fn read(&self, transcript_path: &str, subagent_ids: &[String]) -> Option<TranscriptSummary>;
     /// Las últimas `limit` entradas de la conversación principal. Bajo demanda (vista previa).
     fn recent(&self, transcript_path: &str, limit: usize) -> Vec<TimelineItem>;
+    /// Transcript de un subagente de la sesión cuyo transcript principal es `transcript_path`.
+    fn subagent(&self, transcript_path: &str, agent_id: &str, limit: usize) -> Option<AgentTranscript>;
 }
 
 /// A dónde saltar para ver una sesión.

@@ -7,7 +7,7 @@ import type {
   TerminalInfo,
   WarRoomGateway,
 } from "../application/ports";
-import type { IntegrationStatus, SessionDetail, WarRoomView } from "../domain/attention";
+import type { IntegrationStatus, SessionDetail, SubagentPreview, WarRoomView } from "../domain/attention";
 
 /** Deben coincidir con `adapters.rs` en src-tauri. */
 const VIEW_EVENT = "warroom://view";
@@ -31,6 +31,7 @@ export const tauriWarRoomGateway: WarRoomGateway = {
   launch: (cwd, target) => invoke<Launched>("launch", { cwd, target }),
   resume: (id, target) => invoke<Launched>("resume", { id, target }),
   detail: (id) => invoke<SessionDetail>("session_detail", { id, limit: 80 }),
+  subagentDetail: (id, agent) => invoke<SubagentPreview>("subagent_detail", { id, agent }),
   openExternal: (url) => invoke("open_external", { url }),
   onOpenRequest: (listener) => listen<string>(OPEN_DETAIL_EVENT, (e) => listener(e.payload)),
 };

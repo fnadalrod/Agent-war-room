@@ -29,6 +29,17 @@ describe("WarRoomStore", () => {
     await vi.waitFor(() => expect(store.snapshot().terminal).toEqual({ id: "pty-1", label: "app" }));
   });
 
+  it("navega de una sesión a su subagente y vuelve", async () => {
+    const store = storeWith();
+    await store.start();
+    store.openSubagent("b2c3d4e5-tintero-inky", "x1");
+    await vi.waitFor(() => expect(store.snapshot().detail?.agent?.data?.first_prompt).toContain("Buscar usos"));
+    expect(store.snapshot().detail?.data?.session.id).toBe("b2c3d4e5-tintero-inky");
+    store.backToSession();
+    expect(store.snapshot().detail?.agent).toBeNull();
+    expect(store.snapshot().detail?.id).toBe("b2c3d4e5-tintero-inky");
+  });
+
   it("avisa sin romper cuando no se puede escribir en una sesión", async () => {
     const store = storeWith({ sendInput: vi.fn().mockRejectedValue("usa Ir a") });
     expect(await store.send(aSession(), "hola")).toBe(false);

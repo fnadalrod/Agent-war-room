@@ -43,8 +43,31 @@ describe("layoutScene", () => {
   it("encuentra el puesto bajo el cursor", () => {
     const scene = layoutScene(aView([aRoom("a", sessions("a", 2))]), 400, false);
     const second = scene.bays[0].desks[1];
-    expect(hitTest(scene, second.x + 5, second.y + 5)?.id).toBe("a1");
+    expect(hitTest(scene, second.x + 20, second.y + 30)?.session.id).toBe("a1");
     expect(hitTest(scene, 1, 1)).toBeNull();
+  });
+
+  it("pone los subagentes en huecos fijos alrededor del puesto y se pueden pinchar", () => {
+    const agents = Array.from({ length: 7 }, (_, i) => ({
+      id: `x${i}`,
+      kind: null,
+      description: null,
+      last_tool: null,
+      running: true,
+      started_at: i,
+      finished_at: null,
+    }));
+    const scene = layoutScene(aView([aRoom("a", [aSession({ id: "s", subagents: agents })])]), 400, false);
+    const desk = scene.bays[0].desks[0];
+    expect(desk.drones).toHaveLength(5);
+    expect(desk.hiddenDrones).toBe(2);
+    for (const d of desk.drones) {
+      expect(d.x).toBeGreaterThanOrEqual(desk.x);
+      expect(d.x + d.w).toBeLessThanOrEqual(desk.x + desk.w);
+    }
+    const first = desk.drones[0];
+    expect(hitTest(scene, first.x + 2, first.y + 2)).toMatchObject({ session: { id: "s" }, agent: { id: "x0" } });
+    expect(hitTest(scene, desk.x + 24, desk.y + 34)?.agent).toBeNull();
   });
 
   it("elige una escala entera según el ancho", () => {

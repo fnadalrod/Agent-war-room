@@ -80,7 +80,13 @@ export function App({ store }: { store: WarRoomStore }) {
         {view && mode === "classic" && <AttentionQueue view={view} store={store} now={now} />}
 
         {view && mode === "pixel" && (
-          <WarRoomScene view={view} store={store} showArchived={showArchived} selectedId={state.detail?.id ?? null} />
+          <WarRoomScene
+            view={view}
+            store={store}
+            showArchived={showArchived}
+            selectedId={state.detail?.id ?? null}
+            selectedAgent={state.detail?.agent?.id ?? null}
+          />
         )}
 
         <main className="rooms" hidden={mode === "pixel"}>

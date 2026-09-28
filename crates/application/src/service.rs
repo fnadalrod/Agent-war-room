@@ -4,7 +4,7 @@ use crate::ports::{
     PortResult, ProcessProbe, RepoResolver, TranscriptReader, TranscriptSummary, ViewPublisher,
     WindowNavigator,
 };
-use crate::view::{self, SessionDetail, WarRoomView};
+use crate::view::{self, SessionDetail, SubagentPreview, WarRoomView};
 use awr_domain::{
     Attention, AttentionChange, SessionContext, SessionEvent, SessionEventKind, SessionId,
     SessionStatus, TerminalHost, Timestamp, WarRoom,
@@ -181,6 +181,34 @@ impl WarRoomService {
             .map(|path| self.ports.transcripts.recent(&path, limit).into_iter().map(Into::into).collect())
             .unwrap_or_default();
         Ok(SessionDetail { session, timeline })
+    }
+
+    /// Vista previa de un subagente de la sesión.
+    pub fn subagent_detail(&self, id: SessionId, agent_id: &str, limit: usize) -> PortResult<SubagentPreview> {
+        let (agent, transcript) = {
+            let room = self.room();
+            let session = room
+                .get(&id)
+                .ok_or_else(|| PortError::Failed(format!("sesión desconocida: {id}")))?;
+            let can_approve = self.approvals().contains_key(&id);
+            let view = view::session_view(session, self.summaries().get(&id), can_approve);
+            let agent = view
+                .subagents
+                .into_iter()
+                .find(|a| a.id == agent_id)
+                .ok_or_else(|| PortError::Failed(format!("subagente desconocido: {agent_id}")))?;
+            (agent, session.transcript_path.clone())
+        };
+        let transcript = transcript
+            .and_then(|path| self.ports.transcripts.subagent(&path, agent_id, limit))
+            .unwrap_or_default();
+        Ok(SubagentPreview {
+            session_id: id.0,
+            agent,
+            first_prompt: transcript.first_prompt,
+            last_reply: transcript.last_reply,
+            timeline: transcript.timeline.into_iter().map(Into::into).collect(),
+        })
     }
 
     /// Abre un agente nuevo en una carpeta (normalmente el worktree de una sala).
@@ -477,6 +505,13 @@ mod tests {
             ];
             all.into_iter().rev().take(limit).rev().collect()
         }
+        fn subagent(&self, _: &str, agent_id: &str, _: usize) -> Option<crate::ports::AgentTranscript> {
+            Some(crate::ports::AgentTranscript {
+                first_prompt: Some(format!("encargo de {agent_id}")),
+                last_reply: Some("listo".into()),
+                timeline: vec![],
+            })
+        }
     }
 
     #[derive(Default)]
@@ -772,6 +807,26 @@ mod tests {
         h.svc.ingest(sig).unwrap();
         let notices = h.rec.notices.lock().unwrap();
         assert!(notices[0].approvable);
+    }
+
+    #[test]
+    fn a_subagent_preview_brings_its_task_and_reply() {
+        let h = harness();
+        let mut sig = signal("a", "prompt");
+        sig.payload = serde_json::json!({ "s": "a", "e": "prompt" });
+        h.svc.ingest(sig).unwrap();
+        h.svc
+            .commit(SessionEvent {
+                session: id("a"),
+                at: Timestamp(5),
+                context: None,
+                kind: SessionEventKind::SubagentStarted { id: "x1".into(), kind: Some("Explore".into()) },
+            })
+            .unwrap();
+        let preview = h.svc.subagent_detail(id("a"), "x1", 10).unwrap();
+        assert_eq!(preview.first_prompt.as_deref(), Some("encargo de x1"));
+        assert!(preview.agent.running);
+        assert!(h.svc.subagent_detail(id("a"), "otro", 10).is_err());
     }
 
     #[test]

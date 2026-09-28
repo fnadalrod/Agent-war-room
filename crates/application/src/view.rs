@@ -98,6 +98,22 @@ pub struct SubagentView {
     pub kind: Option<String>,
     pub description: Option<String>,
     pub last_tool: Option<String>,
+    pub running: bool,
+    #[ts(type = "number")]
+    pub started_at: i64,
+    #[ts(type = "number | null")]
+    pub finished_at: Option<i64>,
+}
+
+/// Vista previa de un subagente: qué le encargaron, qué contestó y qué fue haciendo.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[ts(export)]
+pub struct SubagentPreview {
+    pub session_id: String,
+    pub agent: SubagentView,
+    pub first_prompt: Option<String>,
+    pub last_reply: Option<String>,
+    pub timeline: Vec<TimelineEntryView>,
 }
 
 /// Vista previa de una sesión: su tarjeta y la conversación reciente.
@@ -195,7 +211,7 @@ pub fn project(
 pub(crate) fn session_view(s: &Session, summary: Option<&TranscriptSummary>, can_approve: bool) -> SessionView {
     let summary = summary.cloned().unwrap_or_default();
     let detail = |id: &str| summary.subagents.iter().find(|d| d.id == id).cloned().unwrap_or_default();
-    SessionView {
+    let mut view = SessionView {
         id: s.id.0.clone(),
         provider: format!("{:?}", s.provider).to_lowercase(),
         attention: s.attention().into(),
@@ -222,6 +238,9 @@ pub(crate) fn session_view(s: &Session, summary: Option<&TranscriptSummary>, can
                     description: d.description,
                     // El transcript da más detalle ("Grep · patrón"); el hook, al menos el nombre.
                     last_tool: d.last_tool.or_else(|| a.current_tool.clone()),
+                    running: a.is_running(),
+                    started_at: a.started_at.0,
+                    finished_at: a.finished_at.map(|t| t.0),
                 }
             })
             .collect(),
@@ -237,7 +256,10 @@ pub(crate) fn session_view(s: &Session, summary: Option<&TranscriptSummary>, can
         in_warp: s.host.warp_focus_url.is_some(),
         pty_id: s.host.pty_id.clone(),
         can_approve,
-    }
+    };
+    // Primero los que siguen trabajando; dentro de cada grupo, por orden de llegada.
+    view.subagents.sort_by_key(|a| (!a.running, a.started_at));
+    view
 }
 
 fn status_label(s: &Session) -> String {

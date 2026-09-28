@@ -235,14 +235,31 @@ mod tests {
     }
 
     #[test]
-    fn subagents_are_tracked_and_cleared_on_end() {
+    fn finished_subagents_are_kept_to_see_what_they_did() {
         let mut room = WarRoom::new();
         room.apply(signal("s", 1, SessionEventKind::SubagentStarted { id: "a1".into(), kind: Some("Explore".into()) }));
         room.apply(signal("s", 2, SessionEventKind::SubagentStarted { id: "a2".into(), kind: None }));
         room.apply(signal("s", 3, SessionEventKind::SubagentStopped { id: "a1".into() }));
-        assert_eq!(room.get(&SessionId("s".into())).unwrap().subagents.len(), 1);
+        let s = room.get(&SessionId("s".into())).unwrap();
+        assert_eq!(s.subagents.len(), 2);
+        assert_eq!(s.running_subagents(), 1);
+        assert_eq!(s.subagents["a1"].finished_at, Some(Timestamp(3)));
+
         room.apply(signal("s", 4, SessionEventKind::Ended { reason: EndReason::Exited("other".into()) }));
-        assert!(room.get(&SessionId("s".into())).unwrap().subagents.is_empty());
+        assert_eq!(room.get(&SessionId("s".into())).unwrap().running_subagents(), 0);
+    }
+
+    #[test]
+    fn only_the_latest_finished_subagents_are_kept() {
+        let mut room = WarRoom::new();
+        for i in 0..10 {
+            let id = format!("a{i}");
+            room.apply(signal("s", i * 2, SessionEventKind::SubagentStarted { id: id.clone(), kind: None }));
+            room.apply(signal("s", i * 2 + 1, SessionEventKind::SubagentStopped { id }));
+        }
+        let s = room.get(&SessionId("s".into())).unwrap();
+        assert_eq!(s.subagents.len(), 6);
+        assert!(s.subagents.contains_key("a9") && !s.subagents.contains_key("a0"));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import type { IntegrationStatus, SessionDetail, WarRoomView } from "../domain/attention";
+import type { IntegrationStatus, SessionDetail, SubagentPreview, WarRoomView } from "../domain/attention";
 
 export type Unsubscribe = () => void;
 
@@ -26,6 +26,8 @@ export interface WarRoomGateway {
   resume(id: string, target: LaunchTarget): Promise<Launched>;
   /** Vista previa: tarjeta + conversación reciente. */
   detail(id: string): Promise<SessionDetail>;
+  /** Vista previa de un subagente de la sesión. */
+  subagentDetail(id: string, agent: string): Promise<SubagentPreview>;
   /** Abre un enlace en el navegador del sistema. */
   openExternal(url: string): Promise<void>;
   /** El núcleo pide abrir la vista previa de una sesión (p. ej. clic en un aviso). */

@@ -25,7 +25,19 @@ pub struct Subagent {
     pub started_at: Timestamp,
     #[serde(default)]
     pub current_tool: Option<String>,
+    /// Terminado: se conserva un rato para poder ver qué hizo.
+    #[serde(default)]
+    pub finished_at: Option<Timestamp>,
 }
+
+impl Subagent {
+    pub fn is_running(&self) -> bool {
+        self.finished_at.is_none()
+    }
+}
+
+/// Subagentes terminados que se conservan por sesión (los más recientes).
+const KEPT_FINISHED_SUBAGENTS: usize = 6;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
@@ -150,11 +162,15 @@ impl Session {
             SessionEventKind::SubagentStarted { id, kind } => {
                 self.subagents.insert(
                     id.clone(),
-                    Subagent { id: id.clone(), kind: kind.clone(), started_at: at, current_tool: None },
+                    Subagent { id: id.clone(), kind: kind.clone(), started_at: at, current_tool: None, finished_at: None },
                 );
             }
             SessionEventKind::SubagentStopped { id } => {
-                self.subagents.remove(id);
+                if let Some(subagent) = self.subagents.get_mut(id) {
+                    subagent.finished_at = Some(at);
+                    subagent.current_tool = None;
+                }
+                self.forget_old_subagents();
             }
             SessionEventKind::SubagentTool { id, tool } => {
                 let subagent = self.subagents.entry(id.clone()).or_insert_with(|| Subagent {
@@ -162,6 +178,7 @@ impl Session {
                     kind: None,
                     started_at: at,
                     current_tool: None,
+                    finished_at: None,
                 });
                 subagent.current_tool = Some(tool.clone());
                 // Si un subagente sigue trabajando, el permiso que se esperaba ya se resolvió.
@@ -174,7 +191,11 @@ impl Session {
             }
             SessionEventKind::Ended { reason } => {
                 if self.is_alive() {
-                    self.subagents.clear();
+                    for subagent in self.subagents.values_mut().filter(|s| s.is_running()) {
+                        subagent.finished_at = Some(at);
+                        subagent.current_tool = None;
+                    }
+                    self.forget_old_subagents();
                     self.set_status(SessionStatus::Ended { reason: reason.clone() }, at);
                 }
             }
@@ -183,6 +204,25 @@ impl Session {
             SessionEventKind::Unarchived => self.archived = false,
             SessionEventKind::Muted => self.muted = true,
             SessionEventKind::Unmuted => self.muted = false,
+        }
+    }
+
+    pub fn running_subagents(&self) -> usize {
+        self.subagents.values().filter(|s| s.is_running()).count()
+    }
+
+    fn forget_old_subagents(&mut self) {
+        let mut finished: Vec<(Timestamp, String)> = self
+            .subagents
+            .values()
+            .filter_map(|s| s.finished_at.map(|at| (at, s.id.clone())))
+            .collect();
+        if finished.len() <= KEPT_FINISHED_SUBAGENTS {
+            return;
+        }
+        finished.sort();
+        for (_, id) in &finished[..finished.len() - KEPT_FINISHED_SUBAGENTS] {
+            self.subagents.remove(id);
         }
     }
 

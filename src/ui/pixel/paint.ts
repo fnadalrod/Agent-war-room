@@ -2,7 +2,7 @@
 import type { AttentionView, SessionView } from "../../domain/attention";
 import { deskName } from "../../domain/attention";
 import { drawText, fit, textWidth } from "./font";
-import { type Bay, type DeskSpot, type Scene, WALL_H } from "./layout";
+import { type Bay, type DeskSpot, DRONE_H, DRONE_W, type Scene, WALL_H } from "./layout";
 
 export const COLOR: Record<AttentionView, string> = {
   needs_you: "#f25555",
@@ -27,7 +27,9 @@ const SHIRT = ["#3b82f6", "#a855f7", "#f97316", "#14b8a6", "#e11d48", "#84cc16",
 export type Paint = {
   frame: number;
   selected: string | null;
+  selectedAgent: string | null;
   hovered: string | null;
+  hoveredAgent: string | null;
   now: Date;
   /** Títulos de lo que te necesita, para el rótulo de la pantalla principal. */
   alerts: string[];
@@ -283,16 +285,16 @@ function paintDesk(ctx: CanvasRenderingContext2D, d: DeskSpot, p: Paint) {
 
   if (s.alive) paintOperator(ctx, s, x + 17, y + 29, p.frame);
   else paintEmptyChair(ctx, x + 29, y + 36);
-  paintSubagents(ctx, s, x, y, p.frame);
+  paintSubagents(ctx, d, p);
 
   paintBubble(ctx, s, x + 36, y, p.frame);
   const caption = s.title ?? deskName(s);
   drawText(ctx, fit(caption, d.w - 4), x + 2, y + 50, s.alive ? "#94a3b8" : "#475569");
   ctx.restore();
 
-  if (p.selected === s.id) {
+  if (p.selected === s.id && !p.selectedAgent) {
     frameRect(ctx, x, y, d.w, d.h - 1, p.frame % 4 < 2 ? "#facc15" : "#a16207");
-  } else if (p.hovered === s.id) {
+  } else if (p.hovered === s.id && !p.hoveredAgent) {
     frameRect(ctx, x, y, d.w, d.h - 1, "#334155");
   }
 }
@@ -426,23 +428,31 @@ function paintEmptyChair(ctx: CanvasRenderingContext2D, x: number, y: number) {
   rect(ctx, x + 1, y + 9, 10, 1, "#0f172a");
 }
 
-/** Drones de subagente orbitando el monitor. */
-function paintSubagents(ctx: CanvasRenderingContext2D, s: SessionView, x: number, y: number, frame: number) {
-  const shown = s.subagents.slice(0, 4);
-  shown.forEach((a, i) => {
-    const t = frame / 6 + (i * Math.PI * 2) / shown.length;
-    const dx = Math.round(x + 22 + Math.cos(t) * 20);
-    const dy = Math.round(y + 12 + Math.sin(t) * 7);
-    const eye = a.last_tool ? "#34d27a" : "#4cb8f5";
-    withAlpha(ctx, 0.3, () => rect(ctx, dx + 1, dy + 7, 3, 1, "#000"));
-    rect(ctx, dx, dy, 5, 4, "#cbd5e1");
-    rect(ctx, dx, dy + 3, 5, 1, "#94a3b8");
-    rect(ctx, dx + 1, dy + 1, 1, 1, eye);
-    rect(ctx, dx + 3, dy + 1, 1, 1, eye);
-    rect(ctx, dx + 2, dy - 2, 1, 2, "#64748b");
-    if (frame % 4 < 2) rect(ctx, dx + 2, dy - 3, 1, 1, eye);
+/** Drones de subagente en sus huecos junto al puesto: flotan si trabajan, aparcados si terminaron. */
+function paintSubagents(ctx: CanvasRenderingContext2D, d: DeskSpot, p: Paint) {
+  d.drones.forEach((drone, i) => {
+    const a = drone.agent;
+    const bob = a.running && (p.frame + i * 3) % 8 < 4 ? -1 : 0;
+    const x = drone.x;
+    const y = drone.y + bob;
+    const eye = !a.running ? "#475569" : a.last_tool ? "#34d27a" : "#4cb8f5";
+    withAlpha(ctx, a.running ? 1 : 0.55, () => {
+      if (a.running) withAlpha(ctx, 0.3, () => rect(ctx, x + 1, drone.y + DRONE_H + 1, DRONE_W - 2, 1, "#000"));
+      rect(ctx, x, y + 1, DRONE_W, DRONE_H - 2, "#cbd5e1");
+      rect(ctx, x + 1, y, DRONE_W - 2, 1, "#e2e8f0");
+      rect(ctx, x, y + DRONE_H - 2, DRONE_W, 1, "#94a3b8");
+      rect(ctx, x + 1, y + 2, 2, 1, eye);
+      rect(ctx, x + 4, y + 2, 2, 1, eye);
+      // Hélices o antena.
+      if (a.running) rect(ctx, x + (p.frame % 2 ? 0 : 4), y - 1, 3, 1, "#64748b");
+    });
+    if (p.selected === d.session.id && p.selectedAgent === a.id) {
+      frameRect(ctx, drone.x - 2, drone.y - 2, DRONE_W + 4, DRONE_H + 4, p.frame % 4 < 2 ? "#facc15" : "#a16207");
+    } else if (p.hovered === d.session.id && p.hoveredAgent === a.id) {
+      frameRect(ctx, drone.x - 2, drone.y - 2, DRONE_W + 4, DRONE_H + 4, "#94a3b8");
+    }
   });
-  if (s.subagents.length > 4) drawText(ctx, `+${s.subagents.length - 4}`, x + 1, y + 42, "#94a3b8");
+  if (d.hiddenDrones > 0) drawText(ctx, `+${d.hiddenDrones}`, d.x + 40, d.y + 42, "#94a3b8");
 }
 
 function paintBubble(ctx: CanvasRenderingContext2D, s: SessionView, x: number, y: number, frame: number) {
