@@ -33,6 +33,14 @@ export const copy = {
     antigravity: t("provider.antigravity"),
   } as Record<string, string>,
 
+  /** Short agent names, for tags. */
+  providerShort: {
+    claude: t("provider_short.claude"),
+    codex: t("provider_short.codex"),
+    cursor: t("provider_short.cursor"),
+    antigravity: t("provider_short.antigravity"),
+  } as Record<string, string>,
+
   skillSource: {
     project: t("skill_source.project"),
     personal: t("skill_source.personal"),
@@ -85,6 +93,8 @@ export const copy = {
     classic: t("topbar.classic"),
     warRoom: t("topbar.war_room"),
     archived: t("topbar.archived"),
+    agents: t("topbar.agents"),
+    agentsTitle: t("topbar.agents_title"),
   },
 
   app: {
@@ -163,6 +173,9 @@ export const copy = {
     skills: t("filters.skills"),
     sessionsShown: (shown: number, total: number) => t("filters.sessions_shown", { shown, total }),
     clear: t("filters.clear"),
+    show: t("filters.show"),
+    collapse: t("filters.collapse"),
+    active: (n: number) => tn("filters.active", n),
     effortTitle: (value: string) => t("filters.effort_title", { value }),
     skillTitle: (source: string, byUser: boolean, byAgent: boolean) =>
       t("filters.skill_title", { source, who: who(byUser, byAgent) }),
@@ -255,14 +268,18 @@ export const copy = {
       end: t("integration.install_end"),
     },
     connect: (agent: string) => t("integration.connect", { agent }),
-    title: (agent: string) => t("integration.title", { agent }),
+    states: {
+      connected: t("integration.state_connected"),
+      incomplete: t("integration.state_incomplete"),
+      off: t("integration.state_off"),
+      missing: t("integration.state_missing"),
+    },
     /** Per agent, what to know before connecting it. */
     notes: {
       codex: t("integration.codex_trust"),
       cursor: t("integration.cursor_note"),
       antigravity: t("integration.antigravity_note"),
     } as Record<string, string>,
-    hooksIn: t("integration.hooks_in"),
     bridge: t("integration.bridge"),
     autostart: t("integration.autostart"),
     reinstall: t("integration.reinstall"),

@@ -130,7 +130,9 @@
       "view": "Vista",
       "classic": "Clásica",
       "war_room": "War Room",
-      "archived": "Despedidas"
+      "archived": "Despedidas",
+      "agents": "Agentes",
+      "agents_title": "Qué agentes sigue la war room, y sus hooks"
     },
     "app": {
       "close": "Cerrar",
@@ -201,7 +203,11 @@
       "sessions_shown": "{shown} de {total} sesiones",
       "clear": "Quitar filtros",
       "effort_title": "Esfuerzo {value}",
-      "skill_title": "{source} · la lanzó {who}"
+      "skill_title": "{source} · la lanzó {who}",
+      "show": "Filtros",
+      "active_one": "{n} activo",
+      "active_other": "{n} activos",
+      "collapse": "Ocultar filtros"
     },
     "detail": {
       "label": "Vista previa: {title}",
@@ -286,15 +292,17 @@
       "install_before_backup": "sin tocar los que ya tengas (queda una copia",
       "install_end": "). Solo las sesiones que arranquen después quedan conectadas.",
       "connect": "Conectar {agent}",
-      "title": "Integración con {agent}",
-      "hooks_in": "Hooks en",
       "bridge": "Puente:",
       "autostart": "Abrir al iniciar sesión (en la bandeja)",
       "reinstall": "Reinstalar",
       "disconnect": "Desconectar",
       "codex_trust": "La primera vez, Codex te pedirá revisar los hooks nuevos: elige «Trust all and continue».",
       "cursor_note": "Cursor también ejecuta los hooks de Claude Code; si están los dos, se salta los nuestros repetidos. Da tokens y modelo, no aprobaciones.",
-      "antigravity_note": "Van en su carpeta global y se ejecutan dentro de su agente: la sala sigue sus conversaciones pero no puede abrirlas ni aprobar nada."
+      "antigravity_note": "Van en su carpeta global y se ejecutan dentro de su agente: la sala sigue sus conversaciones pero no puede abrirlas ni aprobar nada.",
+      "state_connected": "Conectado",
+      "state_incomplete": "Incompleto",
+      "state_off": "Sin conectar",
+      "state_missing": "No instalado"
     },
     "toasts": {
       "approved": "Permiso aprobado",
@@ -313,6 +321,12 @@
     },
     "provider": {
       "claude": "Claude Code",
+      "codex": "Codex",
+      "cursor": "Cursor",
+      "antigravity": "Antigravity"
+    },
+    "provider_short": {
+      "claude": "Claude",
       "codex": "Codex",
       "cursor": "Cursor",
       "antigravity": "Antigravity"

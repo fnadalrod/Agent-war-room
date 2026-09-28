@@ -43,56 +43,76 @@ export function IntegrationBar({ integrations, busy, store }: Props) {
   );
 }
 
-/** Discreet header indicator per connected agent. The login toggle lives in the first one. */
-export function IntegrationBadges({ integrations, busy, store, autostart }: Props) {
-  const connected = integrations.filter(isConnected);
-  return (
-    <>
-      {connected.map((status, i) => (
-        <IntegrationBadge
-          key={status.provider}
-          status={status}
-          busy={busy}
-          store={store}
-          autostart={i === 0 ? autostart : null}
-        />
-      ))}
-    </>
-  );
+type Health = "connected" | "incomplete" | "off" | "missing";
+
+function health(status: IntegrationStatus): Health {
+  if (isConnected(status)) return "connected";
+  if (status.hooked_events.length > 0) return "incomplete";
+  return status.agent_found ? "off" : "missing";
 }
 
-type BadgeProps = { status: IntegrationStatus; busy: boolean; store: WarRoomStore; autostart?: boolean | null };
-
-function IntegrationBadge({ status, busy, store, autostart }: BadgeProps) {
+/** One header button for every agent: a dot each, and a menu to connect or disconnect them. */
+export function AgentsMenu({ integrations, busy, store, autostart }: Props) {
   const [open, setOpen] = useState(false);
-  const agent = providerName(status.provider);
+  if (integrations.length === 0) return null;
+  const shown = integrations.filter((i) => i.agent_found || health(i) !== "missing");
   return (
-    <div className="integration-badge">
-      <button className="ghost" onClick={() => setOpen(!open)} aria-expanded={open} title={copy.integration.title(agent)}>
-        <span className="dot" data-attention="working" /> {agent}
+    <div className="agents-menu">
+      <button className="ghost" onClick={() => setOpen(!open)} aria-expanded={open} title={copy.topbar.agentsTitle}>
+        <span className="agent-dots">
+          {shown.map((i) => (
+            <span key={i.provider} className="agent-dot" data-provider={i.provider} data-health={health(i)} />
+          ))}
+        </span>
+        {copy.topbar.agents}
       </button>
       {open && (
-        <div className="popover" role="dialog" aria-label={copy.integration.title(agent)}>
-          <p>
-            {copy.integration.hooksIn} <code>{status.settings_path}</code>
-          </p>
-          <p>
-            {copy.integration.bridge} <code>{status.bridge_path}</code>
-          </p>
+        <div className="popover agents-popover" role="dialog" aria-label={copy.topbar.agentsTitle}>
+          {integrations.map((status) => {
+            const state = health(status);
+            return (
+              <div className="agents-row" key={status.provider} data-health={state}>
+                <span className="agent-dot" data-provider={status.provider} data-health={state} />
+                <div className="agents-info">
+                  <strong>{providerName(status.provider)}</strong>
+                  <span className="muted small">
+                    {copy.integration.states[state]}
+                    {state !== "missing" && (
+                      <>
+                        {" · "}
+                        <code>{status.settings_path}</code>
+                      </>
+                    )}
+                  </span>
+                </div>
+                {state === "connected" ? (
+                  <span className="row">
+                    <button disabled={busy} onClick={() => store.install(status.provider)}>
+                      {copy.integration.reinstall}
+                    </button>
+                    <button disabled={busy} onClick={() => store.uninstall(status.provider)}>
+                      {copy.integration.disconnect}
+                    </button>
+                  </span>
+                ) : state !== "missing" ? (
+                  <button className="primary" disabled={busy} onClick={() => store.install(status.provider)}>
+                    {copy.integration.connect(providerName(status.provider))}
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+          {integrations.some(isConnected) && (
+            <p className="muted small">
+              {copy.integration.bridge} <code>{integrations[0].bridge_path}</code>
+            </p>
+          )}
           {autostart != null && (
             <label className="toggle">
               <input type="checkbox" checked={autostart} disabled={busy} onChange={(e) => store.setAutostart(e.target.checked)} />
               {copy.integration.autostart}
             </label>
           )}
-          <div className="row">
-            <button disabled={busy} onClick={() => store.install(status.provider)}>
-              {copy.integration.reinstall}
-            </button>
-            <button disabled={busy} onClick={() => store.uninstall(status.provider)}>
-              {copy.integration.disconnect}
-            </button>
-          </div>
         </div>
       )}
     </div>

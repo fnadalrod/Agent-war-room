@@ -3,8 +3,8 @@
 //   npm run shot -- <out-dir> [width] [lang]     (lang: en, es…; default en)
 //
 // Builds nothing: run `npm run build` first if the source changed (npm run shot does it for you).
-// Writes classic.png (full page), detail.png, changes.png, diff.png, subagent.png, filtered.png and
-// pixel.png to <out-dir>.
+// Writes classic.png (full page), detail.png, changes.png, diff.png, subagent.png, filtered.png,
+// agents.png, pixel.png and pixel-later.png to <out-dir>.
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
@@ -60,12 +60,18 @@ try {
   await shot("diff");
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
+  // Filters start folded.
+  const toggle = page.locator(".filter-toggle");
+  if (await toggle.count()) await toggle.click();
   const chip = page.locator(".filter-chip.source").first();
   if (await chip.count()) {
     await chip.click();
     await shot("filtered");
     await chip.click();
   }
+  await page.locator(".agents-menu > button").click();
+  await shot("agents");
+  await page.locator(".agents-menu > button").click();
   await page.locator(".segmented button").nth(1).click();
   await shot("pixel", true);
   // A few seconds later, to see agents on the move.

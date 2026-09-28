@@ -24,9 +24,14 @@ alwaysApply: false
 - Components never inline user-visible text: `copy.<area>.<key>` (functions for parametrised text),
   backed by `locales/*.json` (`i18n.mdc`). Status labels arrive already translated from Rust; the demo
   builds its `STATUS` from the same catalog (`coreStatus`) — `extraActivity` compares text.
-- Several agents: `providerName`, `launchableAgents`, `mixesAgents` (cards name the agent only when
-  the room mixes them), one banner/badge per integration (`IntegrationBar.tsx`), "+ Agent" becomes a
-  menu when more than one agent can be started. Unpriced usage shows tokens only (`usageLabel`).
+- Several agents: `providerName`/`copy.providerShort`, `launchableAgents`, `mixesAgents` (cards show
+  an agent tag in its colour, `data-provider` → `--agent`, only when the room mixes them). One header
+  button, `AgentsMenu`, lists every integration (dot per agent: connected, incomplete, off, not
+  installed) with connect/reinstall/disconnect and the login toggle; banners only for found agents not
+  yet connected. "+ Agent" becomes a menu when more than one agent can be started. Unpriced usage
+  shows tokens only (`usageLabel`).
+- Filters start folded to one line (remembered in localStorage); the header must fit on two lines at
+  1500 px with the preview open.
 - New data from the core: add it in `view.rs`, regenerate, then fixtures (`src/test/fixtures.ts`) and
   the demo (`demoGateway.ts`) — the demo is what screenshots show.
 - Styling: one `ui/styles.css` on tokens. `--c` = attention color via `data-attention`; `--k` = skill

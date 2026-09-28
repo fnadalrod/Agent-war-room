@@ -53,6 +53,11 @@ export function SessionScreen({ session: s, store, now, showProvider = false }: 
           </span>
           <span className="muted">{since(s.status_since, now)}</span>
           <span className="spacer" />
+          {showProvider && (
+            <span className="agent-tag" data-provider={s.provider} title={providerName(s.provider)}>
+              {copy.providerShort[s.provider] ?? s.provider}
+            </span>
+          )}
           {stalled != null && (
             <span className="badge stalled" title={copy.stalled.title}>
               {copy.stalled.label(stalled)}
@@ -98,7 +103,6 @@ export function SessionScreen({ session: s, store, now, showProvider = false }: 
         </div>
         <div className="card-meta">
           {[
-            showProvider && providerName(s.provider),
             modelAndEffort(s.model, s.effort),
             s.usage.total_tokens > 0 && usageLabel(s.usage),
             whereItLives(s),

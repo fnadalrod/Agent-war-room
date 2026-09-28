@@ -7,7 +7,7 @@ import { AttentionQueue } from "./AttentionQueue";
 import { DetailPanel } from "./DetailPanel";
 import { FilterBar } from "./FilterBar";
 import { GoIcon } from "./icons";
-import { IntegrationBadges, IntegrationBar } from "./IntegrationBar";
+import { AgentsMenu, IntegrationBar } from "./IntegrationBar";
 import { WarRoomScene } from "./pixel/WarRoomScene";
 import { RoomPanel } from "./RoomPanel";
 import { useNow, usePreference, useWarRoom } from "./useStore";
@@ -76,7 +76,7 @@ export function App({ store }: { store: WarRoomStore }) {
               {copy.topbar.archived} <span className="muted">{archivedCount(view)}</span>
             </label>
           )}
-          <IntegrationBadges integrations={state.integrations} busy={state.busy} store={store} autostart={state.autostart} />
+          <AgentsMenu integrations={state.integrations} busy={state.busy} store={store} autostart={state.autostart} />
         </div>
       </header>
 

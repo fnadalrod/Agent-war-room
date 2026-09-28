@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { WarRoomStore } from "../application/warRoomStore";
 import {
   effortName,
@@ -14,13 +15,57 @@ import { FilterIcon, RobotIcon, UserIcon, XIcon, ZapIcon } from "./icons";
 type Props = { view: WarRoomView; shown: WarRoomView; filter: Filter; store: WarRoomStore };
 
 const count = (v: WarRoomView) => v.rooms.reduce((n, r) => n + r.sessions.length, 0);
+const activeCount = (f: Filter) => f.repos.length + f.skills.length + f.sources.length + f.models.length + f.efforts.length;
+
+const OPEN_KEY = "awr.filters.open";
+function remembered(): boolean {
+  try {
+    return localStorage.getItem(OPEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 /** Filter the room by repo, model/effort, skill and skill source. */
 export function FilterBar({ view, shown, filter, store }: Props) {
   const { repos, skills, models, efforts } = filterOptions(view);
   const active = isFiltering(filter);
+  const [open, setOpenState] = useState(remembered);
+  const setOpen = (value: boolean) => {
+    setOpenState(value);
+    try {
+      localStorage.setItem(OPEN_KEY, value ? "1" : "0");
+    } catch {
+      // Private window or blocked storage: it just won't be remembered.
+    }
+  };
   const modelsWorthIt = models.length > 1 || efforts.length > 1;
   if (repos.length < 2 && skills.length === 0 && !modelsWorthIt && !active) return null;
+
+  const summary = active && (
+    <>
+      <span className="muted">{copy.filters.sessionsShown(count(shown), count(view))}</span>
+      <button className="ghost" onClick={() => store.clearFilter()}>
+        <XIcon size={13} /> {copy.filters.clear}
+      </button>
+    </>
+  );
+
+  // Folded: one line, so the room starts right away.
+  if (!open) {
+    return (
+      <section className="filters folded" data-active={active} aria-label={copy.filters.label}>
+        <div className="filter-row">
+          <button className="ghost filter-toggle" onClick={() => setOpen(true)} aria-expanded={false}>
+            <FilterIcon size={13} /> {copy.filters.show}
+            {active && <span className="filter-count">{copy.filters.active(activeCount(filter))}</span>}
+          </button>
+          <span className="spacer" />
+          {summary}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="filters" data-active={active} aria-label={copy.filters.label}>
@@ -39,16 +84,10 @@ export function FilterBar({ view, shown, filter, store }: Props) {
           </button>
         ))}
         <span className="spacer" />
-        {active && (
-          <>
-            <span className="muted">
-              {copy.filters.sessionsShown(count(shown), count(view))}
-            </span>
-            <button className="ghost" onClick={() => store.clearFilter()}>
-              <XIcon size={13} /> {copy.filters.clear}
-            </button>
-          </>
-        )}
+        {summary}
+        <button className="ghost" onClick={() => setOpen(false)} aria-expanded={true} title={copy.filters.collapse}>
+          <XIcon size={13} />
+        </button>
       </div>
 
       {(modelsWorthIt || filter.models.length > 0 || filter.efforts.length > 0) && (
