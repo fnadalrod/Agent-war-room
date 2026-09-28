@@ -3,6 +3,6 @@ import type { TimelineKindView } from "./TimelineKindView";
 
 export type TimelineEntryView = { 
 /**
- * "prompt" (tú), "reply" (el agente, Markdown) o "tool" (resumen de una herramienta).
+ * "prompt" (you), "reply" (the agent, Markdown) or "tool" (tool use summary).
  */
 kind: TimelineKindView, text: string, at: number | null, model: string | null, effort: string | null, };

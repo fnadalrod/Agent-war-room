@@ -4,18 +4,18 @@ import {
   type Filter,
   filterOptions,
   isFiltering,
-  SKILL_SOURCE_LABEL,
   SKILL_SOURCES,
   shortModel,
   type WarRoomView,
 } from "../domain/attention";
+import { copy } from "../domain/copy";
 import { FilterIcon, RobotIcon, UserIcon, XIcon, ZapIcon } from "./icons";
 
 type Props = { view: WarRoomView; shown: WarRoomView; filter: Filter; store: WarRoomStore };
 
 const count = (v: WarRoomView) => v.rooms.reduce((n, r) => n + r.sessions.length, 0);
 
-/** Filtrar la sala por repositorio, por skill y por procedencia de las skills. */
+/** Filter the room by repo, model/effort, skill and skill source. */
 export function FilterBar({ view, shown, filter, store }: Props) {
   const { repos, skills, models, efforts } = filterOptions(view);
   const active = isFiltering(filter);
@@ -23,10 +23,10 @@ export function FilterBar({ view, shown, filter, store }: Props) {
   if (repos.length < 2 && skills.length === 0 && !modelsWorthIt && !active) return null;
 
   return (
-    <section className="filters" data-active={active} aria-label="Filtros">
+    <section className="filters" data-active={active} aria-label={copy.filters.label}>
       <div className="filter-row">
         <span className="filter-label">
-          <FilterIcon size={13} /> Repos
+          <FilterIcon size={13} /> {copy.filters.repos}
         </span>
         {repos.map((r) => (
           <button
@@ -42,10 +42,10 @@ export function FilterBar({ view, shown, filter, store }: Props) {
         {active && (
           <>
             <span className="muted">
-              {count(shown)} de {count(view)} sesiones
+              {copy.filters.sessionsShown(count(shown), count(view))}
             </span>
             <button className="ghost" onClick={() => store.clearFilter()}>
-              <XIcon size={13} /> Quitar filtros
+              <XIcon size={13} /> {copy.filters.clear}
             </button>
           </>
         )}
@@ -54,7 +54,7 @@ export function FilterBar({ view, shown, filter, store }: Props) {
       {(modelsWorthIt || filter.models.length > 0 || filter.efforts.length > 0) && (
         <div className="filter-row">
           <span className="filter-label">
-            <RobotIcon size={13} /> Modelo
+            <RobotIcon size={13} /> {copy.filters.model}
           </span>
           {models.map((m) => (
             <button
@@ -73,9 +73,9 @@ export function FilterBar({ view, shown, filter, store }: Props) {
               className="filter-chip"
               aria-pressed={filter.efforts.includes(e.value)}
               onClick={() => store.toggleEffortFilter(e.value)}
-              title={`Esfuerzo ${e.value}`}
+              title={copy.filters.effortTitle(e.value)}
             >
-              esfuerzo {effortName(e.value)} <span className="muted">{e.sessions}</span>
+              {copy.session.effort(effortName(e.value)!)} <span className="muted">{e.sessions}</span>
             </button>
           ))}
         </div>
@@ -84,7 +84,7 @@ export function FilterBar({ view, shown, filter, store }: Props) {
       {skills.length > 0 && (
         <div className="filter-row">
           <span className="filter-label">
-            <ZapIcon size={13} /> Skills
+            <ZapIcon size={13} /> {copy.filters.skills}
           </span>
           {SKILL_SOURCES.filter((src) => skills.some((k) => k.source === src)).map((src) => (
             <button
@@ -94,7 +94,7 @@ export function FilterBar({ view, shown, filter, store }: Props) {
               aria-pressed={filter.sources.includes(src)}
               onClick={() => store.toggleSourceFilter(src)}
             >
-              {SKILL_SOURCE_LABEL[src]}
+              {copy.skillSource[src]}
             </button>
           ))}
           <span className="filter-sep" />
@@ -105,9 +105,7 @@ export function FilterBar({ view, shown, filter, store }: Props) {
               data-source={k.source}
               aria-pressed={filter.skills.includes(k.name)}
               onClick={() => store.toggleSkillFilter(k.name)}
-              title={`${SKILL_SOURCE_LABEL[k.source]} · la lanzó ${[k.byUser && "tú", k.byAgent && "el agente"]
-                .filter(Boolean)
-                .join(" y ")}`}
+              title={copy.filters.skillTitle(copy.skillSource[k.source], k.byUser, k.byAgent)}
             >
               {k.byUser && <UserIcon size={11} />}
               {k.byAgent && <ZapIcon size={11} />}

@@ -1,12 +1,12 @@
 import type { WarRoomStore } from "../application/warRoomStore";
-import { SKILL_SOURCE_LABEL, type SkillView } from "../domain/attention";
+import type { SkillView } from "../domain/attention";
+import { copy } from "../domain/copy";
 import { UserIcon, ZapIcon } from "./icons";
 
 type Props = { skill: SkillView; store: WarRoomStore; active?: boolean };
 
-/** Etiqueta de una skill: color por procedencia, icono por quién la lanzó. Clic: filtrar por ella. */
+/** Skill tag: color by source, icon by who launched it. Click: filter by it. */
 export function SkillTag({ skill, store, active }: Props) {
-  const who = [skill.by_user && "tú", skill.by_agent && "el agente"].filter(Boolean).join(" y ");
   return (
     <button
       className="skill-tag"
@@ -16,9 +16,7 @@ export function SkillTag({ skill, store, active }: Props) {
         e.stopPropagation();
         store.toggleSkillFilter(skill.name);
       }}
-      title={`${skill.name} · ${SKILL_SOURCE_LABEL[skill.source].toLowerCase()} · la lanzó ${who}${
-        skill.count > 1 ? ` · ${skill.count} veces` : ""
-      }\nClic: filtrar por esta skill`}
+      title={copy.skill.tagTitle(skill.name, copy.skillSource[skill.source], skill.by_user, skill.by_agent, skill.count)}
     >
       {skill.by_user && <UserIcon size={11} />}
       {skill.by_agent && <ZapIcon size={11} />}

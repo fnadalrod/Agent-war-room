@@ -2,6 +2,6 @@
 
 export type IntegrationStatus = { installed: boolean, 
 /**
- * Eventos de hook que apuntan a nuestro puente.
+ * Hook events pointing at our bridge.
  */
 hooked_events: Array<string>, settings_path: string, bridge_path: string, bridge_present: boolean, };

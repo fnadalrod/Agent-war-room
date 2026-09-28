@@ -6,16 +6,11 @@ pub struct SystemClock;
 
 impl Clock for SystemClock {
     fn now(&self) -> Timestamp {
-        Timestamp(
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or_default(),
-        )
+        Timestamp(SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or_default())
     }
 }
 
-/// Comprueba en `/proc` que el PID sigue existiendo y no es un zombi.
+/// Checks in `/proc` that the PID still exists and is not a zombie.
 pub struct ProcProbe;
 
 impl ProcessProbe for ProcProbe {

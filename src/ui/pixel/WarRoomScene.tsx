@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { WarRoomStore } from "../../application/warRoomStore";
-import { agentName, type WarRoomView } from "../../domain/attention";
+import { agentName, deskName, type WarRoomView } from "../../domain/attention";
+import { copy } from "../../domain/copy";
 import { type Hit, hitTest, layoutScene, pixelScale } from "./layout";
 import { paintScene } from "./paint";
 
@@ -14,7 +15,7 @@ type Props = {
 
 const FPS = 10;
 
-/** La sala en pixel art. Clic: vista previa; doble clic: ir a la sesión. */
+/** The room in pixel art. Click: preview; double click: go to the session. */
 export function WarRoomScene({ view, store, showArchived, selectedId, selectedAgent }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -28,7 +29,7 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
-  // Que la sala ocupe la ventana bajo la cabecera, no solo lo que miden sus bahías.
+  // Fill the window below the header, not just the height of the bays.
   const minHeight = Math.max(0, (viewportH - 130) / scale);
   const scene = useMemo(
     () => layoutScene(view, Math.floor(cssWidth / scale), showArchived, minHeight),
@@ -39,11 +40,11 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
       view.rooms
         .flatMap((r) => r.sessions)
         .filter((s) => s.attention === "needs_you" && !s.muted && !s.archived)
-        .map((s) => s.title ?? s.worktree_path.split("/").pop() ?? "sesion"),
+        .map((s) => s.title ?? deskName(s)),
     [view],
   );
 
-  // Estado vivo para el bucle de pintado sin reiniciarlo en cada render.
+  // Live state for the paint loop, so it is not restarted on every render.
   const live = useRef({ scene, selectedId, selectedAgent, alerts, hovered: null as Hit | null });
   live.current = { scene, selectedId, selectedAgent, alerts, hovered };
 
@@ -109,14 +110,17 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
             if (hit?.session.alive && !hit.agent) store.goTo(hit.session);
           }}
           role="img"
-          aria-label="Sala de control: un puesto por sesión, coloreado por su estado"
+          aria-label={copy.pixel.canvasLabel}
         />
         {hovered && (
           <div className="pixel-tip">
             {hovered.agent ? (
               <>
-                <strong>{agentName(hovered.agent)}</strong> · {hovered.agent.running ? (hovered.agent.last_tool ?? "trabajando") : "terminado"}
-                <span className="muted"> — subagente de {hovered.session.title ?? "la sesión"}</span>
+                <strong>{agentName(hovered.agent)}</strong> ·{" "}
+                {hovered.agent.running
+                  ? (hovered.agent.last_tool ?? copy.session.subagentState(true))
+                  : copy.session.subagentState(false)}
+                <span className="muted">{copy.pixel.subagentOf(hovered.session.title)}</span>
               </>
             ) : (
               <>
@@ -125,7 +129,7 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
             )}
           </div>
         )}
-        {scene.bays.length === 0 && <p className="empty">Sala vacía: los puestos aparecerán cuando un agente arranque.</p>}
+        {scene.bays.length === 0 && <p className="empty">{copy.pixel.empty}</p>}
       </div>
     </div>
   );

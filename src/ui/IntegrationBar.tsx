@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { WarRoomStore } from "../application/warRoomStore";
 import type { IntegrationStatus } from "../domain/attention";
+import { copy } from "../domain/copy";
 
 type Props = { status: IntegrationStatus | null; busy: boolean; store: WarRoomStore; autostart?: boolean | null };
 
@@ -8,7 +9,7 @@ export function isConnected(status: IntegrationStatus | null): boolean {
   return status != null && status.installed && status.bridge_present;
 }
 
-/** Aviso grande solo mientras falta conectar Claude Code. */
+/** Big banner, only while Claude Code is not connected yet. */
 export function IntegrationBar({ status, busy, store }: Props) {
   if (!status || isConnected(status)) return null;
   return (
@@ -16,50 +17,51 @@ export function IntegrationBar({ status, busy, store }: Props) {
       <div>
         <strong>
           {status.hooked_events.length > 0
-            ? "La integración con Claude Code está incompleta"
-            : "Claude Code aún no avisa a la war room"}
+            ? copy.integration.incomplete
+            : copy.integration.notConnected}
         </strong>
         <p>
-          Se añadirán hooks a <code>{status.settings_path}</code> sin tocar los que ya tengas (queda una copia{" "}
-          <code>.warroom-bak</code>). Solo las sesiones que arranquen después quedan conectadas.
+          {copy.integration.installNote.beforePath} <code>{status.settings_path}</code>{" "}
+          {copy.integration.installNote.beforeBackup} <code>.warroom-bak</code>
+          {copy.integration.installNote.end}
         </p>
       </div>
       <button className="primary" disabled={busy} onClick={() => store.install()}>
-        Conectar Claude Code
+        {copy.integration.connect}
       </button>
     </div>
   );
 }
 
-/** Indicador discreto en la cabecera una vez conectada. */
+/** Discreet header indicator once connected. */
 export function IntegrationBadge({ status, busy, store, autostart }: Props) {
   const [open, setOpen] = useState(false);
   if (!isConnected(status)) return null;
   return (
     <div className="integration-badge">
-      <button className="ghost" onClick={() => setOpen(!open)} aria-expanded={open} title="Integración con Claude Code">
-        <span className="dot" data-attention="working" /> Claude Code
+      <button className="ghost" onClick={() => setOpen(!open)} aria-expanded={open} title={copy.integration.title}>
+        <span className="dot" data-attention="working" /> {copy.integration.badge}
       </button>
       {open && (
-        <div className="popover" role="dialog" aria-label="Integración con Claude Code">
+        <div className="popover" role="dialog" aria-label={copy.integration.title}>
           <p>
-            Hooks en <code>{status!.settings_path}</code>
+            {copy.integration.hooksIn} <code>{status!.settings_path}</code>
           </p>
           <p>
-            Puente: <code>{status!.bridge_path}</code>
+            {copy.integration.bridge} <code>{status!.bridge_path}</code>
           </p>
           {autostart != null && (
             <label className="toggle">
               <input type="checkbox" checked={autostart} disabled={busy} onChange={(e) => store.setAutostart(e.target.checked)} />
-              Abrir al iniciar sesión (en la bandeja)
+              {copy.integration.autostart}
             </label>
           )}
           <div className="row">
             <button disabled={busy} onClick={() => store.install()}>
-              Reinstalar
+              {copy.integration.reinstall}
             </button>
             <button disabled={busy} onClick={() => store.uninstall()}>
-              Desconectar
+              {copy.integration.disconnect}
             </button>
           </div>
         </div>

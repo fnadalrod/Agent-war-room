@@ -1,27 +1,69 @@
+use super::tools::{clip, tool_argument};
 use awr_application::ports::{AgentProvider, PortError, PortResult, Translated};
 use awr_domain::{EndReason, ProviderKind, SessionEventKind, SessionId, SkillInvoker, SkillSource, WaitReason};
-use super::tools::{clip, tool_argument};
 use serde_json::Value;
 
-/// Comandos internos de Claude Code: empiezan por `/` pero no son skills.
+/// Claude Code's built-in commands: they start with `/` but are not skills.
 const BUILTIN_COMMANDS: &[&str] = &[
-    "add-dir", "agents", "auto-mode-setup", "bashes", "bug", "clear", "compact", "config", "context",
-    "continue", "cost", "doctor", "effort", "exit", "export", "fast", "feedback", "help", "hooks", "ide",
-    "init", "install-github-app", "login", "logout", "mcp", "memory", "model", "output-style",
-    "permissions", "plugin", "plugins", "pr-comments", "privacy-settings", "quit", "release-notes",
-    "remote-control", "resume", "rewind", "skills", "status", "statusline", "tasks", "terminal-setup",
-    "theme", "todos", "upgrade", "usage", "vim",
+    "add-dir",
+    "agents",
+    "auto-mode-setup",
+    "bashes",
+    "bug",
+    "clear",
+    "compact",
+    "config",
+    "context",
+    "continue",
+    "cost",
+    "doctor",
+    "effort",
+    "exit",
+    "export",
+    "fast",
+    "feedback",
+    "help",
+    "hooks",
+    "ide",
+    "init",
+    "install-github-app",
+    "login",
+    "logout",
+    "mcp",
+    "memory",
+    "model",
+    "output-style",
+    "permissions",
+    "plugin",
+    "plugins",
+    "pr-comments",
+    "privacy-settings",
+    "quit",
+    "release-notes",
+    "remote-control",
+    "resume",
+    "rewind",
+    "skills",
+    "status",
+    "statusline",
+    "tasks",
+    "terminal-setup",
+    "theme",
+    "todos",
+    "upgrade",
+    "usage",
+    "vim",
 ];
 
-/// `/nombre args` → `nombre`, si parece una skill y no un comando interno.
+/// `/name args` → `name`, if it looks like a skill rather than a built-in command.
 fn slash_skill(prompt: &str) -> Option<String> {
     let name = prompt.trim_start().strip_prefix('/')?.split_whitespace().next()?;
-    let valid = !name.is_empty()
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'));
+    let valid =
+        !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'));
     (valid && !BUILTIN_COMMANDS.contains(&name)).then(|| name.to_owned())
 }
 
-/// Herramientas cuyo `PreToolUse` significa que Claude te está preguntando algo.
+/// Tools whose `PreToolUse` means Claude is asking the user something.
 const QUESTION_TOOLS: &[&str] = &["AskUserQuestion", "ExitPlanMode"];
 
 pub struct ClaudeProvider;
@@ -38,10 +80,10 @@ impl AgentProvider for ClaudeProvider {
     fn translate(&self, payload: &Value) -> PortResult<Option<Translated>> {
         let field = |name: &str| payload.get(name).and_then(Value::as_str);
         let (Some(session), Some(event)) = (field("session_id"), field("hook_event_name")) else {
-            return Err(PortError::Failed("hook de Claude sin session_id o hook_event_name".into()));
+            return Err(PortError::Failed("Claude hook without session_id or hook_event_name".into()));
         };
         let tool = field("tool_name").map(str::to_owned);
-        // Los hooks de herramientas desde un subagente llevan `agent_id`.
+        // Tool hooks fired from a subagent carry `agent_id`.
         let subagent = field("agent_id").map(str::to_owned);
 
         let mut extra = Vec::new();
@@ -78,7 +120,7 @@ impl AgentProvider for ClaudeProvider {
             "PermissionRequest" => SessionEventKind::AwaitingYou {
                 reason: WaitReason::Permission,
                 tool,
-                // Para Bash el comando dice más que su descripción.
+                // For Bash the command says more than its description.
                 detail: payload
                     .pointer("/tool_input/command")
                     .and_then(Value::as_str)
@@ -94,13 +136,13 @@ impl AgentProvider for ClaudeProvider {
                 id: field("agent_id").unwrap_or("unknown").to_owned(),
                 kind: field("agent_type").map(str::to_owned),
             },
-            "SubagentStop" => SessionEventKind::SubagentStopped {
-                id: field("agent_id").unwrap_or("unknown").to_owned(),
-            },
+            "SubagentStop" => {
+                SessionEventKind::SubagentStopped { id: field("agent_id").unwrap_or("unknown").to_owned() }
+            }
             "PreCompact" => SessionEventKind::CompactionStarted,
-            "SessionEnd" => SessionEventKind::Ended {
-                reason: EndReason::Exited(field("reason").unwrap_or("other").to_owned()),
-            },
+            "SessionEnd" => {
+                SessionEventKind::Ended { reason: EndReason::Exited(field("reason").unwrap_or("other").to_owned()) }
+            }
             _ => return Ok(None),
         };
 
@@ -114,7 +156,7 @@ impl AgentProvider for ClaudeProvider {
     }
 }
 
-/// Versiones recientes mandan `notification_type`; las antiguas solo el mensaje.
+/// Recent versions send `notification_type`; older ones only the message.
 fn notification_kind(kind: Option<&str>, message: Option<&str>) -> Option<SessionEventKind> {
     let kind = kind.map(str::to_owned).or_else(|| {
         let message = message?.to_lowercase();
@@ -127,8 +169,12 @@ fn notification_kind(kind: Option<&str>, message: Option<&str>) -> Option<Sessio
         }
     })?;
     match kind.as_str() {
-        "permission_prompt" => Some(SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: None, detail: None }),
-        "elicitation_dialog" => Some(SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: None, detail: None }),
+        "permission_prompt" => {
+            Some(SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: None, detail: None })
+        }
+        "elicitation_dialog" => {
+            Some(SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: None, detail: None })
+        }
         "idle_prompt" => Some(SessionEventKind::IdlePrompt),
         _ => None,
     }
@@ -167,7 +213,11 @@ mod tests {
     fn questions_are_distinguished_from_regular_tools() {
         assert_eq!(
             translate(hook("PreToolUse", json!({ "tool_name": "AskUserQuestion" }))),
-            Some(SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: Some("AskUserQuestion".into()), detail: None })
+            Some(SessionEventKind::AwaitingYou {
+                reason: WaitReason::Question,
+                tool: Some("AskUserQuestion".into()),
+                detail: None
+            })
         );
         assert_eq!(
             translate(hook("PreToolUse", json!({ "tool_name": "Bash" }))),
@@ -192,25 +242,40 @@ mod tests {
     fn skills_launched_by_the_agent_or_by_you_are_recognised() {
         assert_eq!(
             extra(hook("PreToolUse", json!({ "tool_name": "Skill", "tool_input": { "skill": "close-task" } }))),
-            vec![SessionEventKind::SkillInvoked { name: "close-task".into(), by: SkillInvoker::Agent, source: SkillSource::Builtin }]
+            vec![SessionEventKind::SkillInvoked {
+                name: "close-task".into(),
+                by: SkillInvoker::Agent,
+                source: SkillSource::Builtin
+            }]
         );
         assert_eq!(
-            extra(hook("UserPromptSubmit", json!({ "prompt": "/teacher-content tema 3" }))),
-            vec![SessionEventKind::SkillInvoked { name: "teacher-content".into(), by: SkillInvoker::User, source: SkillSource::Builtin }]
+            extra(hook("UserPromptSubmit", json!({ "prompt": "/teacher-content lesson 3" }))),
+            vec![SessionEventKind::SkillInvoked {
+                name: "teacher-content".into(),
+                by: SkillInvoker::User,
+                source: SkillSource::Builtin
+            }]
         );
         assert_eq!(
-            extra(hook("UserPromptSubmit", json!({ "prompt": "/anthropic-skills:docx informe" }))),
-            vec![SessionEventKind::SkillInvoked { name: "anthropic-skills:docx".into(), by: SkillInvoker::User, source: SkillSource::Builtin }]
+            extra(hook("UserPromptSubmit", json!({ "prompt": "/anthropic-skills:docx report" }))),
+            vec![SessionEventKind::SkillInvoked {
+                name: "anthropic-skills:docx".into(),
+                by: SkillInvoker::User,
+                source: SkillSource::Builtin
+            }]
         );
-        assert!(extra(hook("UserPromptSubmit", json!({ "prompt": "/model opus" }))).is_empty(), "comando interno");
-        assert!(extra(hook("UserPromptSubmit", json!({ "prompt": "usa /tmp" }))).is_empty());
+        assert!(extra(hook("UserPromptSubmit", json!({ "prompt": "/model opus" }))).is_empty(), "built-in command");
+        assert!(extra(hook("UserPromptSubmit", json!({ "prompt": "use /tmp" }))).is_empty());
         assert!(extra(hook("UserPromptSubmit", json!({ "prompt": "/../../etc" }))).is_empty());
     }
 
     #[test]
     fn permission_requests_say_what_they_want_to_run() {
         assert_eq!(
-            translate(hook("PermissionRequest", json!({ "tool_name": "Bash", "tool_input": { "command": "touch x.txt", "description": "Crear" } }))),
+            translate(hook(
+                "PermissionRequest",
+                json!({ "tool_name": "Bash", "tool_input": { "command": "touch x.txt", "description": "Create" } })
+            )),
             Some(SessionEventKind::AwaitingYou {
                 reason: WaitReason::Permission,
                 tool: Some("Bash".into()),

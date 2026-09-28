@@ -3,10 +3,11 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef, useState } from "react";
 import type { OpenTerminal, WarRoomStore } from "../application/warRoomStore";
+import { copy } from "../domain/copy";
 
 type Props = { terminal: OpenTerminal; store: WarRoomStore };
 
-/** Terminal propio de la app: repinta lo acumulado y sigue la salida en vivo. */
+/** In-app terminal: replays the buffered output and follows it live. */
 export function TerminalPanel({ terminal, store }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const [exited, setExited] = useState(false);
@@ -34,8 +35,8 @@ export function TerminalPanel({ terminal, store }: Props) {
     };
 
     void (async () => {
-      // Suscribirse antes de pedir lo acumulado: así no se pierde nada entre medias (como mucho
-      // se repite un trozo, que en un repintado de pantalla es inocuo).
+      // Subscribe before requesting the snapshot so nothing is lost in between (at worst a chunk is
+      // repeated, which is harmless for a screen repaint).
       const pending: Uint8Array[] = [];
       let ready = false;
       const offOutput = await gateway.onOutput((id, data) => {
@@ -77,17 +78,17 @@ export function TerminalPanel({ terminal, store }: Props) {
   };
 
   return (
-    <aside className="terminal-panel" aria-label={`Terminal: ${terminal.label}`}>
+    <aside className="terminal-panel" aria-label={copy.terminal.label(terminal.label)}>
       <header>
         <span className="dot" data-attention={exited ? "offline" : "working"} />
         <strong>{terminal.label}</strong>
-        {exited && <span className="muted">proceso terminado</span>}
+        {exited && <span className="muted">{copy.terminal.exited}</span>}
         <span className="spacer" />
-        <button onClick={() => store.closeTerminalPanel()} title="El proceso sigue vivo; reábrelo desde su pantalla">
-          Ocultar
+        <button onClick={() => store.closeTerminalPanel()} title={copy.terminal.hideTitle}>
+          {copy.terminal.hide}
         </button>
-        <button onClick={close} title={exited ? "Olvidar este terminal" : "Termina el proceso"}>
-          {exited ? "Cerrar" : "Terminar"}
+        <button onClick={close} title={exited ? copy.terminal.forget : copy.terminal.kill}>
+          {exited ? copy.terminal.close : copy.terminal.terminate}
         </button>
       </header>
       <div className="terminal-host" ref={host} />

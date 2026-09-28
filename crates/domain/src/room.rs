@@ -1,19 +1,19 @@
 use crate::{Attention, EndReason, Session, SessionEvent, SessionEventKind, SessionId};
 use std::collections::HashMap;
 
-/// Todas las sesiones conocidas. Raíz del agregado: los eventos entran aquí.
+/// All known sessions. Aggregate root: events come in here.
 #[derive(Debug, Default, Clone)]
 pub struct WarRoom {
     sessions: HashMap<SessionId, Session>,
 }
 
-/// Cambio de atención provocado por un evento, para decidir avisos.
+/// Attention change caused by an event, used to decide on notifications.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttentionChange {
     pub session: SessionId,
     pub from: Option<Attention>,
     pub to: Attention,
-    /// La sesión está vigilada (ni archivada ni silenciada) tras el evento.
+    /// The session is on watch (neither archived nor muted) after the event.
     pub on_watch: bool,
 }
 
@@ -28,8 +28,8 @@ impl WarRoom {
         Self::default()
     }
 
-    /// Aplica un evento. Devuelve `None` si el evento se ignora (intención sobre una sesión
-    /// desconocida, o señal sin contexto de una sesión que no hemos visto nacer).
+    /// Applies an event. Returns `None` if the event is ignored (an intent on an unknown
+    /// session, or a context-less signal from a session we never saw start).
     pub fn apply(&mut self, event: SessionEvent) -> Option<AttentionChange> {
         let SessionEvent { session: id, at, context, kind } = event;
 
@@ -49,12 +49,7 @@ impl WarRoom {
         };
 
         let session = &self.sessions[&id];
-        Some(AttentionChange {
-            session: id,
-            from,
-            to: session.attention(),
-            on_watch: session.is_on_watch(),
-        })
+        Some(AttentionChange { session: id, from, to: session.attention(), on_watch: session.is_on_watch() })
     }
 
     pub fn get(&self, id: &SessionId) -> Option<&Session> {
@@ -65,23 +60,14 @@ impl WarRoom {
         self.sessions.values()
     }
 
-    /// Color de la sala: la atención más urgente entre las sesiones vigiladas.
+    /// Room colour: the most urgent attention among sessions on watch.
     pub fn aggregate_attention(&self) -> Attention {
-        self.sessions
-            .values()
-            .filter(|s| s.is_on_watch())
-            .map(Session::attention)
-            .max()
-            .unwrap_or(Attention::Offline)
+        self.sessions.values().filter(|s| s.is_on_watch()).map(Session::attention).max().unwrap_or(Attention::Offline)
     }
 
-    /// Sesiones vivas cuyo proceso ya no existe, según `is_alive`. Devuelve los eventos a aplicar;
-    /// quien llame decide persistirlos.
-    pub fn detect_lost(
-        &self,
-        is_alive: impl Fn(u32) -> bool,
-        at: crate::Timestamp,
-    ) -> Vec<SessionEvent> {
+    /// Live sessions whose process no longer exists, according to `is_alive`. Returns the events to
+    /// apply; the caller decides whether to persist them.
+    pub fn detect_lost(&self, is_alive: impl Fn(u32) -> bool, at: crate::Timestamp) -> Vec<SessionEvent> {
         self.sessions
             .values()
             .filter(|s| s.is_alive())
@@ -155,7 +141,11 @@ mod tests {
             .apply(signal(
                 "s",
                 2,
-                SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: Some("Bash".into()), detail: None },
+                SessionEventKind::AwaitingYou {
+                    reason: WaitReason::Permission,
+                    tool: Some("Bash".into()),
+                    detail: None,
+                },
             ))
             .unwrap();
         assert_eq!(change.to, Attention::NeedsYou);
@@ -172,12 +162,12 @@ mod tests {
         room.apply(intent("s", 2, SessionEventKind::Archived));
 
         let change = room.apply(signal("s", 3, SessionEventKind::TurnEnded)).unwrap();
-        assert!(!change.deserves_notice(), "una sesión despedida no avisa");
+        assert!(!change.deserves_notice(), "an archived session does not notify");
         assert_eq!(room.aggregate_attention(), Attention::Offline);
 
         room.apply(signal("s", 4, SessionEventKind::PromptSubmitted));
         let s = room.get(&SessionId("s".into())).unwrap();
-        assert!(!s.archived, "escribirle la desarchiva");
+        assert!(!s.archived, "writing to it unarchives it");
         assert_eq!(room.aggregate_attention(), Attention::Working);
     }
 
@@ -198,7 +188,7 @@ mod tests {
         room.apply(signal("s", 2, SessionEventKind::TurnEnded));
         room.apply(intent("s", 3, SessionEventKind::Seen));
         room.apply(signal("s", 4, SessionEventKind::IdlePrompt));
-        assert_eq!(attention(&room, "s"), Attention::Idle, "no reabre lo ya visto");
+        assert_eq!(attention(&room, "s"), Attention::Idle, "does not reopen what was already seen");
 
         room.apply(signal("t", 1, SessionEventKind::PromptSubmitted));
         room.apply(signal("t", 9, SessionEventKind::IdlePrompt));
@@ -271,7 +261,11 @@ mod tests {
         assert_eq!(s.status, SessionStatus::Working { tool: Some("Agent".into()) });
         assert_eq!(s.subagents["a1"].current_tool.as_deref(), Some("Grep"));
 
-        room.apply(signal("s", 3, SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: Some("Bash".into()), detail: None }));
+        room.apply(signal(
+            "s",
+            3,
+            SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: Some("Bash".into()), detail: None },
+        ));
         room.apply(signal("s", 4, SessionEventKind::SubagentTool { id: "a1".into(), tool: "Bash".into() }));
         assert_eq!(attention(&room, "s"), Attention::Working);
     }
@@ -294,12 +288,13 @@ mod tests {
         let used = &s.skills["close-task"];
         assert_eq!((used.count, used.by_user, used.by_agent), (2, true, true));
         assert_eq!(used.last_at, Timestamp(3));
-        assert_eq!(attention(&room, "s"), Attention::Working, "una skill no cambia el estado");
+        assert_eq!(attention(&room, "s"), Attention::Working, "a skill does not change the status");
     }
 
     #[test]
     fn events_roundtrip_through_json() {
-        let e = signal("s", 1, SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: None, detail: None });
+        let e =
+            signal("s", 1, SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: None, detail: None });
         let json = serde_json::to_string(&e).unwrap();
         assert_eq!(serde_json::from_str::<SessionEvent>(&json).unwrap(), e);
     }

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-/// Cuánto necesita una sesión de ti. El orden de las variantes es el de urgencia, de menor a mayor,
-/// para que el color agregado sea simplemente el máximo.
+/// How much a session needs you. Variants are ordered by urgency, lowest to highest,
+/// so the aggregate colour is simply the maximum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Attention {
@@ -13,7 +13,7 @@ pub enum Attention {
 }
 
 impl Attention {
-    /// Transiciones que merecen un aviso de escritorio.
+    /// States worth a desktop notification.
     pub fn is_alerting(self) -> bool {
         matches!(self, Attention::NeedsYou | Attention::Finished)
     }

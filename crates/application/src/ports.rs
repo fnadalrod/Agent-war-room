@@ -9,29 +9,29 @@ pub enum PortError {
 
 pub type PortResult<T> = Result<T, PortError>;
 
-/// Lo que un proveedor entiende de un payload de hook.
+/// What a provider understands from a hook payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Translated {
     pub session: SessionId,
     pub cwd: String,
     pub transcript_path: Option<String>,
     pub kind: SessionEventKind,
-    /// Eventos que el mismo hook implica además del principal (p. ej. un `/skill` en el prompt).
-    /// Las `SkillInvoked` llegan con una procedencia provisional; la fija [`SkillCatalog`].
+    /// Events implied by the same hook besides the main one (e.g. a `/skill` in the prompt).
+    /// `SkillInvoked` arrives with a provisional source; [`SkillCatalog`] settles it.
     pub extra: Vec<SessionEventKind>,
 }
 
-/// Averigua de dónde sale una skill (repo, personal, plugin o integrada).
+/// Works out where a skill comes from (repo, personal, plugin or built-in).
 pub trait SkillCatalog: Send + Sync {
     fn classify(&self, name: &str, cwd: &str, worktree: &str) -> awr_domain::SkillSource;
 }
 
-/// Traduce los hooks de un agente concreto (Claude, …) a eventos de dominio.
+/// Translates the hooks of a specific agent (Claude, …) into domain events.
 pub trait AgentProvider: Send + Sync {
     fn kind(&self) -> ProviderKind;
-    /// Nombre con el que llega en el envelope.
+    /// Name it arrives with in the envelope.
     fn wire_name(&self) -> &'static str;
-    /// `Ok(None)`: hook conocido pero irrelevante para el estado.
+    /// `Ok(None)`: known hook, but irrelevant to the state.
     fn translate(&self, payload: &serde_json::Value) -> PortResult<Option<Translated>>;
 }
 
@@ -42,7 +42,7 @@ pub trait RepoResolver: Send + Sync {
 pub trait EventStore: Send + Sync {
     fn append(&self, event: &SessionEvent) -> PortResult<()>;
     fn load_since(&self, since: Timestamp) -> PortResult<Vec<SessionEvent>>;
-    /// Borra los eventos anteriores a `before`. Devuelve cuántos.
+    /// Deletes events older than `before`. Returns how many.
     fn prune(&self, before: Timestamp) -> PortResult<usize>;
 }
 
@@ -60,7 +60,7 @@ pub struct Notice {
     pub attention: Attention,
     pub title: String,
     pub body: String,
-    /// Se puede aprobar desde el propio aviso.
+    /// Can be approved from the notice itself.
     pub approvable: bool,
 }
 
@@ -68,27 +68,27 @@ pub trait Notifier: Send + Sync {
     fn notify(&self, notice: &Notice);
 }
 
-/// Recibe el read model cada vez que cambia (UI, bandeja…).
+/// Receives the read model every time it changes (UI, tray…).
 pub trait ViewPublisher: Send + Sync {
     fn publish(&self, view: &WarRoomView);
 }
 
-/// Lo que el transcript cuenta de una sesión y que los hooks no traen.
+/// What the transcript tells about a session that the hooks don't carry.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TranscriptSummary {
-    /// Título que el propio agente genera para la sesión.
+    /// Title the agent itself generates for the session.
     pub title: Option<String>,
-    /// El encargo con el que empezó la sesión.
+    /// The task the session started with.
     pub first_prompt: Option<String>,
     pub last_prompt: Option<String>,
-    /// Último texto del agente (no herramientas).
+    /// Last agent text (not tool use).
     pub last_reply: Option<String>,
-    /// Última herramienta usada con su argumento principal: "Bash · cargo test".
+    /// Last tool used with its main argument: "Bash · cargo test".
     pub last_action: Option<String>,
     pub model: Option<String>,
-    /// Esfuerzo de razonamiento del último turno ("low", "medium", "high"…).
+    /// Reasoning effort of the last turn ("low", "medium", "high"…).
     pub effort: Option<String>,
-    /// Tokens de contexto del último turno (entrada + caché).
+    /// Context tokens of the last turn (input + cache).
     pub context_tokens: Option<u64>,
     pub subagents: Vec<SubagentDetail>,
 }
@@ -104,11 +104,11 @@ pub struct SubagentDetail {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimelineKind {
-    /// Lo que escribiste.
+    /// What you typed.
     Prompt,
-    /// Texto del agente (Markdown).
+    /// Agent text (Markdown).
     Reply,
-    /// Uso de una herramienta, resumido: "Bash · cargo test".
+    /// Tool use, summarised: "Bash · cargo test".
     Tool,
 }
 
@@ -116,44 +116,44 @@ pub enum TimelineKind {
 pub struct TimelineItem {
     pub kind: TimelineKind,
     pub text: String,
-    /// Milisegundos desde epoch, si el transcript lo dice.
+    /// Milliseconds since epoch, if the transcript says so.
     pub at: Option<i64>,
-    /// Con qué modelo y esfuerzo se produjo (solo lo que hace el agente).
+    /// Model and effort that produced it (agent entries only).
     pub model: Option<String>,
     pub effort: Option<String>,
 }
 
-/// Lo que dice el transcript de un subagente.
+/// What a subagent's transcript says.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AgentTranscript {
-    /// El encargo que le dio el agente principal.
+    /// The task the main agent gave it.
     pub first_prompt: Option<String>,
     pub last_reply: Option<String>,
     pub timeline: Vec<TimelineItem>,
 }
 
 pub trait TranscriptReader: Send + Sync {
-    /// Lectura incremental: llamarla a menudo debe ser barato.
+    /// Incremental read: calling it often must be cheap.
     fn read(&self, transcript_path: &str, subagent_ids: &[String]) -> Option<TranscriptSummary>;
-    /// Las últimas `limit` entradas de la conversación principal. Bajo demanda (vista previa).
+    /// The last `limit` entries of the main conversation. On demand (preview).
     fn recent(&self, transcript_path: &str, limit: usize) -> Vec<TimelineItem>;
-    /// Transcript de un subagente de la sesión cuyo transcript principal es `transcript_path`.
+    /// Transcript of a subagent of the session whose main transcript is `transcript_path`.
     fn subagent(&self, transcript_path: &str, agent_id: &str, limit: usize) -> Option<AgentTranscript>;
 }
 
-/// A dónde saltar para ver una sesión.
+/// Where to jump to see a session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FocusTarget {
     pub host: awr_domain::TerminalHost,
-    /// Textos que probablemente aparecen en el título de la ventana correcta, por prioridad.
+    /// Strings likely to appear in the right window's title, by priority.
     pub caption_hints: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FocusOutcome {
-    /// Se pidió enfocar; `via` dice cómo ("tmux + kwin", "kwin"…).
+    /// Focus was requested; `via` says how ("tmux + kwin", "kwin"…).
     Focused { via: String },
-    /// No hay forma conocida de llegar (sin ventana localizable o escritorio no soportado).
+    /// No known way to get there (no locatable window or unsupported desktop).
     Unreachable { reason: String },
 }
 
@@ -167,52 +167,56 @@ pub enum ApprovalDecision {
     Deny { message: Option<String> },
 }
 
-/// Canal de vuelta hacia un agente que espera una decisión de permiso.
+/// Back channel to an agent waiting for a permission decision.
 pub trait ApprovalResponder: Send + Sync {
-    /// El agente sigue esperando: nadie ha contestado aún en la terminal.
+    /// The agent is still waiting: nobody has answered in the terminal yet.
     fn is_open(&self) -> bool;
-    /// Entrega la decisión. `false` si ya no había nadie esperando.
+    /// Delivers the decision. `false` if nobody was waiting any more.
     fn respond(&self, decision: ApprovalDecision) -> bool;
 }
 
-/// Dónde abrir un agente nuevo o reanudado.
+/// Where to open a new or resumed agent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LaunchTarget {
-    /// Terminal propio de la app: se ve y se escribe desde la war room.
+    /// The app's own terminal: viewed and typed into from the war room.
     App,
-    /// Pestaña nueva de Warp.
+    /// New Warp tab.
     Warp,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchRequest {
     pub cwd: String,
-    /// Reanudar esta sesión (`claude --resume <id>`) en vez de empezar una nueva.
+    /// Resume this session (`claude --resume <id>`) instead of starting a new one.
     pub resume: Option<SessionId>,
     pub target: LaunchTarget,
-    /// Nombre para la pestaña o el terminal.
+    /// Name for the tab or terminal.
     pub label: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchOutcome {
-    /// Terminal de la app; la UI puede abrirlo ya, antes de que llegue el primer hook.
-    AppTerminal { pty_id: String },
-    External { via: String },
+    /// App terminal; the UI can open it right away, before the first hook arrives.
+    AppTerminal {
+        pty_id: String,
+    },
+    External {
+        via: String,
+    },
 }
 
 pub trait AgentLauncher: Send + Sync {
     fn launch(&self, request: &LaunchRequest) -> PortResult<LaunchOutcome>;
 }
 
-/// Escribe en una sesión viva como si se tecleara en su terminal.
+/// Writes into a live session as if typed in its terminal.
 pub trait SessionInput: Send + Sync {
-    /// `Err` si la terminal de la sesión no admite escritura desde fuera (solo "ir a").
+    /// `Err` if the session's terminal doesn't accept external input ("go to" only).
     fn send(&self, host: &awr_domain::TerminalHost, text: &str) -> PortResult<()>;
 }
 
-/// Integra el puente de hooks en la configuración del agente.
+/// Wires the hook bridge into the agent's configuration.
 pub trait IntegrationInstaller: Send + Sync {
     fn status(&self) -> PortResult<IntegrationStatus>;
     fn install(&self) -> PortResult<IntegrationStatus>;

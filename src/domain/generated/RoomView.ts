@@ -3,6 +3,6 @@ import type { AttentionView } from "./AttentionView";
 import type { SessionView } from "./SessionView";
 
 /**
- * Una sala por repositorio.
+ * One room per repository.
  */
 export type RoomView = { repo_id: string, repo_name: string, attention: AttentionView, sessions: Array<SessionView>, };

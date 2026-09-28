@@ -92,3 +92,13 @@ Otras utilidades:
 
 - Datos: `~/.local/share/agent-war-room/events.db` (eventos append-only; se conservan 14 días).
 - Socket: `$XDG_RUNTIME_DIR/agent-war-room/ingress.sock`.
+
+## Para agentes de código
+
+La entrada es [`AGENTS.md`](AGENTS.md) (en inglés, como el código). Allí están el mapa del
+proyecto, las invariantes y qué leer según lo que toques. Cada área tiene su `CLAUDE.md`, que solo
+se carga al trabajar en ella.
+
+- `scripts/check.sh` verifica solo lo que cambió, con salida mínima.
+- `npm run shot -- <dir>` hace capturas de la UI de demostración.
+- En `.claude/skills/` hay tres skills: `verify`, `extend-session-model` y `e2e`.

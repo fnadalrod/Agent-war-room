@@ -2,6 +2,6 @@
 import type { SkillSourceView } from "./SkillSourceView";
 
 /**
- * Una skill usada en la sesión: quién la lanzó y de dónde sale.
+ * A skill used in the session: who invoked it and where it comes from.
  */
 export type SkillView = { name: string, source: SkillSourceView, by_user: boolean, by_agent: boolean, count: number, last_at: number, };

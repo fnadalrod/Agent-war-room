@@ -1,10 +1,11 @@
-//! Adaptador de entrada: commands que invoca el front.
+//! Inbound adapter: commands invoked by the front end.
 
+use crate::locale;
 use awr_application::WarRoomService;
 use awr_application::ports::{FocusOutcome, IntegrationInstaller, LaunchOutcome, LaunchTarget, PortResult};
-use awr_infrastructure::pty::{PtyInfo, PtyManager};
 use awr_application::view::{IntegrationStatus, SessionDetail, SubagentPreview, WarRoomView};
 use awr_domain::SessionId;
+use awr_infrastructure::pty::{PtyInfo, PtyManager};
 use std::sync::Arc;
 use tauri::State;
 
@@ -12,7 +13,7 @@ type Service<'a> = State<'a, Arc<WarRoomService>>;
 type Installer<'a> = State<'a, Arc<dyn IntegrationInstaller>>;
 type Ptys<'a> = State<'a, Arc<PtyManager>>;
 
-/// Resultado de lanzar un agente, para que la UI abra su terminal si es de la app.
+/// Result of launching an agent, so the UI can open its terminal if it is an app terminal.
 #[derive(serde::Serialize)]
 pub struct Launched {
     pty_id: Option<String>,
@@ -28,7 +29,7 @@ impl From<LaunchOutcome> for Launched {
     }
 }
 
-/// Ejecuta un caso de uso con IO bloqueante (procesos, sockets) fuera del hilo de la UI.
+/// Runs a use case with blocking IO (processes, sockets) off the UI thread.
 async fn blocking<T: Send + 'static>(
     service: &State<'_, Arc<WarRoomService>>,
     work: impl FnOnce(&WarRoomService) -> PortResult<T> + Send + 'static,
@@ -59,7 +60,7 @@ pub fn mark_all_seen(service: Service) -> Result<(), String> {
     done(service.mark_all_seen())
 }
 
-/// Devuelve cómo se llegó ("kwin", "tmux + kwin", "warp") o falla con el motivo.
+/// Returns how the window was reached ("kwin", "tmux + kwin", "warp") or fails with the reason.
 #[tauri::command]
 pub async fn focus(service: State<'_, Arc<WarRoomService>>, id: String) -> Result<String, String> {
     match blocking(&service, move |s| s.focus(SessionId(id))).await? {
@@ -141,7 +142,7 @@ pub fn pty_list(ptys: Ptys) -> Vec<PtyInfo> {
     ptys.list()
 }
 
-/// Salida acumulada del terminal en base64, para repintarlo al abrirlo.
+/// The terminal's accumulated output in base64, to repaint it when opened.
 #[tauri::command]
 pub fn pty_snapshot(ptys: Ptys, id: String) -> Result<String, String> {
     use base64::Engine;
@@ -163,7 +164,7 @@ pub fn pty_close(ptys: Ptys, id: String) -> Result<(), String> {
     ptys.close(&id)
 }
 
-/// Vista previa de una sesión con sus últimas entradas de conversación.
+/// Preview of a session with its latest conversation entries.
 #[tauri::command]
 pub async fn session_detail(
     service: State<'_, Arc<WarRoomService>>,
@@ -173,17 +174,17 @@ pub async fn session_detail(
     blocking(&service, move |s| s.session_detail(SessionId(id), limit.unwrap_or(60))).await
 }
 
-/// Abre un enlace (del Markdown de un agente) en el navegador del sistema. Solo http(s).
+/// Opens a link (from an agent's Markdown) in the system browser. http(s) only.
 #[tauri::command]
 pub fn open_external(url: String) -> Result<(), String> {
     if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err("solo se abren enlaces http(s)".into());
+        return Err(locale::ONLY_HTTP_LINKS.into());
     }
     awr_infrastructure::desktop::open_url(&url);
     Ok(())
 }
 
-/// Si la app arranca sola al iniciar sesión.
+/// Whether the app starts automatically on login.
 #[tauri::command]
 pub fn autostart_enabled(app: tauri::AppHandle) -> Result<bool, String> {
     use tauri_plugin_autostart::ManagerExt;
@@ -198,7 +199,7 @@ pub fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<bool, Strin
     launcher.is_enabled().map_err(|e| e.to_string())
 }
 
-/// Vista previa de un subagente.
+/// Preview of a subagent.
 #[tauri::command]
 pub async fn subagent_detail(
     service: State<'_, Arc<WarRoomService>>,

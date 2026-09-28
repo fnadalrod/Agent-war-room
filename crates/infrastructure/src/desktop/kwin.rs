@@ -1,6 +1,7 @@
-//! Activación de ventanas en KDE Plasma (X11 y Wayland) con un script de KWin cargado por DBus.
-//! En Wayland es la única vía: solo el compositor puede dar el foco a otra aplicación.
+//! Window activation on KDE Plasma (X11 and Wayland) through a KWin script loaded over DBus.
+//! On Wayland it is the only way: only the compositor can give focus to another application.
 
+use crate::locale;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -20,11 +21,11 @@ impl Kwin {
         Some(Self { script_path: awr_wire::runtime_dir().join("kwin-focus.js") })
     }
 
-    /// Activa la ventana normal cuyo PID aparezca antes en `pids`; entre varias del mismo proceso
-    /// (IDE con varios proyectos, varias ventanas de Warp) gana la que tenga una pista en el título.
+    /// Activates the normal window whose PID comes first in `pids`; among several from the same
+    /// process (an IDE with several projects, several Warp windows) the one with a hint in its caption wins.
     pub fn activate(&self, pids: &[u32], hints: &[String]) -> Result<(), String> {
         if pids.is_empty() {
-            return Err("sin procesos candidatos".into());
+            return Err(locale::NO_CANDIDATE_PROCESSES.into());
         }
         if let Some(dir) = self.script_path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -32,15 +33,25 @@ impl Kwin {
         std::fs::write(&self.script_path, script(pids, hints)).map_err(|e| e.to_string())?;
 
         let path = self.script_path.to_string_lossy();
-        let _ = busctl(&["call", "org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting", "unloadScript", "s", SCRIPT_NAME]);
-        let loaded = busctl(&["call", "org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting", "loadScript", "ss", &path, SCRIPT_NAME])?;
-        // Respuesta: `i <id>`.
+        let _ =
+            busctl(&["call", "org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting", "unloadScript", "s", SCRIPT_NAME]);
+        let loaded = busctl(&[
+            "call",
+            "org.kde.KWin",
+            "/Scripting",
+            "org.kde.kwin.Scripting",
+            "loadScript",
+            "ss",
+            &path,
+            SCRIPT_NAME,
+        ])?;
+        // Reply: `i <id>`.
         let id: i64 = loaded
             .split_whitespace()
             .nth(1)
             .and_then(|n| n.parse().ok())
             .filter(|id| *id >= 0)
-            .ok_or_else(|| format!("KWin no cargó el script: {loaded}"))?;
+            .ok_or_else(|| locale::kwin_script_not_loaded(&loaded))?;
         busctl(&["call", "org.kde.KWin", &format!("/Scripting/Script{id}"), "org.kde.kwin.Script", "run"])?;
         Ok(())
     }
@@ -68,7 +79,7 @@ fn script(pids: &[u32], hints: &[String]) -> String {
         const rank = pids.indexOf(w.pid);
         if (rank < 0) continue;
         const caption = String(w.caption || "").toLowerCase();
-        // "Tintero" no debe ganar en "Tintero3Repo": la palabra completa pesa diez veces más.
+        // "Tintero" must not win on "Tintero3Repo": a whole-word match weighs ten times more.
         let bonus = 0;
         for (let i = 0; i < hints.length; i++) {{
             const weight = (hints.length - i) * 1000;
@@ -110,8 +121,8 @@ mod tests {
         assert!(s.contains(r#"const hints = ["tintero3repo-wt-f1","it's \"quoted\""];"#));
     }
 
-    /// Ejecuta el script real contra un `workspace` simulado con títulos de un IDE con varios
-    /// proyectos abiertos en un mismo proceso. Requiere Node; si no está, se omite.
+    /// Runs the real script against a fake `workspace` with the captions of an IDE that has several
+    /// projects open in one process. Needs Node; skipped if missing.
     #[test]
     fn picks_the_window_whose_caption_names_the_worktree() {
         const HARNESS: &str = r#"
@@ -137,20 +148,19 @@ mod tests {
         let Some(tintero) = pick(&["Tintero", "Tintero"]) else { return };
         assert_eq!(tintero, "Tintero – Commit: y.ts");
         assert_eq!(pick(&["Tintero3Repo-wt-f1", "Tintero3Repo"]).unwrap(), "Tintero3Repo – Commit: x.ts");
-        assert_eq!(pick(&["Un título", "Tintero2Repo"]).unwrap(), "Tintero2Repo – .env");
+        assert_eq!(pick(&["Some title", "Tintero2Repo"]).unwrap(), "Tintero2Repo – .env");
     }
 }
 
 #[cfg(test)]
 mod live {
-    /// Manual: `cargo test -p awr-infrastructure kwin_live -- --ignored`. Activa la ventana que
-    /// contiene a este proceso (la terminal o IDE desde el que se lanza).
+    /// Manual: `cargo test -p awr-infrastructure kwin_live -- --ignored`. Activates the window that
+    /// contains this process (the terminal or IDE it is run from).
     #[test]
     #[ignore]
     fn kwin_live_activates_the_window_of_this_process_tree() {
-        let kwin = super::Kwin::detect().expect("KDE Plasma con KWin");
+        let kwin = super::Kwin::detect().expect("KDE Plasma with KWin");
         let pids = crate::desktop::proc::ancestry(std::process::id());
         kwin.activate(&pids, &["AgentWarRoom".into()]).unwrap();
     }
 }
-

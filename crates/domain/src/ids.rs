@@ -11,13 +11,13 @@ impl fmt::Display for SessionId {
     }
 }
 
-/// Identidad de un repositorio: su `git common dir`, compartido por todos sus worktrees.
-/// Fuera de git es la propia carpeta de trabajo.
+/// Identity of a repository: its `git common dir`, shared by all its worktrees.
+/// Outside git it is the working directory itself.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct RepoId(pub String);
 
-/// Milisegundos desde epoch Unix.
+/// Milliseconds since the Unix epoch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Timestamp(pub i64);

@@ -1,5 +1,5 @@
-// Raíz de composición del front: conecta el store con los adaptadores de Tauri, o con los de
-// demostración si la UI se abre fuera de la app (navegador, capturas, diseño).
+// Front-end composition root: wires the store to the Tauri adapters, or to the demo ones when the UI
+// is opened outside the app (browser, screenshots, design).
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { WarRoomStore } from "./application/warRoomStore";

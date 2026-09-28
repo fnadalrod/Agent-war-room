@@ -1,14 +1,14 @@
 use crate::RepoId;
 use serde::{Deserialize, Serialize};
 
-/// Dónde trabaja una sesión: el repo (sala) y el worktree concreto (puesto).
+/// Where a session works: the repo (room) and the specific worktree (desk).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Workspace {
     pub repo: RepoId,
     pub repo_name: String,
     pub worktree_path: String,
     pub branch: Option<String>,
-    /// `true` si la carpeta es un worktree secundario, no el checkout principal.
+    /// `true` if the directory is a linked worktree, not the main checkout.
     pub is_linked_worktree: bool,
 }
 
@@ -18,29 +18,29 @@ pub struct ProcessInfo {
     pub name: String,
 }
 
-/// Dónde vive la sesión en el escritorio. Es lo que permite "ir a" ella.
-/// `serde(default)`: los eventos ya guardados siguen siendo legibles al añadir campos.
+/// Where the session lives on the desktop. This is what makes it possible to "go to" it.
+/// `serde(default)`: already stored events stay readable when fields are added.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TerminalHost {
-    /// PID del proceso del agente, para saber si sigue vivo.
+    /// PID of the agent process, to know whether it is still alive.
     pub agent_pid: Option<u32>,
-    /// Cómo se lanzó el agente (`claude --resume …`).
+    /// How the agent was launched (`claude --resume …`).
     pub agent_command: Option<String>,
-    /// Cadena de procesos desde el padre del hook hacia arriba (shell, agente, terminal…).
+    /// Process chain from the hook's parent upwards (shell, agent, terminal…).
     pub ancestry: Vec<ProcessInfo>,
     pub tmux_pane: Option<String>,
-    /// Socket del servidor tmux (primer campo de `$TMUX`).
+    /// tmux server socket (first field of `$TMUX`).
     pub tmux_socket: Option<String>,
     pub term_program: Option<String>,
-    /// `warp://session/<uuid>`: enlace que enfoca el pane exacto de Warp.
+    /// `warp://session/<uuid>`: link that focuses the exact Warp pane.
     pub warp_focus_url: Option<String>,
-    /// Terminal lanzado por la propia app en el que corre la sesión (se puede ver y escribir).
+    /// Terminal launched by the app itself in which the session runs (can be viewed and typed into).
     pub pty_id: Option<String>,
 }
 
 impl TerminalHost {
-    /// PIDs por encima del agente, del más cercano al más lejano: candidatos a ser su ventana.
+    /// PIDs above the agent, nearest first: candidates for its window.
     pub fn pids_above_agent(&self) -> Vec<u32> {
         let above = match self.agent_pid {
             Some(agent) => self.ancestry.iter().skip_while(|p| p.pid != agent).skip(1).collect::<Vec<_>>(),

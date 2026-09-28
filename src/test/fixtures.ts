@@ -1,4 +1,4 @@
-// Fábricas para tests del front.
+// Factories for front-end tests.
 import type { AttentionView, RoomView, SessionView, WarRoomView } from "../domain/attention";
 
 export function aSession(p: Partial<SessionView> = {}): SessionView {
@@ -6,7 +6,7 @@ export function aSession(p: Partial<SessionView> = {}): SessionView {
     id: "s1",
     provider: "claude",
     attention: "idle",
-    status_label: "En espera",
+    status_label: "Idle",
     title: null,
     first_prompt: null,
     command: null,

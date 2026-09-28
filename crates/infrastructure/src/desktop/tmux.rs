@@ -1,7 +1,7 @@
 use std::process::Command;
 
-/// Lleva el pane al frente de su ventana y a un cliente adjunto. Devuelve el PID de ese cliente
-/// (la terminal a enfocar después), o `None` si nadie está mirando ese servidor de tmux.
+/// Brings the pane to the front of its window and onto an attached client. Returns that client's
+/// PID (the terminal to focus next), or `None` if nobody is attached to that tmux server.
 pub fn select(socket: Option<&str>, pane: &str) -> Result<Option<u32>, String> {
     let tmux = |args: &[&str]| run(socket, args);
     tmux(&["select-window", "-t", pane])?;
@@ -15,7 +15,7 @@ pub fn select(socket: Option<&str>, pane: &str) -> Result<Option<u32>, String> {
     if let Some(client) = clients.iter().find(|c| c.session == session) {
         return Ok(Some(client.pid));
     }
-    // Nadie mira esa sesión: el cliente usado más recientemente se cambia a ella.
+    // Nobody is viewing that session: the most recently used client switches to it.
     match clients.first() {
         Some(client) => {
             tmux(&["switch-client", "-c", &client.tty, "-t", pane])?;
@@ -56,7 +56,7 @@ fn run(socket: Option<&str>, args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim_end().to_owned())
 }
 
-/// Escribe texto en un pane como si se tecleara, y opcionalmente pulsa Enter.
+/// Types text into a pane as if typed, optionally pressing Enter.
 pub fn send_text(socket: Option<&str>, pane: &str, text: &str, submit: bool) -> Result<(), String> {
     run(socket, &["send-keys", "-t", pane, "-l", text])?;
     if submit {
@@ -71,11 +71,14 @@ mod tests {
 
     #[test]
     fn parses_client_lines_with_spaces_in_the_session_name() {
-        let c = Client::parse("1234 /dev/pts/3 1790000000 mi sesión").unwrap();
-        assert_eq!((c.pid, c.tty.as_str(), c.activity, c.session.as_str()), (1234, "/dev/pts/3", 1790000000, "mi sesión"));
+        let c = Client::parse("1234 /dev/pts/3 1790000000 my session").unwrap();
+        assert_eq!(
+            (c.pid, c.tty.as_str(), c.activity, c.session.as_str()),
+            (1234, "/dev/pts/3", 1790000000, "my session")
+        );
     }
 
-    /// Servidor tmux aislado (socket propio) para no tocar el del usuario.
+    /// Isolated tmux server (own socket) so the user's one is left alone.
     #[test]
     fn selects_a_pane_on_a_private_server_and_reports_no_client() {
         if Command::new("tmux").arg("-V").output().is_err() {
@@ -84,14 +87,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let socket = dir.path().join("t.sock");
         let socket = socket.to_str().unwrap();
-        run(Some(socket), &["new-session", "-d", "-s", "prueba", "-x", "80", "-y", "20"]).unwrap();
-        let pane = run(Some(socket), &["display-message", "-p", "-t", "prueba", "#{pane_id}"]).unwrap();
+        run(Some(socket), &["new-session", "-d", "-s", "test", "-x", "80", "-y", "20"]).unwrap();
+        let pane = run(Some(socket), &["display-message", "-p", "-t", "test", "#{pane_id}"]).unwrap();
 
         assert_eq!(select(Some(socket), &pane), Ok(None));
-        send_text(Some(socket), &pane, "echo hola-war-room", true).unwrap();
+        send_text(Some(socket), &pane, "echo hello-war-room", true).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(300));
         let screen = run(Some(socket), &["capture-pane", "-p", "-t", &pane]).unwrap();
-        assert!(screen.contains("hola-war-room"));
+        assert!(screen.contains("hello-war-room"));
 
         let _ = run(Some(socket), &["kill-server"]);
     }

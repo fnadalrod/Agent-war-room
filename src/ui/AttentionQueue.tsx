@@ -1,11 +1,12 @@
 import type { WarRoomStore } from "../application/warRoomStore";
 import { deskName, isOnWatch, plainText, type SessionView, type WarRoomView } from "../domain/attention";
+import { copy } from "../domain/copy";
 import { CheckIcon, EyeIcon, GoIcon } from "./icons";
 import { since } from "./useStore";
 
 type Props = { view: WarRoomView; store: WarRoomStore; now: number };
 
-/** Lo que te está esperando, de todos los repos, en un solo sitio. */
+/** Everything waiting on you, across all repos, in one place. */
 export function AttentionQueue({ view, store, now }: Props) {
   const waiting = view.rooms
     .flatMap((room) => room.sessions.map((s) => ({ room: room.repo_name, s })))
@@ -15,13 +16,13 @@ export function AttentionQueue({ view, store, now }: Props) {
   if (waiting.length === 0) return null;
 
   return (
-    <section className="queue" aria-label="Requiere tu atención">
-      <h2>Requiere tu atención</h2>
+    <section className="queue" aria-label={copy.queue.title}>
+      <h2>{copy.queue.title}</h2>
       <ul>
         {waiting.map(({ room, s }) => (
           <li key={s.id} data-attention={s.attention}>
             <span className="dot" data-attention={s.attention} />
-            <button className="queue-main" onClick={() => store.openDetail(s.id)} title="Abrir la vista previa">
+            <button className="queue-main" onClick={() => store.openDetail(s.id)} title={copy.actions.openPreview}>
               <strong>{s.title ?? deskName(s)}</strong>
               <span className="muted">
                 {room}
@@ -36,21 +37,21 @@ export function AttentionQueue({ view, store, now }: Props) {
               {s.can_approve && (
                 <>
                   <button className="primary danger" onClick={() => store.approve(s)}>
-                    Aprobar
+                    {copy.actions.approve}
                   </button>
-                  <button onClick={() => store.deny(s)}>Denegar</button>
+                  <button onClick={() => store.deny(s)}>{copy.actions.deny}</button>
                 </>
               )}
-              <button className="icon" onClick={() => store.openDetail(s.id)} title="Vista previa">
+              <button className="icon" onClick={() => store.openDetail(s.id)} title={copy.actions.preview}>
                 <EyeIcon />
               </button>
               {s.alive && (
-                <button className="icon" onClick={() => store.goTo(s)} title="Ir a su ventana">
+                <button className="icon" onClick={() => store.goTo(s)} title={copy.actions.goToWindow}>
                   <GoIcon />
                 </button>
               )}
               {s.attention === "finished" && (
-                <button className="icon" onClick={() => store.acknowledge(s)} title="Marcar como visto">
+                <button className="icon" onClick={() => store.acknowledge(s)} title={copy.actions.markSeen}>
                   <CheckIcon />
                 </button>
               )}

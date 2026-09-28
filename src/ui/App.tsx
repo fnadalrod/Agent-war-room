@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from "react";
 import type { WarRoomStore } from "../application/warRoomStore";
-import { applyFilter, ATTENTION_LABEL, archivedCount, countBy } from "../domain/attention";
+import { applyFilter, archivedCount, countBy } from "../domain/attention";
+import { copy } from "../domain/copy";
 import { AttentionQueue } from "./AttentionQueue";
 import { DetailPanel } from "./DetailPanel";
 import { FilterBar } from "./FilterBar";
@@ -9,7 +10,7 @@ import { WarRoomScene } from "./pixel/WarRoomScene";
 import { RoomPanel } from "./RoomPanel";
 import { useNow, usePreference, useWarRoom } from "./useStore";
 
-// xterm pesa: solo se carga al abrir un terminal.
+// xterm is heavy: load it only when a terminal is opened.
 const TerminalPanel = lazy(() => import("./TerminalPanel").then((m) => ({ default: m.TerminalPanel })));
 
 const VIEWS = ["classic", "pixel"] as const;
@@ -20,7 +21,7 @@ export function App({ store }: { store: WarRoomStore }) {
   const [showArchived, setShowArchived] = useState(false);
   const [mode, setMode] = usePreference("awr.view", "classic", VIEWS);
   const fullView = state.view;
-  // Lo que se ve pasa por el filtro; la cabecera y la bandeja cuentan siempre la sala entera.
+  // What is shown goes through the filter; the header counters always count the whole room.
   const view = fullView ? applyFilter(fullView, state.filter) : null;
   const detailFallback =
     state.detail && view ? (view.rooms.flatMap((r) => r.sessions).find((x) => x.id === state.detail!.id) ?? null) : null;
@@ -31,14 +32,14 @@ export function App({ store }: { store: WarRoomStore }) {
       <header className="topbar">
         <div className="brand">
           <span className="lamp" data-attention={aggregate} />
-          <h1>Agent War Room</h1>
+          <h1>{copy.appName}</h1>
         </div>
 
         {fullView && (
-          <div className="counters" aria-label="Resumen">
+          <div className="counters" aria-label={copy.topbar.summary}>
             {(["needs_you", "finished", "working"] as const).map((a) => (
               <span key={a} className="counter" data-attention={a} data-zero={countBy(fullView, a) === 0}>
-                <b>{countBy(fullView, a)}</b> {ATTENTION_LABEL[a]}
+                <b>{countBy(fullView, a)}</b> {copy.attention[a]}
               </span>
             ))}
           </div>
@@ -47,21 +48,21 @@ export function App({ store }: { store: WarRoomStore }) {
         <div className="topbar-tools">
           {view && countBy(view, "finished") > 0 && (
             <button className="ghost" onClick={() => store.acknowledgeAll()}>
-              Todo visto
+              {copy.topbar.allSeen}
             </button>
           )}
-          <div className="segmented" role="group" aria-label="Vista">
+          <div className="segmented" role="group" aria-label={copy.topbar.view}>
             <button aria-pressed={mode === "classic"} onClick={() => setMode("classic")}>
-              Clásica
+              {copy.topbar.classic}
             </button>
             <button aria-pressed={mode === "pixel"} onClick={() => setMode("pixel")}>
-              War Room
+              {copy.topbar.warRoom}
             </button>
           </div>
           {view && (
             <label className="toggle">
               <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
-              Archivadas <span className="muted">{archivedCount(view)}</span>
+              {copy.topbar.archived} <span className="muted">{archivedCount(view)}</span>
             </label>
           )}
           <IntegrationBadge status={state.integration} busy={state.busy} store={store} autostart={state.autostart} />
@@ -73,7 +74,7 @@ export function App({ store }: { store: WarRoomStore }) {
           <div className="error" role="alert">
             <span>{state.error}</span>
             <button className="ghost" onClick={() => store.dismissError()}>
-              Cerrar
+              {copy.app.close}
             </button>
           </div>
         )}
@@ -102,16 +103,16 @@ export function App({ store }: { store: WarRoomStore }) {
             ))}
           {view && fullView && view.rooms.length === 0 && fullView.rooms.length > 0 && (
             <div className="empty">
-              <p>Nada coincide con el filtro.</p>
+              <p>{copy.app.noMatch}</p>
               <button className="ghost" onClick={() => store.clearFilter()}>
-                Quitar filtros
+                {copy.app.clearFilters}
               </button>
             </div>
           )}
           {fullView && fullView.rooms.length === 0 && (
             <div className="empty">
-              <p>Sala vacía.</p>
-              <p className="muted">Cuando un agente arranque o haga algo, aparecerá aquí su tarjeta.</p>
+              <p>{copy.app.emptyRoom}</p>
+              <p className="muted">{copy.app.emptyRoomHint}</p>
             </div>
           )}
         </main>

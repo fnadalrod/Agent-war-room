@@ -4,7 +4,7 @@ use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Mutex;
 
-/// Almacén append-only de eventos. El estado se reconstruye plegándolos.
+/// Append-only event store. State is rebuilt by folding the events.
 pub struct SqliteEventStore {
     conn: Mutex<Connection>,
 }
@@ -53,14 +53,12 @@ impl EventStore for SqliteEventStore {
 
     fn load_since(&self, since: Timestamp) -> PortResult<Vec<SessionEvent>> {
         let conn = self.conn.lock().unwrap();
-        // Orden de inserción, no de `at`: es el orden en que se aplicaron.
+        // Insertion order, not `at` order: it is the order they were applied in.
         let mut stmt = conn.prepare("SELECT body FROM events WHERE at >= ?1 ORDER BY id").map_err(fail)?;
-        let rows = stmt
-            .query_map(params![since.0], |row| row.get::<_, String>(0))
-            .map_err(fail)?;
+        let rows = stmt.query_map(params![since.0], |row| row.get::<_, String>(0)).map_err(fail)?;
         let mut events = Vec::new();
         for body in rows {
-            // Un evento ilegible (p. ej. de una versión futura) no debe impedir arrancar.
+            // An unreadable event (e.g. from a future version) must not prevent startup.
             if let Ok(event) = serde_json::from_str(&body.map_err(fail)?) {
                 events.push(event);
             }
@@ -69,11 +67,7 @@ impl EventStore for SqliteEventStore {
     }
 
     fn prune(&self, before: Timestamp) -> PortResult<usize> {
-        self.conn
-            .lock()
-            .unwrap()
-            .execute("DELETE FROM events WHERE at < ?1", params![before.0])
-            .map_err(fail)
+        self.conn.lock().unwrap().execute("DELETE FROM events WHERE at < ?1", params![before.0]).map_err(fail)
     }
 }
 

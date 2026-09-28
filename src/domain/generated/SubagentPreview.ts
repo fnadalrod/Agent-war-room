@@ -3,6 +3,6 @@ import type { SubagentView } from "./SubagentView";
 import type { TimelineEntryView } from "./TimelineEntryView";
 
 /**
- * Vista previa de un subagente: qué le encargaron, qué contestó y qué fue haciendo.
+ * Subagent preview: what it was asked, what it answered and what it did along the way.
  */
 export type SubagentPreview = { session_id: string, agent: SubagentView, first_prompt: string | null, last_reply: string | null, timeline: Array<TimelineEntryView>, };

@@ -1,7 +1,6 @@
 import type { WarRoomStore } from "../application/warRoomStore";
 import {
   agentName,
-  ATTENTION_LABEL,
   contextLabel,
   deskName,
   extraActivity,
@@ -11,6 +10,7 @@ import {
   whereItLives,
   type SessionView,
 } from "../domain/attention";
+import { copy } from "../domain/copy";
 import {
   ArchiveIcon,
   BellIcon,
@@ -29,27 +29,27 @@ import { since } from "./useStore";
 
 type Props = { session: SessionView; store: WarRoomStore; now: number };
 
-/** Tarjeta de una sesión. Clic en el cuerpo: vista previa. */
+/** A session card. Clicking the body opens the preview. */
 export function SessionScreen({ session: s, store, now }: Props) {
   const excerpt = s.attention !== "working" && s.last_reply ? plainText(s.last_reply) : null;
   const label = s.title ?? deskName(s);
 
   return (
     <article className="card" data-attention={s.attention} data-muted={s.muted} data-archived={s.archived}>
-      <button className="card-body" onClick={() => store.openDetail(s.id)} title="Abrir la vista previa">
+      <button className="card-body" onClick={() => store.openDetail(s.id)} title={copy.actions.openPreview}>
         <div className="card-top">
           <span className="chip" data-attention={s.attention}>
-            {ATTENTION_LABEL[s.attention]}
+            {copy.attention[s.attention]}
           </span>
           <span className="muted">{since(s.status_since, now)}</span>
           <span className="spacer" />
           {s.subagents.some((a) => a.running) && (
-            <span className="badge" title="Subagentes trabajando">
+            <span className="badge" title={copy.card.subagentsWorking}>
               <RobotIcon size={13} /> {s.subagents.filter((a) => a.running).length}
             </span>
           )}
           {s.muted && (
-            <span className="badge" title="Silenciada">
+            <span className="badge" title={copy.card.muted}>
               <BellOffIcon size={13} />
             </span>
           )}
@@ -65,9 +65,9 @@ export function SessionScreen({ session: s, store, now }: Props) {
       {s.can_approve && (
         <div className="card-approval">
           <button className="primary danger" onClick={() => store.approve(s)}>
-            <CheckIcon size={14} /> Aprobar
+            <CheckIcon size={14} /> {copy.actions.approve}
           </button>
-          <button onClick={() => store.deny(s)}>Denegar</button>
+          <button onClick={() => store.deny(s)}>{copy.actions.deny}</button>
         </div>
       )}
 
@@ -76,48 +76,48 @@ export function SessionScreen({ session: s, store, now }: Props) {
       <footer className="card-foot">
         <div className="card-where">
           <BranchIcon size={13} />
-          <span className="branch">{s.branch ?? "sin rama"}</span>
+          <span className="branch">{s.branch ?? copy.card.noBranch}</span>
           <span className="muted">· {deskName(s)}</span>
-          {s.is_linked_worktree && <span className="tag">worktree</span>}
+          {s.is_linked_worktree && <span className="tag">{copy.session.worktree}</span>}
         </div>
         <div className="card-meta">
-          {[modelAndEffort(s.model, s.effort), contextLabel(s) && `${contextLabel(s)} ctx`, whereItLives(s)]
+          {[modelAndEffort(s.model, s.effort), contextLabel(s) && copy.session.context(contextLabel(s)!), whereItLives(s)]
             .filter(Boolean)
             .join(" · ")}
         </div>
         <div className="card-actions">
           {s.alive ? (
-            <button className="primary" onClick={() => store.goTo(s)} title={`Ir a su ventana · ${whereItLives(s)}`}>
-              <GoIcon size={14} /> Ir a
+            <button className="primary" onClick={() => store.goTo(s)} title={copy.actions.goToWindowVia(whereItLives(s))}>
+              <GoIcon size={14} /> {copy.card.goTo}
             </button>
           ) : (
-            <button className="primary" onClick={() => store.resume(s, "app")} title="Reanudar en un terminal de la app">
-              <PlayIcon size={13} /> Reanudar
+            <button className="primary" onClick={() => store.resume(s, "app")} title={copy.card.resumeInApp}>
+              <PlayIcon size={13} /> {copy.actions.resume}
             </button>
           )}
           {!s.alive && (
-            <button onClick={() => store.resume(s, "warp")} title="Reanudar en una pestaña de Warp">
-              en Warp
+            <button onClick={() => store.resume(s, "warp")} title={copy.card.resumeInWarp}>
+              {copy.actions.inWarp}
             </button>
           )}
           <span className="spacer" />
           {s.attention === "finished" && (
-            <button className="icon" onClick={() => store.acknowledge(s)} title="Marcar como visto">
+            <button className="icon" onClick={() => store.acknowledge(s)} title={copy.actions.markSeen}>
               <CheckIcon />
             </button>
           )}
           {s.pty_id && s.alive && (
-            <button className="icon" onClick={() => store.openTerminal(s.pty_id!, label)} title="Abrir su terminal">
+            <button className="icon" onClick={() => store.openTerminal(s.pty_id!, label)} title={copy.actions.openTerminal}>
               <TerminalIcon />
             </button>
           )}
-          <button className="icon" onClick={() => store.toggleMute(s)} title={s.muted ? "Reactivar avisos" : "Silenciar avisos"}>
+          <button className="icon" onClick={() => store.toggleMute(s)} title={s.muted ? copy.actions.unmute : copy.actions.mute}>
             {s.muted ? <BellIcon /> : <BellOffIcon />}
           </button>
           <button
             className="icon"
             onClick={() => store.toggleArchive(s)}
-            title={s.archived ? "Readmitir en la sala" : "Despedir: ocultar y dejar de avisar"}
+            title={s.archived ? copy.actions.unarchive : copy.actions.archive}
           >
             {s.archived ? <RestoreIcon /> : <ArchiveIcon />}
           </button>
@@ -129,19 +129,19 @@ export function SessionScreen({ session: s, store, now }: Props) {
 
 const STRIP_MAX = 4;
 
-/** Subagentes de la sesión, en pequeño y clicables: abren su propia vista previa. */
+/** The session's subagents, small and clickable: each opens its own preview. */
 function AgentStrip({ session: s, store }: { session: SessionView; store: WarRoomStore }) {
   const shown = s.subagents.slice(0, STRIP_MAX);
   const rest = s.subagents.length - shown.length;
   return (
-    <ul className="agent-strip" aria-label="Subagentes">
+    <ul className="agent-strip" aria-label={copy.card.subagents}>
       {shown.map((a) => (
         <li key={a.id}>
           <button
             className="agent-chip"
             data-running={a.running}
             onClick={() => store.openSubagent(s.id, a.id)}
-            title={`${agentName(a)}${a.kind ? ` (${a.kind})` : ""} · ${a.running ? "trabajando" : "terminado"}${
+            title={`${agentName(a)}${a.kind ? ` (${a.kind})` : ""} · ${copy.session.subagentState(a.running)}${
               a.model ? ` · ${modelAndEffort(a.model, a.effort)}` : ""
             }`}
           >
@@ -153,7 +153,7 @@ function AgentStrip({ session: s, store }: { session: SessionView; store: WarRoo
       ))}
       {rest > 0 && (
         <li>
-          <button className="agent-chip more" onClick={() => store.openDetail(s.id)} title="Ver todos en la vista previa">
+          <button className="agent-chip more" onClick={() => store.openDetail(s.id)} title={copy.card.seeAllInPreview}>
             +{rest}
           </button>
         </li>

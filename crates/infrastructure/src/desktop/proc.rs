@@ -1,4 +1,4 @@
-/// `pid` y sus antecesores, del más cercano al más lejano (sin llegar a init).
+/// `pid` and its ancestors, nearest first (stopping before init).
 pub fn ancestry(pid: u32) -> Vec<u32> {
     let mut chain = Vec::new();
     let mut current = pid;

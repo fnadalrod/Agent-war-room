@@ -1,6 +1,6 @@
 use crate::{
-    Attention, EndReason, ProviderKind, SessionContext, SessionEventKind, SessionId, SkillInvoker,
-    SkillSource, TerminalHost, Timestamp, WaitReason, Workspace,
+    Attention, EndReason, ProviderKind, SessionContext, SessionEventKind, SessionId, SkillInvoker, SkillSource,
+    TerminalHost, Timestamp, WaitReason, Workspace,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -8,14 +8,22 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SessionStatus {
-    /// Esperando tu primer prompt o ya revisada.
+    /// Waiting for your first prompt, or already reviewed.
     Idle,
-    Working { tool: Option<String> },
-    AwaitingYou { reason: WaitReason, tool: Option<String>, detail: Option<String> },
-    /// Turno terminado: te toca.
+    Working {
+        tool: Option<String>,
+    },
+    AwaitingYou {
+        reason: WaitReason,
+        tool: Option<String>,
+        detail: Option<String>,
+    },
+    /// Turn ended: your move.
     AwaitingInput,
     Compacting,
-    Ended { reason: EndReason },
+    Ended {
+        reason: EndReason,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,7 +33,7 @@ pub struct Subagent {
     pub started_at: Timestamp,
     #[serde(default)]
     pub current_tool: Option<String>,
-    /// Terminado: se conserva un rato para poder ver qué hizo.
+    /// Finished: kept for a while so you can see what it did.
     #[serde(default)]
     pub finished_at: Option<Timestamp>,
 }
@@ -36,7 +44,7 @@ impl Subagent {
     }
 }
 
-/// Una skill usada en la sesión.
+/// A skill used in the session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SkillUse {
     pub name: String,
@@ -47,7 +55,7 @@ pub struct SkillUse {
     pub last_at: Timestamp,
 }
 
-/// Subagentes terminados que se conservan por sesión (los más recientes).
+/// Finished subagents kept per session (the most recent ones).
 const KEPT_FINISHED_SUBAGENTS: usize = 6;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -67,7 +75,7 @@ pub struct Session {
     pub last_activity_at: Timestamp,
     pub status_since: Timestamp,
     pub turns: u32,
-    /// Hay un fin de turno que aún no has mirado.
+    /// There is a turn end you have not looked at yet.
     pub unseen: bool,
     pub archived: bool,
     pub muted: bool,
@@ -105,12 +113,12 @@ impl Session {
         }
     }
 
-    /// Si la sesión cuenta para el color de la bandeja y para los avisos.
+    /// Whether the session counts towards the tray colour and notifications.
     pub fn is_on_watch(&self) -> bool {
         !self.archived && !self.muted
     }
 
-    /// Dónde relanzar el agente para reanudar esta sesión.
+    /// Where to relaunch the agent to resume this session.
     pub fn launch_dir(&self) -> &str {
         self.cwd.as_deref().unwrap_or(&self.workspace.worktree_path)
     }
@@ -129,7 +137,7 @@ impl Session {
 
         match kind {
             SessionEventKind::Started => {
-                // Tras una compactación automática el turno sigue en marcha.
+                // After an automatic compaction the turn is still in progress.
                 let next = if self.status == SessionStatus::Compacting {
                     SessionStatus::Working { tool: None }
                 } else {
@@ -140,7 +148,7 @@ impl Session {
             SessionEventKind::PromptSubmitted => {
                 self.turns += 1;
                 self.unseen = false;
-                // Volver a escribirle a una sesión despedida la trae de vuelta.
+                // Writing to an archived session again brings it back.
                 self.archived = false;
                 self.set_status(SessionStatus::Working { tool: None }, at);
             }
@@ -151,7 +159,7 @@ impl Session {
                 self.set_status(SessionStatus::Working { tool: None }, at);
             }
             SessionEventKind::AwaitingYou { reason, tool, detail } => {
-                // Un segundo aviso de la misma espera (sin herramienta) no borra lo que ya sabíamos.
+                // A second signal for the same wait (without a tool) does not erase what we already knew.
                 let (tool, detail) = match &self.status {
                     SessionStatus::AwaitingYou { reason: current, tool: known_tool, detail: known_detail }
                         if current == reason =>
@@ -163,7 +171,7 @@ impl Session {
                 self.set_status(SessionStatus::AwaitingYou { reason: *reason, tool, detail }, at);
             }
             SessionEventKind::IdlePrompt => {
-                // Solo corrige si se perdió el fin de turno; no reabre algo ya visto.
+                // Only corrects a missed turn end; never reopens something already seen.
                 if matches!(self.status, SessionStatus::Working { .. }) {
                     self.unseen = true;
                     self.set_status(SessionStatus::AwaitingInput, at);
@@ -176,7 +184,13 @@ impl Session {
             SessionEventKind::SubagentStarted { id, kind } => {
                 self.subagents.insert(
                     id.clone(),
-                    Subagent { id: id.clone(), kind: kind.clone(), started_at: at, current_tool: None, finished_at: None },
+                    Subagent {
+                        id: id.clone(),
+                        kind: kind.clone(),
+                        started_at: at,
+                        current_tool: None,
+                        finished_at: None,
+                    },
                 );
             }
             SessionEventKind::SubagentStopped { id } => {
@@ -195,7 +209,7 @@ impl Session {
                     finished_at: None,
                 });
                 subagent.current_tool = Some(tool.clone());
-                // Si un subagente sigue trabajando, el permiso que se esperaba ya se resolvió.
+                // If a subagent keeps working, the pending permission has already been resolved.
                 if matches!(self.status, SessionStatus::AwaitingYou { .. }) {
                     self.set_status(SessionStatus::Working { tool: None }, at);
                 }
@@ -242,11 +256,8 @@ impl Session {
     }
 
     fn forget_old_subagents(&mut self) {
-        let mut finished: Vec<(Timestamp, String)> = self
-            .subagents
-            .values()
-            .filter_map(|s| s.finished_at.map(|at| (at, s.id.clone())))
-            .collect();
+        let mut finished: Vec<(Timestamp, String)> =
+            self.subagents.values().filter_map(|s| s.finished_at.map(|at| (at, s.id.clone()))).collect();
         if finished.len() <= KEPT_FINISHED_SUBAGENTS {
             return;
         }
@@ -264,7 +275,7 @@ impl Session {
         if context.cwd.is_some() {
             self.cwd = context.cwd;
         }
-        // Los hooks de una misma sesión pueden llegar sin cadena de procesos (p. ej. al cerrar).
+        // Hooks from the same session may arrive without a process chain (e.g. on exit).
         if context.host.agent_pid.is_some() {
             self.host = context.host;
         }

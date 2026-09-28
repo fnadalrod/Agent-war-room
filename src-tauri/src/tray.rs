@@ -1,16 +1,17 @@
-//! Icono de bandeja: un piloto con el color de la atención agregada.
+//! Tray icon: a lamp with the colour of the aggregate attention.
 
+use crate::locale;
 use awr_application::view::{AttentionView, WarRoomView};
+use tauri::AppHandle;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
-use tauri::AppHandle;
 
 const SIZE: u32 = 32;
 
 pub fn create(app: &AppHandle) -> tauri::Result<TrayIcon> {
-    let open = MenuItem::with_id(app, "open", "Abrir la war room", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", locale::TRAY_OPEN, true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", locale::TRAY_QUIT, true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &quit])?;
 
     TrayIconBuilder::with_id("war-room")
@@ -32,16 +33,12 @@ pub fn paint(tray: &TrayIcon, view: &WarRoomView) {
 
 fn tooltip(view: &WarRoomView) -> String {
     let count = |a: AttentionView| {
-        view.rooms
-            .iter()
-            .flat_map(|r| &r.sessions)
-            .filter(|s| !s.archived && !s.muted && s.attention == a)
-            .count()
+        view.rooms.iter().flat_map(|r| &r.sessions).filter(|s| !s.archived && !s.muted && s.attention == a).count()
     };
     let parts: Vec<String> = [
-        (AttentionView::NeedsYou, "te necesitan"),
-        (AttentionView::Finished, "terminadas"),
-        (AttentionView::Working, "trabajando"),
+        (AttentionView::NeedsYou, locale::TRAY_NEEDS_YOU),
+        (AttentionView::Finished, locale::TRAY_FINISHED),
+        (AttentionView::Working, locale::TRAY_WORKING),
     ]
     .into_iter()
     .filter_map(|(a, label)| match count(a) {
@@ -49,11 +46,7 @@ fn tooltip(view: &WarRoomView) -> String {
         n => Some(format!("{n} {label}")),
     })
     .collect();
-    if parts.is_empty() {
-        "Agent War Room · todo tranquilo".into()
-    } else {
-        format!("Agent War Room · {}", parts.join(" · "))
-    }
+    if parts.is_empty() { locale::TRAY_ALL_QUIET.into() } else { locale::tray_summary(&parts) }
 }
 
 pub fn color(a: AttentionView) -> [u8; 3] {
@@ -66,7 +59,7 @@ pub fn color(a: AttentionView) -> [u8; 3] {
     }
 }
 
-/// Círculo relleno con borde oscuro, generado en memoria: sin assets por estado.
+/// Filled circle with a dark border, generated in memory: no per-state assets.
 fn lamp(a: AttentionView) -> Image<'static> {
     let [r, g, b] = color(a);
     let mut rgba = Vec::with_capacity((SIZE * SIZE * 4) as usize);

@@ -1,12 +1,12 @@
-//! Adaptadores de salida que dependen de Tauri.
+//! Outbound adapters that depend on Tauri.
 
-use crate::tray;
+use crate::{locale, tray};
 use awr_application::ports::{Notice, Notifier, ViewPublisher};
-use awr_domain::{Attention, SessionId};
-use std::sync::mpsc::Sender;
 use awr_application::view::WarRoomView;
+use awr_domain::{Attention, SessionId};
 use awr_infrastructure::pty::{PtyEvent, PtySink};
 use std::sync::Arc;
+use std::sync::mpsc::Sender;
 use tauri::tray::TrayIcon;
 use tauri::{AppHandle, Emitter};
 
@@ -17,11 +17,11 @@ pub const PTY_EXIT_EVENT: &str = "pty://exit";
 #[derive(Clone, serde::Serialize)]
 struct PtyChunk {
     id: String,
-    /// Bytes crudos en base64: un trozo puede cortar un carácter UTF-8 por la mitad.
+    /// Raw bytes in base64: a chunk may split a UTF-8 character in half.
     data: String,
 }
 
-/// Reenvía la salida de los terminales propios a la UI.
+/// Forwards the output of the app's own terminals to the UI.
 pub fn pty_sink(app: AppHandle) -> PtySink {
     use base64::Engine;
     Arc::new(move |event| match event {
@@ -35,7 +35,7 @@ pub fn pty_sink(app: AppHandle) -> PtySink {
     })
 }
 
-/// Empuja el read model al front y repinta la bandeja.
+/// Pushes the read model to the front end and repaints the tray.
 pub struct TauriPublisher {
     app: AppHandle,
     tray: TrayIcon,
@@ -54,16 +54,16 @@ impl ViewPublisher for TauriPublisher {
     }
 }
 
-/// Lo que pulsaste en un aviso.
+/// What the user clicked on a notification.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NoticeAction {
-    /// Clic en el aviso o "Ver": abrir la vista previa.
+    /// Click on the notification or its "open" button: show the preview.
     Open(SessionId),
     Focus(SessionId),
     Approve(SessionId),
 }
 
-/// Avisos de escritorio con botones (freedesktop). Cada sesión reemplaza su aviso anterior.
+/// Desktop notifications with buttons (freedesktop). Each session replaces its previous notification.
 pub struct DesktopNotifier {
     actions: Sender<NoticeAction>,
 }
@@ -79,7 +79,7 @@ impl Notifier for DesktopNotifier {
         use notify_rust::{Notification, Timeout, Urgency};
         let notice = notice.clone();
         let actions = self.actions.clone();
-        // `wait_for_action` bloquea hasta que se pulsa o se cierra el aviso.
+        // `wait_for_action` blocks until the notification is clicked or closed.
         std::thread::spawn(move || {
             let urgent = notice.attention == Attention::NeedsYou;
             let mut n = Notification::new();
@@ -90,10 +90,10 @@ impl Notifier for DesktopNotifier {
                 .id(notification_id(&notice.session))
                 .urgency(if urgent { Urgency::Critical } else { Urgency::Normal })
                 .timeout(if urgent { Timeout::Never } else { Timeout::Milliseconds(10_000) })
-                .action("default", "Ver")
-                .action("focus", "Ir a");
+                .action("default", locale::NOTICE_OPEN)
+                .action("focus", locale::NOTICE_FOCUS);
             if notice.approvable {
-                n.action("approve", "Aprobar");
+                n.action("approve", locale::NOTICE_APPROVE);
             }
             match n.show() {
                 Ok(handle) => handle.wait_for_action(|action| {
@@ -108,13 +108,13 @@ impl Notifier for DesktopNotifier {
                         let _ = actions.send(picked);
                     }
                 }),
-                Err(e) => eprintln!("[avisos] {e}"),
+                Err(e) => eprintln!("[notices] {e}"),
             }
         });
     }
 }
 
-/// Id estable por sesión (distinto de 0): un aviso nuevo sustituye al anterior de la misma sesión.
+/// Stable non-zero id per session: a new notification replaces the previous one of the same session.
 fn notification_id(session: &SessionId) -> u32 {
     let mut h: u32 = 2_166_136_261;
     for b in session.0.bytes() {

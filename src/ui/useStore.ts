@@ -1,11 +1,12 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { WarRoomState, WarRoomStore } from "../application/warRoomStore";
+import { copy } from "../domain/copy";
 
 export function useWarRoom(store: WarRoomStore): WarRoomState {
   return useSyncExternalStore(store.subscribe, store.snapshot);
 }
 
-/** Reloj para los "hace 3 min"; no hace falta más precisión. */
+/** Clock for the "3 min ago" labels; no need for more precision. */
 export function useNow(everyMs = 15_000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -17,15 +18,15 @@ export function useNow(everyMs = 15_000): number {
 
 export function since(ms: number, now: number): string {
   const s = Math.max(0, Math.round((now - ms) / 1000));
-  if (s < 45) return "ahora";
+  if (s < 45) return copy.time.now;
   const m = Math.round(s / 60);
-  if (m < 60) return `hace ${m} min`;
+  if (m < 60) return copy.time.minutesAgo(m);
   const h = Math.round(m / 60);
-  if (h < 24) return `hace ${h} h`;
-  return `hace ${Math.round(h / 24)} d`;
+  if (h < 24) return copy.time.hoursAgo(h);
+  return copy.time.daysAgo(Math.round(h / 24));
 }
 
-/** Preferencia de este equipo (vista elegida…). Sin almacenamiento disponible, vive en memoria. */
+/** Per-machine preference (chosen view…). Without storage it lives in memory. */
 export function usePreference<T extends string>(key: string, fallback: T, allowed: readonly T[]): [T, (v: T) => void] {
   const [value, setValue] = useState<T>(() => {
     try {
@@ -40,7 +41,7 @@ export function usePreference<T extends string>(key: string, fallback: T, allowe
     try {
       localStorage.setItem(key, v);
     } catch {
-      // Almacenamiento no disponible: la preferencia dura lo que la ventana.
+      // Storage unavailable: the preference lasts as long as the window.
     }
   };
   return [value, update];

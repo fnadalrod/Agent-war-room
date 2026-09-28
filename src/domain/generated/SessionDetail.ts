@@ -3,6 +3,6 @@ import type { SessionView } from "./SessionView";
 import type { TimelineEntryView } from "./TimelineEntryView";
 
 /**
- * Vista previa de una sesión: su tarjeta y la conversación reciente.
+ * Session preview: its card and the recent conversation.
  */
 export type SessionDetail = { session: SessionView, timeline: Array<TimelineEntryView>, };

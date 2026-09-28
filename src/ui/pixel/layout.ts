@@ -1,4 +1,4 @@
-// Distribución de la sala en coordenadas lógicas (píxeles de arte). Puro: sin canvas ni React.
+// Room layout in logical coordinates (art pixels). Pure: no canvas, no React.
 import type { AttentionView, RoomView, SessionView, SubagentView, WarRoomView } from "../../domain/attention";
 
 export const WALL_H = 52;
@@ -11,7 +11,7 @@ export const GAP = 8;
 
 export const DRONE_W = 7;
 export const DRONE_H = 6;
-/** Huecos fijos alrededor del monitor (relativos al puesto): los drones se pueden pinchar. */
+/** Fixed slots around the monitor (relative to the desk) so drones stay clickable. */
 const DRONE_SLOTS: Array<[number, number]> = [
   [1, 3],
   [40, 13],
@@ -28,7 +28,7 @@ export type DeskSpot = {
   w: number;
   h: number;
   drones: Drone[];
-  /** Subagentes que no caben en los huecos. */
+  /** Subagents that do not fit in the slots. */
   hiddenDrones: number;
 };
 export type Hit = { session: SessionView; agent: SubagentView | null };
@@ -36,8 +36,8 @@ export type Bay = { room: RoomView; x: number; y: number; w: number; h: number; 
 export type Scene = { width: number; height: number; aggregate: AttentionView; bays: Bay[] };
 
 /**
- * Coloca una bahía por repositorio, cada una con una rejilla de puestos, empaquetando bahías en
- * estanterías de izquierda a derecha. Respeta el orden del núcleo (lo más urgente primero).
+ * Places one bay per repo, each with a grid of desks, packing bays into shelves left to right.
+ * Keeps the core's order (most urgent first).
  */
 export function layoutScene(view: WarRoomView, width: number, showArchived: boolean, minHeight = 0): Scene {
   const usable = Math.max(DESK_W + 2 * BAY_PAD, width - 2 * MARGIN);
@@ -65,7 +65,7 @@ export function layoutScene(view: WarRoomView, width: number, showArchived: bool
     const desks = sessions.map((session, i) => {
       const dx = x + BAY_PAD + (i % cols) * DESK_W;
       const dy = y + BAY_LABEL_H + Math.floor(i / cols) * DESK_H;
-      // El núcleo ya los ordena: primero los que trabajan.
+      // The core already sorts them: working ones first.
       const drones = session.subagents.slice(0, DRONE_SLOTS.length).map((agent, n) => ({
         agent,
         x: dx + DRONE_SLOTS[n][0],
@@ -82,7 +82,7 @@ export function layoutScene(view: WarRoomView, width: number, showArchived: bool
     shelfH = Math.max(shelfH, h);
   }
 
-  // Cada estantería, centrada: la sala se ve compuesta y no pegada a la izquierda.
+  // Center each shelf so the room looks composed rather than stuck to the left.
   for (const shelf of shelves) {
     if (shelf.length === 0) continue;
     const last = shelf[shelf.length - 1];
@@ -92,7 +92,7 @@ export function layoutScene(view: WarRoomView, width: number, showArchived: bool
 
   const content = Math.max(y + shelfH + MARGIN, WALL_H + 2 * GAP + DESK_H);
   const height = Math.max(content, Math.floor(minHeight));
-  // Si sobra sala, el contenido se centra en el suelo en vez de quedarse pegado a la pared.
+  // With room to spare, center the content on the floor instead of hugging the wall.
   const drop = bays.length > 0 ? Math.floor((height - content) / 2) : 0;
   for (const bay of bays) move(bay, 0, drop);
   return { width, height, aggregate: view.aggregate, bays };
@@ -114,7 +114,7 @@ function move(bay: Bay, dx: number, dy: number) {
 const inside = (x: number, y: number, r: { x: number; y: number; w: number; h: number }, pad = 0) =>
   x >= r.x - pad && x < r.x + r.w + pad && y >= r.y - pad && y < r.y + r.h + pad;
 
-/** Qué hay bajo el cursor: un drone (subagente) gana a su puesto. */
+/** What is under the cursor: a drone (subagent) wins over its desk. */
 export function hitTest(scene: Scene, x: number, y: number): Hit | null {
   for (const bay of scene.bays) {
     for (const d of bay.desks) {
@@ -126,7 +126,7 @@ export function hitTest(scene: Scene, x: number, y: number): Hit | null {
   return null;
 }
 
-/** Escala entera que da un ancho lógico razonable (unos 320–480 píxeles de arte). */
+/** Integer scale giving a reasonable logical width (about 320–480 art pixels). */
 export function pixelScale(cssWidth: number): number {
   if (cssWidth >= 1600) return 4;
   if (cssWidth >= 760) return 3;

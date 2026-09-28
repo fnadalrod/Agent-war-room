@@ -1,7 +1,7 @@
-//! Lectura incremental de los transcripts JSONL de Claude Code.
+//! Incremental reading of Claude Code's JSONL transcripts.
 //!
-//! `<proyecto>/<sesión>.jsonl` es la conversación principal; los subagentes viven en
-//! `<proyecto>/<sesión>/subagents/agent-<id>.jsonl` con un `agent-<id>.meta.json` al lado.
+//! `<project>/<session>.jsonl` is the main conversation; subagents live in
+//! `<project>/<session>/subagents/agent-<id>.jsonl` with an `agent-<id>.meta.json` next to it.
 
 use super::tools::tool_label;
 use awr_application::ports::{
@@ -14,14 +14,14 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-/// La primera lectura de un transcript largo empieza por aquí desde el final: el título y el último
-/// prompt se repiten a menudo, así que basta con la cola.
+/// The first read of a long transcript starts this far from the end: the title and the last
+/// prompt are repeated often, so the tail is enough.
 const INITIAL_TAIL_BYTES: u64 = 512 * 1024;
-/// Tope de seguridad para una respuesta; se conserva tal cual (Markdown, saltos de línea).
+/// Safety cap for a reply; it is kept as is (Markdown, line breaks).
 const REPLY_MAX_CHARS: usize = 20_000;
-/// Cabecera donde buscar el primer prompt de la sesión.
+/// Head of the file searched for the session's first prompt.
 const HEAD_BYTES: u64 = 512 * 1024;
-/// Cola que se lee para la vista previa de la conversación.
+/// Tail read for the conversation preview.
 const TIMELINE_TAIL_BYTES: u64 = 2 * 1024 * 1024;
 
 #[derive(Default)]
@@ -61,7 +61,7 @@ impl ClaudeTranscriptReader {
         Some(tail.facts.clone())
     }
 
-    /// Primer prompt de la sesión. Se busca en la cabecera una sola vez: no cambia.
+    /// The session's first prompt. Searched for in the head only once: it never changes.
     fn first_prompt(&self, path: &Path) -> Option<String> {
         if let Some(known) = self.first_prompts.lock().unwrap().get(path) {
             return Some(known.clone());
@@ -85,7 +85,7 @@ impl ClaudeTranscriptReader {
             .ok()
             .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
             .and_then(|v| v.get("description")?.as_str().map(str::to_owned));
-        // Solo se cachea lo encontrado: el meta puede aparecer después del SubagentStart.
+        // Only hits are cached: the meta file may appear after SubagentStart.
         if description.is_some() {
             cache.insert(meta.to_path_buf(), description.clone());
         }
@@ -136,11 +136,12 @@ impl TranscriptReader for ClaudeTranscriptReader {
     }
 
     fn subagent(&self, transcript_path: &str, agent_id: &str, limit: usize) -> Option<AgentTranscript> {
-        // El id acaba en una ruta: solo su alfabeto, nada de `..` ni `/`.
+        // The id ends up in a path: only its alphabet, no `..` or `/`.
         if agent_id.is_empty() || !agent_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
             return None;
         }
-        let path = Path::new(transcript_path).with_extension("").join("subagents").join(format!("agent-{agent_id}.jsonl"));
+        let path =
+            Path::new(transcript_path).with_extension("").join("subagents").join(format!("agent-{agent_id}.jsonl"));
         let first_prompt = head_lines(&path, HEAD_BYTES)
             .ok()?
             .iter()
@@ -156,7 +157,7 @@ impl TranscriptReader for ClaudeTranscriptReader {
     }
 }
 
-/// Líneas JSON completas de los primeros `bytes` del fichero.
+/// Complete JSON lines within the first `bytes` of the file.
 fn head_lines(path: &Path, bytes: u64) -> std::io::Result<Vec<Value>> {
     let mut buf = Vec::new();
     File::open(path)?.take(bytes).read_to_end(&mut buf)?;
@@ -167,7 +168,7 @@ fn head_lines(path: &Path, bytes: u64) -> std::io::Result<Vec<Value>> {
     Ok(complete.split(|&b| b == b'\n').filter_map(|l| serde_json::from_slice(l).ok()).collect())
 }
 
-/// Líneas JSON completas de los últimos `bytes` del fichero.
+/// Complete JSON lines within the last `bytes` of the file.
 fn tail_lines(path: &Path, bytes: u64) -> std::io::Result<Vec<Value>> {
     let mut file = File::open(path)?;
     let len = file.metadata()?.len();
@@ -182,8 +183,8 @@ fn tail_lines(path: &Path, bytes: u64) -> std::io::Result<Vec<Value>> {
     Ok(lines.filter_map(|l| serde_json::from_slice(l).ok()).collect())
 }
 
-/// `sidechain`: se lee el transcript de un subagente, cuyas entradas van todas marcadas así. En el
-/// principal se descartan (cada subagente tiene su propio fichero).
+/// `sidechain`: reading a subagent's transcript, whose entries are all marked as such. In the
+/// main one they are dropped (each subagent has its own file).
 fn timeline_items(entry: &Value, sidechain: bool) -> Vec<TimelineItem> {
     if (!sidechain && entry.get("isSidechain").and_then(Value::as_bool) == Some(true))
         || entry.get("isMeta").and_then(Value::as_bool) == Some(true)
@@ -192,7 +193,8 @@ fn timeline_items(entry: &Value, sidechain: bool) -> Vec<TimelineItem> {
     }
     let at = entry.get("timestamp").and_then(Value::as_str).and_then(parse_iso_ms);
     let item = |kind, text: String| TimelineItem { kind, text, at, model: None, effort: None };
-    let by_agent = |kind, text: String| TimelineItem { kind, text, at, model: model_of(entry), effort: effort_of(entry) };
+    let by_agent =
+        |kind, text: String| TimelineItem { kind, text, at, model: model_of(entry), effort: effort_of(entry) };
     match entry.get("type").and_then(Value::as_str) {
         Some("user") => match entry.pointer("/message/content") {
             Some(Value::String(prompt)) if !prompt.starts_with('<') && !prompt.trim().is_empty() => {
@@ -230,7 +232,7 @@ fn timeline_items(entry: &Value, sidechain: bool) -> Vec<TimelineItem> {
     }
 }
 
-/// `2026-09-27T22:44:39.232Z` → milisegundos desde epoch (solo UTC, que es lo que escribe Claude).
+/// `2026-09-27T22:44:39.232Z` → milliseconds since the epoch (UTC only, which is what Claude writes).
 fn parse_iso_ms(s: &str) -> Option<i64> {
     let s = s.strip_suffix('Z')?;
     let (date, time) = s.split_once('T')?;
@@ -240,7 +242,7 @@ fn parse_iso_ms(s: &str) -> Option<i64> {
     let mut t = hms.split(':').map(|p| p.parse::<i64>());
     let (h, min, sec) = (t.next()?.ok()?, t.next()?.ok()?, t.next()?.ok()?);
     let ms: i64 = format!("{frac:0<3}")[..3].parse().ok()?;
-    // Días desde 1970-01-01 (algoritmo de Howard Hinnant).
+    // Days since 1970-01-01 (Howard Hinnant's algorithm).
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
     let yoe = y - era * 400;
@@ -250,7 +252,7 @@ fn parse_iso_ms(s: &str) -> Option<i64> {
     Some(((days * 24 + h) * 60 + min) * 60_000 + sec * 1000 + ms)
 }
 
-/// Recorta por caracteres conservando el formato.
+/// Truncates by chars, keeping the formatting.
 fn cap(text: &str, max: usize) -> String {
     if text.chars().count() <= max {
         text.to_owned()
@@ -259,12 +261,12 @@ fn cap(text: &str, max: usize) -> String {
     }
 }
 
-/// Lee las líneas completas nuevas desde `tail.offset` y las incorpora.
+/// Reads the new complete lines from `tail.offset` and absorbs them.
 fn advance(path: &Path, tail: &mut Tail) -> std::io::Result<()> {
     let mut file = File::open(path)?;
     let len = file.metadata()?.len();
     if len < tail.offset {
-        // Truncado o reescrito: empezar de cero.
+        // Truncated or rewritten: start over.
         *tail = Tail::default();
     }
     let mut skip_partial_first_line = false;
@@ -280,7 +282,7 @@ fn advance(path: &Path, tail: &mut Tail) -> std::io::Result<()> {
     let mut buf = Vec::with_capacity((len - tail.offset) as usize);
     file.take(len - tail.offset).read_to_end(&mut buf)?;
 
-    // Solo líneas terminadas: la última puede estar a medio escribir.
+    // Only finished lines: the last one may be half-written.
     let Some(last_newline) = buf.iter().rposition(|&b| b == b'\n') else {
         return Ok(());
     };
@@ -305,7 +307,7 @@ fn absorb(facts: &mut Facts, entry: &Value) {
         Some("custom-title") => facts.custom_title = text("customTitle").or(facts.custom_title.take()),
         Some("last-prompt") => facts.last_prompt = text("lastPrompt").or(facts.last_prompt.take()),
         Some("user") => {
-            // Respaldo si no hay `last-prompt`: el último mensaje escrito por una persona.
+            // Fallback when there is no `last-prompt`: the last message typed by a person.
             if let Some(prompt) = entry.pointer("/message/content").and_then(Value::as_str)
                 && !prompt.starts_with('<')
             {
@@ -317,7 +319,7 @@ fn absorb(facts: &mut Facts, entry: &Value) {
     }
 }
 
-/// Modelo real del mensaje (los sintéticos vienen como `<synthetic>`).
+/// The message's real model (synthetic ones come as `<synthetic>`).
 fn model_of(entry: &Value) -> Option<String> {
     entry.pointer("/message/model").and_then(Value::as_str).filter(|m| !m.starts_with('<')).map(str::to_owned)
 }
@@ -360,7 +362,6 @@ fn absorb_assistant(facts: &mut Facts, entry: &Value) {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -391,15 +392,20 @@ mod tests {
     fn summarizes_title_prompt_reply_action_and_context() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.jsonl");
-        append(&path, &line(json!({ "type": "ai-title", "aiTitle": "Arreglar login" })));
-        append(&path, &line(json!({ "type": "user", "message": { "role": "user", "content": "arregla el login" } })));
-        append(&path, &assistant(json!([{ "type": "text", "text": "Voy a mirar.\n\nPrimero" }, { "type": "tool_use", "name": "Read", "input": { "file_path": "/src/auth/login.rs" } }])));
+        append(&path, &line(json!({ "type": "ai-title", "aiTitle": "Fix login" })));
+        append(&path, &line(json!({ "type": "user", "message": { "role": "user", "content": "fix the login" } })));
+        append(
+            &path,
+            &assistant(
+                json!([{ "type": "text", "text": "Let me look.\n\nFirst" }, { "type": "tool_use", "name": "Read", "input": { "file_path": "/src/auth/login.rs" } }]),
+            ),
+        );
 
         let reader = ClaudeTranscriptReader::new();
         let s = reader.read(path.to_str().unwrap(), &[]).unwrap();
-        assert_eq!(s.title.as_deref(), Some("Arreglar login"));
-        assert_eq!(s.last_prompt.as_deref(), Some("arregla el login"));
-        assert_eq!(s.last_reply.as_deref(), Some("Voy a mirar.\n\nPrimero"), "conserva el Markdown");
+        assert_eq!(s.title.as_deref(), Some("Fix login"));
+        assert_eq!(s.last_prompt.as_deref(), Some("fix the login"));
+        assert_eq!(s.last_reply.as_deref(), Some("Let me look.\n\nFirst"), "keeps the Markdown");
         assert_eq!(s.last_action.as_deref(), Some("Read · login.rs"));
         assert_eq!(s.model.as_deref(), Some("claude-opus-5-5"));
         assert_eq!(s.effort.as_deref(), Some("high"));
@@ -410,28 +416,31 @@ mod tests {
     fn reads_incrementally_and_ignores_half_written_lines() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.jsonl");
-        append(&path, &assistant(json!([{ "type": "tool_use", "name": "Bash", "input": { "command": "cargo test" } }])));
+        append(
+            &path,
+            &assistant(json!([{ "type": "tool_use", "name": "Bash", "input": { "command": "cargo test" } }])),
+        );
         let reader = ClaudeTranscriptReader::new();
         assert_eq!(reader.read(path.to_str().unwrap(), &[]).unwrap().last_action.as_deref(), Some("Bash · cargo test"));
 
-        append(&path, "{\"type\":\"custom-title\",\"customTitle\":\"Mi");
+        append(&path, "{\"type\":\"custom-title\",\"customTitle\":\"My");
         let s = reader.read(path.to_str().unwrap(), &[]).unwrap();
-        assert_eq!(s.title, None, "línea a medias: todavía no");
+        assert_eq!(s.title, None, "half-written line: not yet");
 
-        append(&path, " sesión\"}\n");
+        append(&path, " session\"}\n");
         let s = reader.read(path.to_str().unwrap(), &[]).unwrap();
-        assert_eq!(s.title.as_deref(), Some("Mi sesión"));
-        assert_eq!(s.last_action.as_deref(), Some("Bash · cargo test"), "conserva lo leído antes");
+        assert_eq!(s.title.as_deref(), Some("My session"));
+        assert_eq!(s.last_action.as_deref(), Some("Bash · cargo test"), "keeps what was read before");
     }
 
     #[test]
     fn custom_title_wins_over_ai_title() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.jsonl");
-        append(&path, &line(json!({ "type": "custom-title", "customTitle": "Mío" })));
-        append(&path, &line(json!({ "type": "ai-title", "aiTitle": "De la IA" })));
+        append(&path, &line(json!({ "type": "custom-title", "customTitle": "Mine" })));
+        append(&path, &line(json!({ "type": "ai-title", "aiTitle": "From the AI" })));
         let s = ClaudeTranscriptReader::new().read(path.to_str().unwrap(), &[]).unwrap();
-        assert_eq!(s.title.as_deref(), Some("Mío"));
+        assert_eq!(s.title.as_deref(), Some("Mine"));
     }
 
     #[test]
@@ -441,11 +450,18 @@ mod tests {
         append(&path, &line(json!({ "type": "ai-title", "aiTitle": "x" })));
         let subs = dir.path().join("s/subagents");
         std::fs::create_dir_all(&subs).unwrap();
-        std::fs::write(subs.join("agent-a1.meta.json"), r#"{"agentType":"Explore","description":"Buscar usos de login"}"#).unwrap();
-        append(&subs.join("agent-a1.jsonl"), &assistant(json!([{ "type": "tool_use", "name": "Grep", "input": { "pattern": "fn login" } }])));
+        std::fs::write(
+            subs.join("agent-a1.meta.json"),
+            r#"{"agentType":"Explore","description":"Find usages of login"}"#,
+        )
+        .unwrap();
+        append(
+            &subs.join("agent-a1.jsonl"),
+            &assistant(json!([{ "type": "tool_use", "name": "Grep", "input": { "pattern": "fn login" } }])),
+        );
 
         let s = ClaudeTranscriptReader::new().read(path.to_str().unwrap(), &["a1".into(), "a2".into()]).unwrap();
-        assert_eq!(s.subagents[0].description.as_deref(), Some("Buscar usos de login"));
+        assert_eq!(s.subagents[0].description.as_deref(), Some("Find usages of login"));
         assert_eq!(s.subagents[0].last_tool.as_deref(), Some("Grep · fn login"));
         assert_eq!(s.subagents[0].model.as_deref(), Some("claude-opus-5-5"));
         assert_eq!(s.subagents[1], SubagentDetail { id: "a2".into(), ..Default::default() });
@@ -456,37 +472,60 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.jsonl");
         let filler = line(json!({ "type": "user", "message": { "content": "x".repeat(1000) } }));
-        append(&path, &line(json!({ "type": "ai-title", "aiTitle": "Antiguo" })));
+        append(&path, &line(json!({ "type": "ai-title", "aiTitle": "Old" })));
         append(&path, &filler.repeat(700));
-        append(&path, &line(json!({ "type": "ai-title", "aiTitle": "Reciente" })));
+        append(&path, &line(json!({ "type": "ai-title", "aiTitle": "Recent" })));
         let s = ClaudeTranscriptReader::new().read(path.to_str().unwrap(), &[]).unwrap();
-        assert_eq!(s.title.as_deref(), Some("Reciente"));
+        assert_eq!(s.title.as_deref(), Some("Recent"));
     }
 
     #[test]
     fn recent_timeline_has_prompts_replies_and_tools_in_order_without_noise() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.jsonl");
-        append(&path, &line(json!({ "type": "user", "timestamp": "2026-09-27T22:44:39.232Z", "message": { "content": "arregla el **login**" } })));
-        append(&path, &line(json!({ "type": "user", "message": { "content": "<command-name>/clear</command-name>" } })));
+        append(
+            &path,
+            &line(
+                json!({ "type": "user", "timestamp": "2026-09-27T22:44:39.232Z", "message": { "content": "fix the **login**" } }),
+            ),
+        );
+        append(
+            &path,
+            &line(json!({ "type": "user", "message": { "content": "<command-name>/clear</command-name>" } })),
+        );
         append(&path, &line(json!({ "type": "user", "isMeta": true, "message": { "content": "meta" } })));
-        append(&path, &assistant(json!([{ "type": "tool_use", "name": "Read", "input": { "file_path": "/a/login.rs" } }])));
-        append(&path, &line(json!({ "type": "user", "message": { "content": [{ "type": "tool_result", "content": "..." }] } })));
-        append(&path, &line(json!({ "type": "assistant", "isSidechain": true, "message": { "content": [{ "type": "text", "text": "de un subagente" }] } })));
-        append(&path, &assistant(json!([{ "type": "text", "text": "## Hecho\n\n- uno\n- dos" }])));
+        append(
+            &path,
+            &assistant(json!([{ "type": "tool_use", "name": "Read", "input": { "file_path": "/a/login.rs" } }])),
+        );
+        append(
+            &path,
+            &line(json!({ "type": "user", "message": { "content": [{ "type": "tool_result", "content": "..." }] } })),
+        );
+        append(
+            &path,
+            &line(
+                json!({ "type": "assistant", "isSidechain": true, "message": { "content": [{ "type": "text", "text": "from a subagent" }] } }),
+            ),
+        );
+        append(&path, &assistant(json!([{ "type": "text", "text": "## Done\n\n- one\n- two" }])));
 
         let items = ClaudeTranscriptReader::new().recent(path.to_str().unwrap(), 10);
         let kinds: Vec<_> = items.iter().map(|i| (i.kind, i.text.as_str())).collect();
         assert_eq!(
             kinds,
             vec![
-                (TimelineKind::Prompt, "arregla el **login**"),
+                (TimelineKind::Prompt, "fix the **login**"),
                 (TimelineKind::Tool, "Read · login.rs"),
-                (TimelineKind::Reply, "## Hecho\n\n- uno\n- dos"),
+                (TimelineKind::Reply, "## Done\n\n- one\n- two"),
             ]
         );
         assert_eq!(items[0].at, Some(1_790_549_079_232));
-        assert_eq!((items[0].model.as_deref(), items[2].model.as_deref()), (None, Some("claude-opus-5-5")), "solo lo del agente");
+        assert_eq!(
+            (items[0].model.as_deref(), items[2].model.as_deref()),
+            (None, Some("claude-opus-5-5")),
+            "only the agent's items"
+        );
         assert_eq!(items[2].effort.as_deref(), Some("high"));
 
         let last = ClaudeTranscriptReader::new().recent(path.to_str().unwrap(), 1);
@@ -499,11 +538,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.jsonl");
         append(&path, &line(json!({ "type": "user", "message": { "content": "<command-name>/init</command-name>" } })));
-        append(&path, &line(json!({ "type": "user", "message": { "content": "Migra el login a OAuth" } })));
+        append(&path, &line(json!({ "type": "user", "message": { "content": "Migrate the login to OAuth" } })));
         let filler = line(json!({ "type": "user", "message": { "content": "x".repeat(1000) } }));
         append(&path, &filler.repeat(700));
         let s = ClaudeTranscriptReader::new().read(path.to_str().unwrap(), &[]).unwrap();
-        assert_eq!(s.first_prompt.as_deref(), Some("Migra el login a OAuth"));
+        assert_eq!(s.first_prompt.as_deref(), Some("Migrate the login to OAuth"));
     }
 
     #[test]
@@ -514,30 +553,43 @@ mod tests {
         let subs = dir.path().join("s/subagents");
         std::fs::create_dir_all(&subs).unwrap();
         let sub = subs.join("agent-a1.jsonl");
-        append(&sub, &line(json!({ "type": "user", "isSidechain": true, "message": { "content": "Busca los usos de login" } })));
-        append(&sub, &line(json!({ "type": "assistant", "isSidechain": true, "message": { "content": [{ "type": "tool_use", "name": "Grep", "input": { "pattern": "login" } }] } })));
-        append(&sub, &line(json!({ "type": "assistant", "isSidechain": true, "message": { "content": [{ "type": "text", "text": "Hay **3** usos." }] } })));
+        append(
+            &sub,
+            &line(json!({ "type": "user", "isSidechain": true, "message": { "content": "Find the usages of login" } })),
+        );
+        append(
+            &sub,
+            &line(
+                json!({ "type": "assistant", "isSidechain": true, "message": { "content": [{ "type": "tool_use", "name": "Grep", "input": { "pattern": "login" } }] } }),
+            ),
+        );
+        append(
+            &sub,
+            &line(
+                json!({ "type": "assistant", "isSidechain": true, "message": { "content": [{ "type": "text", "text": "There are **3** usages." }] } }),
+            ),
+        );
 
         let reader = ClaudeTranscriptReader::new();
         let t = reader.subagent(path.to_str().unwrap(), "a1", 10).unwrap();
-        assert_eq!(t.first_prompt.as_deref(), Some("Busca los usos de login"));
-        assert_eq!(t.last_reply.as_deref(), Some("Hay **3** usos."));
+        assert_eq!(t.first_prompt.as_deref(), Some("Find the usages of login"));
+        assert_eq!(t.last_reply.as_deref(), Some("There are **3** usages."));
         assert_eq!(t.timeline.len(), 3);
 
         assert!(reader.subagent(path.to_str().unwrap(), "../../etc/passwd", 10).is_none());
-        assert!(reader.subagent(path.to_str().unwrap(), "nadie", 10).is_none());
+        assert!(reader.subagent(path.to_str().unwrap(), "nobody", 10).is_none());
     }
 
     #[test]
     fn parses_claude_timestamps() {
         assert_eq!(parse_iso_ms("1970-01-01T00:00:00.000Z"), Some(0));
         assert_eq!(parse_iso_ms("2000-03-01T12:30:05.5Z"), Some(951_913_805_500));
-        assert_eq!(parse_iso_ms("mañana"), None);
+        assert_eq!(parse_iso_ms("tomorrow"), None);
     }
 
     #[test]
     fn missing_transcript_reads_as_none() {
-        assert!(ClaudeTranscriptReader::new().read("/no/existe.jsonl", &[]).is_none());
+        assert!(ClaudeTranscriptReader::new().read("/does/not/exist.jsonl", &[]).is_none());
     }
 }
 
@@ -545,21 +597,20 @@ mod tests {
 mod live {
     use super::*;
 
-    /// Manual: `AWR_TRANSCRIPT=/ruta/sesion.jsonl AWR_SUBAGENTS=id1,id2 cargo test -p awr-infrastructure
+    /// Manual: `AWR_TRANSCRIPT=/path/session.jsonl AWR_SUBAGENTS=id1,id2 cargo test -p awr-infrastructure
     /// transcript_live -- --ignored --nocapture`.
     #[test]
     #[ignore]
     fn transcript_live_summarizes_a_real_session() {
         let path = std::env::var("AWR_TRANSCRIPT").expect("AWR_TRANSCRIPT");
-        let subagents: Vec<String> = std::env::var("AWR_SUBAGENTS")
-            .map(|s| s.split(',').map(str::to_owned).collect())
-            .unwrap_or_default();
+        let subagents: Vec<String> =
+            std::env::var("AWR_SUBAGENTS").map(|s| s.split(',').map(str::to_owned).collect()).unwrap_or_default();
         let started = std::time::Instant::now();
         let reader = ClaudeTranscriptReader::new();
-        let summary = reader.read(&path, &subagents).expect("transcript legible");
+        let summary = reader.read(&path, &subagents).expect("readable transcript");
         let first = started.elapsed();
         let started = std::time::Instant::now();
         reader.read(&path, &subagents);
-        println!("{summary:#?}\nprimera lectura {first:?}, incremental {:?}", started.elapsed());
+        println!("{summary:#?}\nfirst read {first:?}, incremental {:?}", started.elapsed());
     }
 }

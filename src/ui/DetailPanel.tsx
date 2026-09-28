@@ -2,9 +2,7 @@ import { useEffect, useState } from "react";
 import type { OpenDetail, WarRoomStore } from "../application/warRoomStore";
 import {
   agentName,
-  ATTENTION_LABEL,
   contextLabel,
-  SKILL_SOURCE_LABEL,
   deskName,
   extraActivity,
   isWritable,
@@ -12,9 +10,11 @@ import {
   toolDigest,
   whereItLives,
   type SessionView,
+  type SubagentPreview,
   type SubagentView,
   type TimelineEntryView,
 } from "../domain/attention";
+import { copy } from "../domain/copy";
 import { CheckIcon, CopyIcon, GoIcon, PlayIcon, RobotIcon, TerminalIcon, XIcon } from "./icons";
 import { Markdown } from "./Markdown";
 import { QuickInput } from "./QuickInput";
@@ -23,13 +23,13 @@ import { since } from "./useStore";
 
 type Props = { detail: OpenDetail; fallback: SessionView | null; store: WarRoomStore; now: number };
 
-/** Vista previa de una sesión: qué le pediste, qué ha contestado y qué ha ido haciendo. */
+/** Session preview: what you asked, what it answered and what it has been doing. */
 export function DetailPanel({ detail, fallback, store, now }: Props) {
   const s = detail.data?.session ?? fallback;
 
   const inAgent = detail.agent != null;
   useEffect(() => {
-    // Esc: del subagente vuelve a la sesión; de la sesión, cierra.
+    // Esc: from a subagent, back to the session; from the session, close.
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && (inAgent ? store.backToSession() : store.closeDetail());
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -44,15 +44,15 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
   }
 
   return (
-    <aside className="detail" data-attention={s.attention} aria-label={`Vista previa: ${s.title ?? deskName(s)}`}>
+    <aside className="detail" data-attention={s.attention} aria-label={copy.detail.label(s.title ?? deskName(s))}>
       <header className="detail-head">
         <div className="detail-status">
           <span className="chip" data-attention={s.attention}>
-            {ATTENTION_LABEL[s.attention]}
+            {copy.attention[s.attention]}
           </span>
           <span className="muted">{since(s.status_since, now)}</span>
           <span className="spacer" />
-          <button className="icon" onClick={() => store.closeDetail()} aria-label="Cerrar vista previa" title="Cerrar (Esc)">
+          <button className="icon" onClick={() => store.closeDetail()} aria-label={copy.detail.close} title={copy.detail.closeEsc}>
             <XIcon />
           </button>
         </div>
@@ -60,9 +60,9 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
         <p className="detail-where">
           <span className="desk">{deskName(s)}</span>
           {s.branch && <span className="branch">{s.branch}</span>}
-          {s.is_linked_worktree && <span className="tag">worktree</span>}
+          {s.is_linked_worktree && <span className="tag">{copy.session.worktree}</span>}
           <span className="muted">
-            {[modelAndEffort(s.model, s.effort), contextLabel(s) && `${contextLabel(s)} ctx`, `${s.turns} turnos`, whereItLives(s)]
+            {[modelAndEffort(s.model, s.effort), contextLabel(s) && copy.session.context(contextLabel(s)!), copy.session.turns(s.turns), whereItLives(s)]
               .filter(Boolean)
               .join(" · ")}
           </span>
@@ -81,17 +81,17 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
             <strong>{s.status_label}</strong>
             <div>
               <button className="primary danger" onClick={() => store.approve(s)}>
-                <CheckIcon size={14} /> Aprobar
+                <CheckIcon size={14} /> {copy.actions.approve}
               </button>
-              <button onClick={() => store.deny(s)}>Denegar</button>
+              <button onClick={() => store.deny(s)}>{copy.actions.deny}</button>
             </div>
-            <span className="muted">También puedes contestar en su terminal: vale la primera respuesta.</span>
+            <span className="muted">{copy.detail.answerInTerminal}</span>
           </section>
         )}
 
         {(s.first_prompt || s.command) && (
           <section>
-            <h3>Encargo inicial</h3>
+            <h3>{copy.detail.initialTask}</h3>
             {s.first_prompt && <Collapsible text={s.first_prompt} lines={6} plain />}
             {s.command && (
               <p className="command">
@@ -104,21 +104,21 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
 
         {s.last_reply && (
           <section>
-            <h3>Última respuesta</h3>
+            <h3>{copy.detail.lastReply}</h3>
             <Markdown text={s.last_reply} onLink={onLink} />
           </section>
         )}
 
         {s.skills.length > 0 && (
           <section>
-            <h3>Skills</h3>
+            <h3>{copy.detail.skills}</h3>
             <ul className="skill-list">
               {s.skills.map((k) => (
                 <li key={k.name}>
                   <SkillTag skill={k} store={store} />
                   <span className="muted">
-                    {SKILL_SOURCE_LABEL[k.source]} · {[k.by_user && "la lanzaste tú", k.by_agent && "la lanzó el agente"].filter(Boolean).join(" y ")}
-                    {k.count > 1 && ` · ${k.count} veces`} · {since(k.last_at, now)}
+                    {copy.skillSource[k.source]} · {copy.skill.launchedBy(k.by_user, k.by_agent)}
+                    {k.count > 1 && ` · ${copy.skill.times(k.count)}`} · {since(k.last_at, now)}
                   </span>
                 </li>
               ))}
@@ -128,7 +128,7 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
 
         {s.subagents.length > 0 && (
           <section>
-            <h3>Subagentes</h3>
+            <h3>{copy.detail.subagents}</h3>
             <ul className="subagent-list">
               {s.subagents.map((a) => (
                 <li key={a.id}>
@@ -137,7 +137,7 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
                     <span className="who">{agentName(a)}</span>
                     {a.kind && a.description && <span className="tag">{a.kind}</span>}
                     {a.model && <span className="tag">{modelAndEffort(a.model, a.effort)}</span>}
-                    <span className="muted agent-doing">{a.running ? (a.last_tool ?? "trabajando") : "terminado"}</span>
+                    <span className="muted agent-doing">{a.running ? (a.last_tool ?? copy.session.subagentState(true)) : copy.session.subagentState(false)}</span>
                   </button>
                 </li>
               ))}
@@ -146,11 +146,11 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
         )}
 
         <section>
-          <h3>Conversación reciente</h3>
+          <h3>{copy.detail.recentConversation}</h3>
           {detail.data == null ? (
-            <p className="muted">Cargando…</p>
+            <p className="muted">{copy.detail.loading}</p>
           ) : detail.data.timeline.length === 0 ? (
-            <p className="muted">Sin transcript todavía.</p>
+            <p className="muted">{copy.detail.noTranscript}</p>
           ) : (
             <Timeline items={detail.data.timeline} onLink={onLink} />
           )}
@@ -169,41 +169,41 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
 type SubagentProps = {
   session: SessionView;
   agent: SubagentView | null;
-  preview: import("../domain/attention").SubagentPreview | null;
+  preview: SubagentPreview | null;
   store: WarRoomStore;
   now: number;
   onLink: (url: string) => void;
 };
 
-/** Vista previa de un subagente, dentro del panel de su sesión. */
+/** Subagent preview, inside its session panel. */
 function SubagentPanel({ session: s, agent, preview, store, now, onLink }: SubagentProps) {
   const state = agent?.running ? "working" : "offline";
   return (
-    <aside className="detail" data-attention={state} aria-label={`Subagente: ${agent ? agentName(agent) : ""}`}>
+    <aside className="detail" data-attention={state} aria-label={copy.subagent.label(agent ? agentName(agent) : "")}>
       <header className="detail-head">
         <div className="detail-status">
-          <button className="ghost back" onClick={() => store.backToSession()} title="Volver a la sesión (Esc)">
+          <button className="ghost back" onClick={() => store.backToSession()} title={copy.subagent.back}>
             ← {s.title ?? deskName(s)}
           </button>
           <span className="spacer" />
-          <button className="icon" onClick={() => store.closeDetail()} aria-label="Cerrar vista previa" title="Cerrar">
+          <button className="icon" onClick={() => store.closeDetail()} aria-label={copy.detail.close} title={copy.detail.closeShort}>
             <XIcon />
           </button>
         </div>
         <h2>
-          <RobotIcon size={18} /> {agent ? agentName(agent) : "Subagente"}
+          <RobotIcon size={18} /> {agent ? agentName(agent) : copy.subagent.title}
         </h2>
         <p className="detail-where">
           <span className="chip" data-attention={state}>
-            {agent?.running ? "Trabajando" : "Terminado"}
+            {agent?.running ? copy.subagent.working : copy.subagent.finished}
           </span>
           {agent?.kind && <span className="tag">{agent.kind}</span>}
           {agent?.model && <span className="tag">{modelAndEffort(agent.model, agent.effort)}</span>}
           {agent && (
             <span className="muted">
               {agent.running
-                ? `desde ${since(agent.started_at, now)}`
-                : `terminó ${since(agent.finished_at ?? agent.started_at, now)}`}
+                ? copy.subagent.since(since(agent.started_at, now))
+                : copy.subagent.finishedAgo(since(agent.finished_at ?? agent.started_at, now))}
             </span>
           )}
         </p>
@@ -216,27 +216,27 @@ function SubagentPanel({ session: s, agent, preview, store, now, onLink }: Subag
 
       <div className="detail-body">
         {preview == null ? (
-          <p className="muted">Cargando…</p>
+          <p className="muted">{copy.detail.loading}</p>
         ) : (
           <>
             {preview.first_prompt && (
               <section>
-                <h3>Encargo</h3>
+                <h3>{copy.subagent.task}</h3>
                 <Collapsible text={preview.first_prompt} lines={8} plain />
               </section>
             )}
             {preview.last_reply && (
               <section>
-                <h3>{agent?.running ? "Última respuesta" : "Resultado"}</h3>
+                <h3>{agent?.running ? copy.subagent.lastReply : copy.subagent.result}</h3>
                 <Markdown text={preview.last_reply} onLink={onLink} />
               </section>
             )}
             <section>
-              <h3>Actividad</h3>
+              <h3>{copy.subagent.activity}</h3>
               {preview.timeline.length === 0 ? (
-                <p className="muted">Sin transcript todavía.</p>
+                <p className="muted">{copy.detail.noTranscript}</p>
               ) : (
-                <Timeline items={preview.timeline} onLink={onLink} who={{ prompt: "Agente principal", reply: "Subagente" }} />
+                <Timeline items={preview.timeline} onLink={onLink} who={{ prompt: copy.subagent.mainAgent, reply: copy.subagent.title }} />
               )}
             </section>
           </>
@@ -250,47 +250,47 @@ function Actions({ s, store }: { s: SessionView; store: WarRoomStore }) {
   return (
     <div className="detail-actions">
       {s.alive && (
-        <button className="primary" onClick={() => store.goTo(s)} title={`Ir a su ventana · ${whereItLives(s)}`}>
-          <GoIcon size={14} /> Ir a la sesión
+        <button className="primary" onClick={() => store.goTo(s)} title={copy.actions.goToWindowVia(whereItLives(s))}>
+          <GoIcon size={14} /> {copy.detail.goToSession}
         </button>
       )}
       {s.pty_id && s.alive && (
         <button onClick={() => store.openTerminal(s.pty_id!, s.title ?? deskName(s))}>
-          <TerminalIcon size={14} /> Terminal
+          <TerminalIcon size={14} /> {copy.detail.terminal}
         </button>
       )}
       {!s.alive && (
         <>
           <button className="primary" onClick={() => store.resume(s, "app")}>
-            <PlayIcon size={13} /> Reanudar
+            <PlayIcon size={13} /> {copy.actions.resume}
           </button>
-          <button onClick={() => store.resume(s, "warp")}>Reanudar en Warp</button>
+          <button onClick={() => store.resume(s, "warp")}>{copy.detail.resumeInWarp}</button>
         </>
       )}
       {s.attention === "finished" && (
         <button onClick={() => store.acknowledge(s)}>
-          <CheckIcon size={14} /> Visto
+          <CheckIcon size={14} /> {copy.detail.seen}
         </button>
       )}
       <span className="spacer" />
       <button className="ghost" onClick={() => store.toggleMute(s)}>
-        {s.muted ? "Reactivar avisos" : "Silenciar"}
+        {s.muted ? copy.detail.unmute : copy.detail.mute}
       </button>
       <button className="ghost" onClick={() => store.toggleArchive(s)}>
-        {s.archived ? "Readmitir" : "Despedir"}
+        {s.archived ? copy.detail.unarchive : copy.detail.archive}
       </button>
     </div>
   );
 }
 
-/** `setting`: modelo y esfuerzo, solo cuando cambian respecto a lo anterior del agente. */
+/** `setting`: model and effort, only where they change from the agent's previous entry. */
 type Block =
   | { kind: "prompt" | "reply"; text: string; at: number | null; setting: string | null }
   | { kind: "tools"; labels: string[]; at: number | null; setting: string | null };
 
 /**
- * Agrupa herramientas seguidas para que la conversación se lea de un vistazo, y anota el modelo y
- * el esfuerzo donde cambian (p. ej. tras un /model o un /effort).
+ * Groups consecutive tools so the conversation reads at a glance, and notes model and effort where
+ * they change (e.g. after /model or /effort).
  */
 export function blocks(items: TimelineEntryView[]): Block[] {
   const out: Block[] = [];
@@ -318,7 +318,7 @@ type Who = { prompt: string; reply: string };
 function Timeline({
   items,
   onLink,
-  who = { prompt: "Tú", reply: "Agente" },
+  who = { prompt: copy.detail.you, reply: copy.detail.agent },
 }: {
   items: TimelineEntryView[];
   onLink: (url: string) => void;
@@ -360,7 +360,7 @@ function ToolRun({ labels }: { labels: string[] }) {
   return (
     <div className="tl-tools">
       <button className="linkish" onClick={() => setOpen(!open)} aria-expanded={open}>
-        {open ? "▾" : "▸"} {labels.length} herramientas · {toolDigest(labels)}
+        {open ? "▾" : "▸"} {copy.detail.tools(labels.length, toolDigest(labels))}
       </button>
       {open && (
         <ul>
@@ -373,7 +373,7 @@ function ToolRun({ labels }: { labels: string[] }) {
   );
 }
 
-/** Texto largo plegado a unas líneas, con "ver todo". */
+/** Long text folded to a few lines, with a "show all" toggle. */
 function Collapsible({ text, lines, plain, onLink }: { text: string; lines: number; plain?: boolean; onLink?: (url: string) => void }) {
   const long = text.split("\n").length > lines || text.length > lines * 90;
   const [open, setOpen] = useState(false);
@@ -382,7 +382,7 @@ function Collapsible({ text, lines, plain, onLink }: { text: string; lines: numb
       {plain || !onLink ? <p className="plain">{text}</p> : <Markdown text={text} onLink={onLink} />}
       {long && (
         <button className="linkish" onClick={() => setOpen(!open)}>
-          {open ? "Ver menos" : "Ver todo"}
+          {open ? copy.detail.showLess : copy.detail.showAll}
         </button>
       )}
     </div>
@@ -394,7 +394,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       className="icon"
-      title="Copiar"
+      title={copy.detail.copy}
       onClick={() =>
         void navigator.clipboard.writeText(text).then(() => {
           setDone(true);

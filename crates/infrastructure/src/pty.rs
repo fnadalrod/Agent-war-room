@@ -1,13 +1,14 @@
-//! Terminales propios de la app: procesos en un PTY cuya salida se reenvía a la UI y en los que
-//! se puede escribir. Sobreviven a cerrar la ventana (la app sigue en la bandeja).
+//! The app's own terminals: processes in a PTY whose output is forwarded to the UI and that can be
+//! typed into. They survive closing the window (the app stays in the tray).
 
+use crate::locale;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// Salida conservada por terminal para repintarlo al abrirlo.
+/// Output kept per terminal to repaint it when opened.
 const SCROLLBACK_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +26,7 @@ pub struct PtySpec {
     pub cwd: String,
     pub label: String,
     pub env: Vec<(String, String)>,
-    /// Variables heredadas que no deben llegar al proceso.
+    /// Inherited variables that must not reach the process.
     pub env_remove: Vec<String>,
 }
 
@@ -56,7 +57,7 @@ impl PtyManager {
         Arc::new(Self { sessions: Mutex::default(), sink, next: AtomicU64::new(1) })
     }
 
-    /// Lanza el proceso con `AWR_PTY_ID` en su entorno: así sus hooks dicen en qué terminal viven.
+    /// Spawns the process with `AWR_PTY_ID` in its environment, so its hooks tell which terminal they live in.
     pub fn spawn(self: &Arc<Self>, spec: PtySpec) -> Result<String, String> {
         let id = format!("pty-{}-{}", std::process::id(), self.next.fetch_add(1, Ordering::SeqCst));
         let pair = native_pty_system()
@@ -121,9 +122,9 @@ impl PtyManager {
         all
     }
 
-    /// Mata el proceso si sigue vivo y olvida el terminal.
+    /// Kills the process if still alive and forgets the terminal.
     pub fn close(&self, id: &str) -> Result<(), String> {
-        let session = self.sessions.lock().unwrap().remove(id).ok_or("terminal desconocido")?;
+        let session = self.sessions.lock().unwrap().remove(id).ok_or_else(|| locale::unknown_terminal(id))?;
         if session.info.lock().unwrap().alive {
             let _ = session.child.lock().unwrap().kill();
         }
@@ -131,7 +132,7 @@ impl PtyManager {
     }
 
     fn get(&self, id: &str) -> Result<Arc<PtySession>, String> {
-        self.sessions.lock().unwrap().get(id).cloned().ok_or_else(|| format!("terminal desconocido: {id}"))
+        self.sessions.lock().unwrap().get(id).cloned().ok_or_else(|| locale::unknown_terminal(id))
     }
 }
 
@@ -186,7 +187,7 @@ mod tests {
                 program: "/bin/sh".into(),
                 args: vec!["-c".into(), "echo id=$AWR_PTY_ID; read x; echo got:$x".into()],
                 cwd: "/tmp".into(),
-                label: "prueba".into(),
+                label: "test".into(),
                 env: vec![],
                 env_remove: vec![],
             })
@@ -195,8 +196,8 @@ mod tests {
         let screen = || String::from_utf8_lossy(&pty.snapshot(&id).unwrap_or_default()).into_owned();
         wait_until(|| screen().contains(&format!("id={id}")));
         pty.resize(&id, 100, 30).unwrap();
-        pty.write(&id, b"hola\r").unwrap();
-        wait_until(|| screen().contains("got:hola"));
+        pty.write(&id, b"hello\r").unwrap();
+        wait_until(|| screen().contains("got:hello"));
         wait_until(|| events.lock().unwrap().contains(&PtyEvent::Exited { id: id.clone() }));
 
         assert!(!pty.list()[0].alive);

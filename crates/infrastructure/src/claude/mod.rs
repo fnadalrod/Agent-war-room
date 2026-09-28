@@ -1,4 +1,4 @@
-//! Adaptador de Claude Code: traducción de hooks e instalación del puente.
+//! Claude Code adapter: hook translation and bridge installation.
 
 mod installer;
 mod provider;

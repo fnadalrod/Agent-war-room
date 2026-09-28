@@ -1,33 +1,33 @@
+use crate::locale;
 use crate::ports::{
-    AgentLauncher, AgentProvider, ApprovalDecision, ApprovalResponder, Clock, LaunchOutcome,
-    LaunchRequest, LaunchTarget, SessionInput, EventStore, FocusOutcome, FocusTarget, Notice, Notifier, PortError,
-    PortResult, ProcessProbe, RepoResolver, SkillCatalog, TranscriptReader, TranscriptSummary,
-    ViewPublisher, WindowNavigator,
+    AgentLauncher, AgentProvider, ApprovalDecision, ApprovalResponder, Clock, EventStore, FocusOutcome, FocusTarget,
+    LaunchOutcome, LaunchRequest, LaunchTarget, Notice, Notifier, PortError, PortResult, ProcessProbe, RepoResolver,
+    SessionInput, SkillCatalog, TranscriptReader, TranscriptSummary, ViewPublisher, WindowNavigator,
 };
 use crate::view::{self, SessionDetail, SubagentPreview, WarRoomView};
 use awr_domain::{
-    Attention, AttentionChange, SessionContext, SessionEvent, SessionEventKind, SessionId,
-    SessionStatus, TerminalHost, Timestamp, WarRoom,
+    Attention, AttentionChange, SessionContext, SessionEvent, SessionEventKind, SessionId, SessionStatus, TerminalHost,
+    Timestamp, WarRoom,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-/// Cuánto historial se reconstruye al arrancar.
+/// How much history is rebuilt on startup.
 const RESTORE_WINDOW_MS: i64 = 3 * 24 * 60 * 60 * 1000;
-/// Lo que se conserva en el almacén; lo anterior se borra al arrancar.
+/// What the store keeps; anything older is deleted on startup.
 const RETENTION_MS: i64 = 14 * 24 * 60 * 60 * 1000;
 
-/// Señal cruda de un agente, ya separada del transporte.
+/// Raw signal from an agent, already detached from the transport.
 pub struct IncomingSignal {
     pub provider: String,
     pub received_at: Option<Timestamp>,
     pub host: TerminalHost,
     pub payload: serde_json::Value,
-    /// Presente si el agente espera una decisión (permiso aprobable desde la app).
+    /// Present if the agent awaits a decision (permission approvable from the app).
     pub reply: Option<Arc<dyn ApprovalResponder>>,
 }
 
-/// Todo lo externo que necesita el servicio.
+/// Everything external the service needs.
 pub struct Ports {
     pub providers: Vec<Arc<dyn AgentProvider>>,
     pub resolver: Arc<dyn RepoResolver>,
@@ -45,9 +45,9 @@ pub struct Ports {
 
 pub struct WarRoomService {
     room: Mutex<WarRoom>,
-    /// Enriquecimiento derivado del transcript; no es estado de dominio y no se persiste.
+    /// Enrichment derived from the transcript; not domain state and not persisted.
     summaries: Mutex<HashMap<SessionId, TranscriptSummary>>,
-    /// Permisos que se pueden resolver desde la app. Efímeros: viven lo que la conexión del hook.
+    /// Permissions resolvable from the app. Ephemeral: they live as long as the hook connection.
     approvals: Mutex<HashMap<SessionId, Arc<dyn ApprovalResponder>>>,
     ports: Ports,
 }
@@ -57,7 +57,7 @@ impl WarRoomService {
         Self { room: Mutex::new(WarRoom::new()), summaries: Mutex::default(), approvals: Mutex::default(), ports }
     }
 
-    /// Reconstruye el estado desde el almacén sin avisar de nada. Devuelve los eventos aplicados.
+    /// Rebuilds the state from the store without notifying anything. Returns the events applied.
     pub fn restore(&self) -> PortResult<usize> {
         let now = self.ports.clock.now().0;
         self.ports.store.prune(Timestamp(now - RETENTION_MS))?;
@@ -84,13 +84,16 @@ impl WarRoomService {
             .providers
             .iter()
             .find(|p| p.wire_name() == signal.provider)
-            .ok_or_else(|| PortError::Failed(format!("proveedor desconocido: {}", signal.provider)))?;
+            .ok_or_else(|| PortError::Failed(format!("unknown provider: {}", signal.provider)))?;
         let Some(translated) = provider.translate(&signal.payload)? else {
             return Ok(());
         };
 
         if let Some(reply) = signal.reply
-            && matches!(translated.kind, SessionEventKind::AwaitingYou { reason: awr_domain::WaitReason::Permission, .. })
+            && matches!(
+                translated.kind,
+                SessionEventKind::AwaitingYou { reason: awr_domain::WaitReason::Permission, .. }
+            )
         {
             self.approvals().insert(translated.session.clone(), reply);
         }
@@ -128,14 +131,10 @@ impl WarRoomService {
         self.intent(id, SessionEventKind::Seen)
     }
 
-    /// Marca como revisadas todas las sesiones terminadas.
+    /// Marks every finished session as reviewed.
     pub fn mark_all_seen(&self) -> PortResult<()> {
-        let finished: Vec<SessionId> = self
-            .room()
-            .sessions()
-            .filter(|s| s.attention() == Attention::Finished)
-            .map(|s| s.id.clone())
-            .collect();
+        let finished: Vec<SessionId> =
+            self.room().sessions().filter(|s| s.attention() == Attention::Finished).map(|s| s.id.clone()).collect();
         for id in finished {
             self.mark_seen(id)?;
         }
@@ -158,7 +157,7 @@ impl WarRoomService {
         self.intent(id, SessionEventKind::Unmuted)
     }
 
-    /// Aprueba el permiso pendiente como si hubieras pulsado "Yes" en la terminal.
+    /// Approves the pending permission as if you had pressed "Yes" in the terminal.
     pub fn approve(&self, id: SessionId) -> PortResult<()> {
         self.decide(id, ApprovalDecision::Allow)
     }
@@ -168,26 +167,18 @@ impl WarRoomService {
     }
 
     fn decide(&self, id: SessionId, decision: ApprovalDecision) -> PortResult<()> {
-        let responder = self
-            .approvals()
-            .remove(&id)
-            .ok_or_else(|| PortError::Failed("no hay ningún permiso pendiente en esa sesión".into()))?;
+        let responder =
+            self.approvals().remove(&id).ok_or_else(|| PortError::Failed(locale::NO_PENDING_PERMISSION.into()))?;
         let delivered = responder.respond(decision);
         self.publish();
-        if delivered {
-            Ok(())
-        } else {
-            Err(PortError::Failed("ya se había respondido en la terminal".into()))
-        }
+        if delivered { Ok(()) } else { Err(PortError::Failed(locale::ALREADY_ANSWERED_IN_TERMINAL.into())) }
     }
 
-    /// Vista previa: la tarjeta de la sesión y sus últimas `limit` entradas de conversación.
+    /// Preview: the session card and its last `limit` conversation entries.
     pub fn session_detail(&self, id: SessionId, limit: usize) -> PortResult<SessionDetail> {
         let (session, transcript) = {
             let room = self.room();
-            let session = room
-                .get(&id)
-                .ok_or_else(|| PortError::Failed(format!("sesión desconocida: {id}")))?;
+            let session = known(&room, &id)?;
             let can_approve = self.approvals().contains_key(&id);
             let view = view::session_view(session, self.summaries().get(&id), can_approve);
             (view, session.transcript_path.clone())
@@ -198,25 +189,22 @@ impl WarRoomService {
         Ok(SessionDetail { session, timeline })
     }
 
-    /// Vista previa de un subagente de la sesión.
+    /// Preview of one of the session's subagents.
     pub fn subagent_detail(&self, id: SessionId, agent_id: &str, limit: usize) -> PortResult<SubagentPreview> {
         let (agent, transcript) = {
             let room = self.room();
-            let session = room
-                .get(&id)
-                .ok_or_else(|| PortError::Failed(format!("sesión desconocida: {id}")))?;
+            let session = known(&room, &id)?;
             let can_approve = self.approvals().contains_key(&id);
             let view = view::session_view(session, self.summaries().get(&id), can_approve);
             let agent = view
                 .subagents
                 .into_iter()
                 .find(|a| a.id == agent_id)
-                .ok_or_else(|| PortError::Failed(format!("subagente desconocido: {agent_id}")))?;
+                .ok_or_else(|| PortError::Failed(locale::unknown_subagent(agent_id)))?;
             (agent, session.transcript_path.clone())
         };
-        let transcript = transcript
-            .and_then(|path| self.ports.transcripts.subagent(&path, agent_id, limit))
-            .unwrap_or_default();
+        let transcript =
+            transcript.and_then(|path| self.ports.transcripts.subagent(&path, agent_id, limit)).unwrap_or_default();
         Ok(SubagentPreview {
             session_id: id.0,
             agent,
@@ -226,21 +214,19 @@ impl WarRoomService {
         })
     }
 
-    /// Abre un agente nuevo en una carpeta (normalmente el worktree de una sala).
+    /// Opens a new agent in a folder (usually a room's worktree).
     pub fn launch(&self, cwd: String, target: LaunchTarget) -> PortResult<LaunchOutcome> {
         let label = folder_name(&cwd);
         self.ports.launcher.launch(&LaunchRequest { cwd, resume: None, target, label })
     }
 
-    /// Reanuda una sesión cerrada (`claude --resume`) en su carpeta original.
+    /// Resumes a closed session (`claude --resume`) in its original folder.
     pub fn resume(&self, id: SessionId, target: LaunchTarget) -> PortResult<LaunchOutcome> {
         let request = {
             let room = self.room();
-            let session = room
-                .get(&id)
-                .ok_or_else(|| PortError::Failed(format!("sesión desconocida: {id}")))?;
+            let session = known(&room, &id)?;
             if session.is_alive() {
-                return Err(PortError::Failed("la sesión sigue abierta: usa \"Ir a\"".into()));
+                return Err(PortError::Failed(locale::SESSION_STILL_OPEN.into()));
             }
             let label = self
                 .summaries()
@@ -252,30 +238,26 @@ impl WarRoomService {
         self.ports.launcher.launch(&request)
     }
 
-    /// Escribe un mensaje en la sesión y lo envía (Enter).
+    /// Types a message into the session and sends it (Enter).
     pub fn send_input(&self, id: SessionId, text: &str) -> PortResult<()> {
         let host = {
             let room = self.room();
-            let session = room
-                .get(&id)
-                .ok_or_else(|| PortError::Failed(format!("sesión desconocida: {id}")))?;
+            let session = known(&room, &id)?;
             if !session.is_alive() {
-                return Err(PortError::Failed("la sesión está cerrada".into()));
+                return Err(PortError::Failed(locale::SESSION_CLOSED.into()));
             }
             session.host.clone()
         };
         self.ports.input.send(&host, text)
     }
 
-    /// Salta a la ventana (y pane) de la sesión. Ir a una sesión terminada es revisarla.
+    /// Jumps to the session's window (and pane). Going to a finished session counts as reviewing it.
     pub fn focus(&self, id: SessionId) -> PortResult<FocusOutcome> {
         let (target, finished) = {
             let room = self.room();
-            let session = room
-                .get(&id)
-                .ok_or_else(|| PortError::Failed(format!("sesión desconocida: {id}")))?;
+            let session = known(&room, &id)?;
             if !session.is_alive() {
-                return Ok(FocusOutcome::Unreachable { reason: "la sesión está cerrada".into() });
+                return Ok(FocusOutcome::Unreachable { reason: locale::SESSION_CLOSED.into() });
             }
             let mut hints = vec![];
             if let Some(title) = self.summaries().get(&id).and_then(|s| s.title.clone()) {
@@ -294,8 +276,8 @@ impl WarRoomService {
         Ok(outcome)
     }
 
-    /// Mantenimiento periódico: cierra sesiones cuyo proceso murió y refresca los transcripts de
-    /// las que están en marcha.
+    /// Periodic maintenance: closes sessions whose process died and refreshes the transcripts of
+    /// the running ones.
     pub fn tick(&self) -> PortResult<()> {
         let now = self.ports.clock.now();
         let (lost, active) = {
@@ -311,7 +293,7 @@ impl WarRoomService {
         for event in lost {
             self.commit(event)?;
         }
-        // Permisos contestados en la terminal: Claude mató el hook y la conexión se cerró.
+        // Permissions answered in the terminal: Claude killed the hook and the connection closed.
         let mut changed = {
             let mut approvals = self.approvals();
             let before = approvals.len();
@@ -341,7 +323,7 @@ impl WarRoomService {
         let persisted = event.clone();
         let id = event.session.clone();
         let from_agent = event.context.is_some();
-        // Cualquier otra señal del agente significa que el permiso ya se resolvió por otra vía.
+        // Any other signal from the agent means the permission was already resolved some other way.
         if from_agent && !matches!(event.kind, SessionEventKind::AwaitingYou { .. }) {
             self.approvals().remove(&id);
         }
@@ -353,7 +335,7 @@ impl WarRoomService {
             change
         };
 
-        // El estado en memoria manda aunque falle la persistencia: la UI no debe mentir.
+        // In-memory state wins even if persisting fails: the UI must not lie.
         let stored = self.ports.store.append(&persisted);
         if from_agent {
             self.refresh_summary(&id);
@@ -367,7 +349,7 @@ impl WarRoomService {
         stored
     }
 
-    /// Relee el transcript de una sesión. Devuelve si cambió algo visible.
+    /// Rereads a session's transcript. Returns whether anything visible changed.
     fn refresh_summary(&self, id: &SessionId) -> bool {
         let source = self.room().get(id).and_then(|s| {
             let path = s.transcript_path.clone()?;
@@ -392,14 +374,12 @@ impl WarRoomService {
         };
         let summary = self.summaries().get(&change.session).cloned().unwrap_or_default();
         let (title, fallback) = match change.to {
-            Attention::NeedsYou => (format!("{place} te necesita"), "Está esperando tu decisión"),
-            Attention::Finished => (format!("{place} ha terminado"), "Te toca revisar"),
+            Attention::NeedsYou => (locale::needs_you_title(&place), locale::NEEDS_YOU_FALLBACK_BODY),
+            Attention::Finished => (locale::finished_title(&place), locale::FINISHED_FALLBACK_BODY),
             _ => return None,
         };
-        let body = summary
-            .title
-            .or(summary.last_reply.map(|r| truncate(&r, 140)))
-            .unwrap_or_else(|| fallback.to_string());
+        let body =
+            summary.title.or(summary.last_reply.map(|r| truncate(&r, 140))).unwrap_or_else(|| fallback.to_string());
         let approvable = change.to == Attention::NeedsYou && self.approvals().contains_key(&change.session);
         Some(Notice { session: change.session.clone(), attention: change.to, title, body, approvable })
     }
@@ -421,13 +401,15 @@ fn folder_name(path: &str) -> String {
     path.rsplit('/').find(|p| !p.is_empty()).unwrap_or(path).to_string()
 }
 
+/// The session, or the error the UI shows for an unknown one.
+fn known<'a>(room: &'a WarRoom, id: &SessionId) -> PortResult<&'a awr_domain::Session> {
+    room.get(id).ok_or_else(|| PortError::Failed(locale::unknown_session(id)))
+}
+
 fn truncate(text: &str, max: usize) -> String {
+    let max = max.max(1);
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if text.chars().count() <= max {
-        text
-    } else {
-        format!("{}…", text.chars().take(max - 1).collect::<String>())
-    }
+    if text.chars().count() <= max { text } else { format!("{}…", text.chars().take(max - 1).collect::<String>()) }
 }
 
 #[cfg(test)]
@@ -526,10 +508,16 @@ mod tests {
         fn recent(&self, path: &str, limit: usize) -> Vec<crate::ports::TimelineItem> {
             use crate::ports::{TimelineItem, TimelineKind};
             let all = vec![
-                TimelineItem { kind: TimelineKind::Prompt, text: format!("prompt de {path}"), at: Some(1), model: None, effort: None },
+                TimelineItem {
+                    kind: TimelineKind::Prompt,
+                    text: format!("prompt from {path}"),
+                    at: Some(1),
+                    model: None,
+                    effort: None,
+                },
                 TimelineItem {
                     kind: TimelineKind::Reply,
-                    text: "**hecho**".into(),
+                    text: "**done**".into(),
                     at: Some(2),
                     model: Some("claude-opus-5-5".into()),
                     effort: Some("high".into()),
@@ -539,8 +527,8 @@ mod tests {
         }
         fn subagent(&self, _: &str, agent_id: &str, _: usize) -> Option<crate::ports::AgentTranscript> {
             Some(crate::ports::AgentTranscript {
-                first_prompt: Some(format!("encargo de {agent_id}")),
-                last_reply: Some("listo".into()),
+                first_prompt: Some(format!("task for {agent_id}")),
+                last_reply: Some("ready".into()),
                 timeline: vec![],
             })
         }
@@ -584,7 +572,7 @@ mod tests {
         }
     }
 
-    /// Todas las skills son "del repo" en los tests.
+    /// Every skill is a repo skill in the tests.
     struct RepoSkills;
     impl SkillCatalog for RepoSkills {
         fn classify(&self, _: &str, _: &str, _: &str) -> awr_domain::SkillSource {
@@ -662,17 +650,17 @@ mod tests {
     #[test]
     fn finishing_a_turn_notifies_with_the_session_title() {
         let h = harness();
-        h.transcript.0.lock().unwrap().title = Some("Arreglar el login".into());
+        h.transcript.0.lock().unwrap().title = Some("Fix the login".into());
         h.svc.ingest(signal("a", "prompt")).unwrap();
         h.svc.ingest(signal("a", "stop")).unwrap();
 
         let notices = h.rec.notices.lock().unwrap();
         assert_eq!(notices.len(), 1);
-        assert_eq!(notices[0].title, "app · main ha terminado");
-        assert_eq!(notices[0].body, "Arreglar el login");
+        assert_eq!(notices[0].title, locale::finished_title("app · main"));
+        assert_eq!(notices[0].body, "Fix the login");
         let view = h.rec.views.lock().unwrap().last().unwrap().clone();
         assert_eq!(view.aggregate, AttentionView::Finished);
-        assert_eq!(view.rooms[0].sessions[0].title.as_deref(), Some("Arreglar el login"));
+        assert_eq!(view.rooms[0].sessions[0].title.as_deref(), Some("Fix the login"));
     }
 
     #[test]
@@ -697,7 +685,7 @@ mod tests {
 
         let view = second.svc.view();
         assert!(view.rooms[0].sessions[0].archived);
-        assert_eq!(view.aggregate, AttentionView::Offline, "archivada no cuenta");
+        assert_eq!(view.aggregate, AttentionView::Offline, "archived sessions don't count");
     }
 
     #[test]
@@ -726,7 +714,7 @@ mod tests {
         h.svc.tick().unwrap();
         assert_eq!(h.rec.views.lock().unwrap().len(), before);
 
-        h.transcript.0.lock().unwrap().last_reply = Some("Leyendo el código".into());
+        h.transcript.0.lock().unwrap().last_reply = Some("Reading the code".into());
         h.svc.tick().unwrap();
         assert_eq!(h.rec.views.lock().unwrap().len(), before + 1);
     }
@@ -767,7 +755,7 @@ mod tests {
         h.svc.approve(id("a")).unwrap();
         assert_eq!(*responder.got.lock().unwrap(), Some(ApprovalDecision::Allow));
         assert!(!h.svc.view().rooms[0].sessions[0].can_approve);
-        assert!(h.svc.approve(id("a")).is_err(), "solo se responde una vez");
+        assert!(h.svc.approve(id("a")).is_err(), "it can only be answered once");
     }
 
     #[test]
@@ -785,45 +773,45 @@ mod tests {
         h.svc.ingest(signal("b", "stop")).unwrap();
         let view = h.svc.view();
         let b = view.rooms[0].sessions.iter().find(|s| s.id == "b").unwrap();
-        assert!(!b.can_approve, "otra señal del agente cierra la ventana de aprobación");
+        assert!(!b.can_approve, "another agent signal closes the approval window");
         assert!(h.svc.deny(id("b"), None).is_err());
     }
 
     #[test]
     fn a_closed_session_resumes_in_its_original_folder_with_its_title() {
         let h = harness_with(Arc::default(), false);
-        h.transcript.0.lock().unwrap().title = Some("Arreglar login".into());
+        h.transcript.0.lock().unwrap().title = Some("Fix login".into());
         h.svc.ingest(signal("a", "prompt")).unwrap();
-        assert!(h.svc.resume(id("a"), LaunchTarget::Warp).is_err(), "viva: se va a ella, no se reanuda");
+        assert!(h.svc.resume(id("a"), LaunchTarget::Warp).is_err(), "alive: go to it, don't resume it");
 
         h.svc.tick().unwrap();
         h.svc.resume(id("a"), LaunchTarget::Warp).unwrap();
         let launched = h.rec.launched.lock().unwrap();
         assert_eq!(launched[0].resume, Some(id("a")));
         assert_eq!(launched[0].cwd, "/code/app");
-        assert_eq!(launched[0].label, "Arreglar login");
+        assert_eq!(launched[0].label, "Fix login");
     }
 
     #[test]
     fn typing_goes_to_live_sessions_only() {
         let h = harness_with(Arc::default(), false);
         h.svc.ingest(signal("a", "prompt")).unwrap();
-        h.svc.send_input(id("a"), "sigue").unwrap();
-        assert_eq!(h.rec.typed.lock().unwrap()[0], (Some(7), "sigue".to_string()));
+        h.svc.send_input(id("a"), "go on").unwrap();
+        assert_eq!(h.rec.typed.lock().unwrap()[0], (Some(7), "go on".to_string()));
 
         h.svc.tick().unwrap();
-        assert!(h.svc.send_input(id("a"), "hola").is_err());
+        assert!(h.svc.send_input(id("a"), "hello").is_err());
     }
 
     #[test]
     fn the_preview_brings_the_card_and_the_recent_conversation() {
         let h = harness();
-        h.transcript.0.lock().unwrap().first_prompt = Some("Migra el login".into());
+        h.transcript.0.lock().unwrap().first_prompt = Some("Migrate the login".into());
         h.svc.ingest(signal("a", "prompt")).unwrap();
         let detail = h.svc.session_detail(id("a"), 1).unwrap();
-        assert_eq!(detail.session.first_prompt.as_deref(), Some("Migra el login"));
+        assert_eq!(detail.session.first_prompt.as_deref(), Some("Migrate the login"));
         assert_eq!(detail.timeline.len(), 1);
-        assert_eq!(detail.timeline[0].text, "**hecho**");
+        assert_eq!(detail.timeline[0].text, "**done**");
         assert_eq!(detail.timeline[0].effort.as_deref(), Some("high"));
         assert!(h.svc.session_detail(id("ghost"), 5).is_err());
     }
@@ -832,7 +820,7 @@ mod tests {
     fn restore_forgets_events_older_than_the_retention() {
         let store = Arc::new(MemoryStore::default());
         let old = SessionEvent {
-            session: id("viejo"),
+            session: id("old"),
             at: Timestamp(1_000_000_000_000 - 30 * 24 * 60 * 60 * 1000),
             context: None,
             kind: SessionEventKind::Seen,
@@ -854,9 +842,7 @@ mod tests {
     #[test]
     fn a_subagent_preview_brings_its_task_and_reply() {
         let h = harness();
-        let mut sig = signal("a", "prompt");
-        sig.payload = serde_json::json!({ "s": "a", "e": "prompt" });
-        h.svc.ingest(sig).unwrap();
+        h.svc.ingest(signal("a", "prompt")).unwrap();
         h.svc
             .commit(SessionEvent {
                 session: id("a"),
@@ -866,9 +852,9 @@ mod tests {
             })
             .unwrap();
         let preview = h.svc.subagent_detail(id("a"), "x1", 10).unwrap();
-        assert_eq!(preview.first_prompt.as_deref(), Some("encargo de x1"));
+        assert_eq!(preview.first_prompt.as_deref(), Some("task for x1"));
         assert!(preview.agent.running);
-        assert!(h.svc.subagent_detail(id("a"), "otro", 10).is_err());
+        assert!(h.svc.subagent_detail(id("a"), "other", 10).is_err());
     }
 
     #[test]
@@ -880,13 +866,13 @@ mod tests {
         assert_eq!(s.turns, 1);
         assert_eq!(s.skills.len(), 1);
         assert_eq!(s.skills[0].name, "close-task");
-        assert_eq!(s.skills[0].source, crate::view::SkillSourceView::Project, "la procedencia la fija el catálogo");
+        assert_eq!(s.skills[0].source, crate::view::SkillSourceView::Project, "the catalog settles the source");
         assert!(s.skills[0].by_user && !s.skills[0].by_agent);
     }
 
     #[test]
     fn truncate_collapses_whitespace_and_cuts_on_chars() {
-        assert_eq!(truncate("hola\n\n  mundo", 50), "hola mundo");
-        assert_eq!(truncate("ñññññ", 3), "ññ…");
+        assert_eq!(truncate("hello\n\n  world", 50), "hello world");
+        assert_eq!(truncate("ßßßßß", 3), "ßß…");
     }
 }

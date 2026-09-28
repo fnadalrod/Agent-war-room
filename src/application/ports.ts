@@ -4,16 +4,16 @@ export type Unsubscribe = () => void;
 
 export type LaunchTarget = "app" | "warp";
 
-/** `ptyId` presente si el agente se abrió en un terminal de la app. */
+/** `pty_id` is set when the agent was opened in an in-app terminal. */
 export type Launched = { pty_id: string | null; via: string };
 
-/** Todo lo que el front necesita del núcleo. La implementación real habla con Tauri. */
+/** Everything the front needs from the core. The real implementation talks to Tauri. */
 export interface WarRoomGateway {
   load(): Promise<WarRoomView>;
   onChange(listener: (view: WarRoomView) => void): Promise<Unsubscribe>;
   markSeen(id: string): Promise<void>;
   markAllSeen(): Promise<void>;
-  /** Salta a la ventana de la sesión. Resuelve con la vía usada; rechaza con el motivo. */
+  /** Jumps to the session window. Resolves with the route used; rejects with the reason. */
   focus(id: string): Promise<string>;
   archive(id: string): Promise<void>;
   unarchive(id: string): Promise<void>;
@@ -24,19 +24,19 @@ export interface WarRoomGateway {
   sendInput(id: string, text: string): Promise<void>;
   launch(cwd: string, target: LaunchTarget): Promise<Launched>;
   resume(id: string, target: LaunchTarget): Promise<Launched>;
-  /** Vista previa: tarjeta + conversación reciente. */
+  /** Preview: card + recent conversation. */
   detail(id: string): Promise<SessionDetail>;
-  /** Vista previa de un subagente de la sesión. */
+  /** Preview of one of the session's subagents. */
   subagentDetail(id: string, agent: string): Promise<SubagentPreview>;
-  /** Abre un enlace en el navegador del sistema. */
+  /** Opens a link in the system browser. */
   openExternal(url: string): Promise<void>;
-  /** El núcleo pide abrir la vista previa de una sesión (p. ej. clic en un aviso). */
+  /** The core asks to open a session preview (e.g. a notification was clicked). */
   onOpenRequest(listener: (id: string) => void): Promise<Unsubscribe>;
 }
 
 export type TerminalInfo = { id: string; label: string; cwd: string; alive: boolean };
 
-/** Terminales propios de la app (PTY). */
+/** In-app terminals (PTY). */
 export interface TerminalGateway {
   list(): Promise<TerminalInfo[]>;
   snapshot(id: string): Promise<Uint8Array>;
@@ -51,12 +51,12 @@ export interface IntegrationGateway {
   status(): Promise<IntegrationStatus>;
   install(): Promise<IntegrationStatus>;
   uninstall(): Promise<IntegrationStatus>;
-  /** Arrancar la app (oculta, en la bandeja) al iniciar sesión. */
+  /** Start the app (hidden, in the tray) on login. */
   autostart(): Promise<boolean>;
   setAutostart(enabled: boolean): Promise<boolean>;
 }
 
-/** Dónde se recuerda el filtro entre arranques (en este equipo). */
+/** Where the filter is remembered across launches (on this machine). */
 export interface FilterStorage {
   load(): Filter | null;
   save(filter: Filter): void;

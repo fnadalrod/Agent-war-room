@@ -1,4 +1,4 @@
-//! De dónde sale una skill: del repo, tuya, de un plugin o integrada en Claude Code.
+//! Where a skill comes from: the repo, the user, a plugin, or built into Claude Code.
 
 use awr_application::ports::SkillCatalog;
 use awr_domain::SkillSource;
@@ -20,7 +20,7 @@ impl SkillCatalog for FsSkillCatalog {
         if name.contains(':') {
             return SkillSource::Plugin;
         }
-        // El nombre acaba en una ruta: nada de separadores ni `..`.
+        // The name ends up in a path: no separators or `..`.
         if name.is_empty() || name.contains('/') || name.contains("..") {
             return SkillSource::Builtin;
         }
@@ -34,20 +34,17 @@ impl SkillCatalog for FsSkillCatalog {
     }
 }
 
-/// Desde `cwd` hacia arriba hasta la raíz del worktree (Claude también busca así).
+/// From `cwd` up to the worktree root (Claude searches the same way).
 fn project_dirs(cwd: &Path, worktree: &Path) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = cwd
-        .ancestors()
-        .take_while(|d| d.starts_with(worktree))
-        .map(Path::to_path_buf)
-        .collect();
+    let mut dirs: Vec<PathBuf> =
+        cwd.ancestors().take_while(|d| d.starts_with(worktree)).map(Path::to_path_buf).collect();
     if dirs.is_empty() && !worktree.as_os_str().is_empty() {
         dirs.push(worktree.to_path_buf());
     }
     dirs
 }
 
-/// `.claude/skills/<nombre>/` o `.claude/commands/<nombre>.md` dentro de `claude_dir`.
+/// `.claude/skills/<name>/` or `.claude/commands/<name>.md` inside `claude_dir`.
 fn defines(claude_dir: &Path, name: &str) -> bool {
     claude_dir.join("skills").join(name).join("SKILL.md").is_file()
         || claude_dir.join("commands").join(format!("{name}.md")).is_file()
@@ -76,7 +73,7 @@ mod tests {
         let catalog = FsSkillCatalog::new(home);
         let cwd = repo.join("src/app");
         let (cwd, repo) = (cwd.to_str().unwrap(), repo.to_str().unwrap());
-        assert_eq!(catalog.classify("close-task", cwd, repo), SkillSource::Project, "desde una subcarpeta");
+        assert_eq!(catalog.classify("close-task", cwd, repo), SkillSource::Project, "from a subfolder");
         assert_eq!(catalog.classify("teacher-content", cwd, repo), SkillSource::Personal);
         assert_eq!(catalog.classify("deploy", cwd, repo), SkillSource::Personal);
         assert_eq!(catalog.classify("anthropic-skills:docx", cwd, repo), SkillSource::Plugin);

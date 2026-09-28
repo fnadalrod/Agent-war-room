@@ -1,6 +1,7 @@
-//! Lanzar agentes (nuevos o reanudados) y escribir en sesiones vivas.
+//! Launching agents (new or resumed) and typing into live sessions.
 
 use crate::desktop::{open_url, tmux};
+use crate::locale;
 use crate::pty::{PtyManager, PtySpec};
 use awr_application::ports::{
     AgentLauncher, LaunchOutcome, LaunchRequest, LaunchTarget, PortError, PortResult, SessionInput,
@@ -10,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-/// Configs de pestaña que generamos para Warp; se borran pasado este tiempo.
+/// Tab configs we generate for Warp are deleted after this long.
 const WARP_CONFIG_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const WARP_CONFIG_PREFIX: &str = "awr-";
 
@@ -31,17 +32,21 @@ impl DesktopLauncher {
         Ok(LaunchOutcome::External { via: "warp".into() })
     }
 
-    /// Escribe la config de pestaña y devuelve su nombre (lo que se abre con `warp://tab_config/`).
+    /// Writes the tab config and returns its name (what `warp://tab_config/` opens).
     fn write_warp_config(&self, request: &LaunchRequest, command: &str) -> PortResult<String> {
         std::fs::create_dir_all(&self.warp_tab_configs).map_err(fail)?;
         self.sweep_old_warp_configs();
         let stem = format!(
             "{WARP_CONFIG_PREFIX}{}",
-            request.resume.as_ref().map(|id| id.0[..8.min(id.0.len())].to_owned()).unwrap_or_else(|| slug(&request.label))
+            request
+                .resume
+                .as_ref()
+                .map(|id| id.0[..8.min(id.0.len())].to_owned())
+                .unwrap_or_else(|| slug(&request.label))
         );
         let toml = format!(
             "name = {name}\ntitle = {title}\ncolor = \"blue\"\n\n[[panes]]\nid = \"main\"\ntype = \"terminal\"\ndirectory = {dir}\ncommands = [{command}]\nis_focused = true\n",
-            name = toml_string(&format!("War Room · {}", request.label)),
+            name = toml_string(&locale::warp_tab_name(&request.label)),
             title = toml_string(&request.label),
             dir = toml_string(&request.cwd),
             command = toml_string(command),
@@ -73,7 +78,7 @@ impl AgentLauncher for DesktopLauncher {
         match request.target {
             LaunchTarget::Warp => self.launch_in_warp(request, &command),
             LaunchTarget::App => {
-                // Shell de login: al lanzar desde el escritorio, el PATH no incluye ~/.local/bin.
+                // Login shell: when launched from the desktop, PATH does not include ~/.local/bin.
                 let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into());
                 let pty_id = self
                     .pty
@@ -92,9 +97,9 @@ impl AgentLauncher for DesktopLauncher {
     }
 }
 
-/// Si la app se arrancó desde una sesión de Claude, hereda marcas (`CLAUDE_CODE_CHILD_SESSION`…)
-/// con las que el agente nuevo se creería un subproceso y, entre otras cosas, no guardaría
-/// transcript. Cada agente lanzado desde la war room es una sesión independiente.
+/// If the app was started from a Claude session, it inherits markers (`CLAUDE_CODE_CHILD_SESSION`…)
+/// that would make the new agent believe it is a subprocess and, among other things, not save a
+/// transcript. Every agent launched from the war room is an independent session.
 pub fn inherited_agent_markers() -> Vec<String> {
     std::env::vars()
         .map(|(k, _)| k)
@@ -111,15 +116,15 @@ pub fn inherited_agent_markers() -> Vec<String> {
 fn claude_command(request: &LaunchRequest) -> PortResult<String> {
     match &request.resume {
         None => Ok("claude".into()),
-        // El id acaba en una línea de shell: solo se admite su alfabeto.
+        // The id ends up in a shell line: only its alphabet is allowed.
         Some(id) if !id.0.is_empty() && id.0.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') => {
             Ok(format!("claude --resume {}", id.0))
         }
-        Some(id) => Err(PortError::Failed(format!("id de sesión no válido: {id}"))),
+        Some(id) => Err(PortError::Failed(locale::invalid_session_id(id))),
     }
 }
 
-/// Escribe en sesiones de un terminal de la app o de tmux. El resto solo admite "ir a".
+/// Types into sessions living in an app terminal or in tmux. The rest only support "go to".
 pub struct TerminalInput {
     pty: Arc<PtyManager>,
 }
@@ -134,16 +139,14 @@ impl SessionInput for TerminalInput {
     fn send(&self, host: &TerminalHost, text: &str) -> PortResult<()> {
         if let Some(pty) = &host.pty_id {
             self.pty.write(pty, text.as_bytes()).map_err(PortError::Failed)?;
-            // Separado del texto: pegado junto, el Enter se tomaría como salto de línea.
+            // Sent separately: pasted together with the text, Enter would be taken as a line break.
             std::thread::sleep(Duration::from_millis(60));
             return self.pty.write(pty, b"\r").map_err(PortError::Failed);
         }
         if let Some(pane) = &host.tmux_pane {
             return tmux::send_text(host.tmux_socket.as_deref(), pane, text, true).map_err(PortError::Failed);
         }
-        Err(PortError::Failed(
-            "esta sesión vive en una terminal externa: no se puede escribir desde aquí, usa \"Ir a\"".into(),
-        ))
+        Err(PortError::Failed(locale::EXTERNAL_TERMINAL_NO_INPUT.into()))
     }
 }
 
@@ -161,11 +164,7 @@ fn toml_string(s: &str) -> String {
 }
 
 fn slug(label: &str) -> String {
-    let s: String = label
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect();
+    let s: String = label.to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
     s.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-").chars().take(40).collect()
 }
 
@@ -183,7 +182,7 @@ mod tests {
             cwd: "/code/My \"app\"".into(),
             resume: resume.map(|r| SessionId(r.into())),
             target,
-            label: "Arreglar el login".into(),
+            label: "Fix the login".into(),
         }
     }
 
@@ -206,17 +205,17 @@ mod tests {
         let stem = launcher.write_warp_config(&req, &claude_command(&req).unwrap()).unwrap();
         assert_eq!(stem, "awr-d96c47e0");
         let toml = std::fs::read_to_string(dir.path().join("tab_configs/awr-d96c47e0.toml")).unwrap();
-        assert!(toml.contains(r#"name = "War Room · Arreglar el login""#));
+        assert!(toml.contains(r#"name = "War Room · Fix the login""#));
         assert!(toml.contains(r#"directory = "/code/My \"app\"""#));
         assert!(toml.contains(r#"commands = ["claude --resume d96c47e0-0e79-4c98"]"#));
 
         let new = request(None, LaunchTarget::Warp);
-        assert_eq!(launcher.write_warp_config(&new, "claude").unwrap(), "awr-arreglar-el-login");
+        assert_eq!(launcher.write_warp_config(&new, "claude").unwrap(), "awr-fix-the-login");
     }
 
     #[test]
     fn external_terminals_cannot_be_typed_into() {
         let input = TerminalInput::new(PtyManager::new(Arc::new(|_| {})));
-        assert!(input.send(&TerminalHost::default(), "hola").is_err());
+        assert!(input.send(&TerminalHost::default(), "hello").is_err());
     }
 }

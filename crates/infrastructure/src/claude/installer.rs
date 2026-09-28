@@ -1,10 +1,11 @@
+use crate::locale;
 use awr_application::ports::{IntegrationInstaller, PortError, PortResult};
 use awr_application::view::IntegrationStatus;
 use serde_json::{Map, Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Hooks de Claude que alimentan la máquina de estados.
+/// Claude hooks that feed the state machine.
 pub const HOOKED_EVENTS: &[&str] = &[
     "SessionStart",
     "SessionEnd",
@@ -20,19 +21,19 @@ pub const HOOKED_EVENTS: &[&str] = &[
     "PreCompact",
 ];
 
-/// Identifica nuestras entradas en `settings.json`, sin tocar las de nadie más.
+/// Identifies our entries in `settings.json`, without touching anyone else's.
 const MARKER: &str = "warroom-hook";
 const HOOK_TIMEOUT_SECS: u64 = 5;
-/// `PermissionRequest` espera tu decisión desde la app; Claude muestra su diálogo a la vez y, si
-/// contestas allí, mata el hook. El puente se rinde a los 590 s.
+/// `PermissionRequest` waits for the user's decision from the app; Claude shows its own dialog at
+/// the same time and, if answered there, kills the hook. The bridge gives up after 590 s.
 const PERMISSION_TIMEOUT_SECS: u64 = 600;
 
-/// Merge no destructivo de nuestros hooks en `~/.claude/settings.json`.
+/// Non-destructive merge of our hooks into `~/.claude/settings.json`.
 pub struct ClaudeHookInstaller {
     settings_path: PathBuf,
-    /// Binario recién compilado o empaquetado; se copia a `bridge_target` al instalar.
+    /// Freshly built or bundled binary; copied to `bridge_target` on install.
     bridge_source: Option<PathBuf>,
-    /// Ruta estable a la que apuntan los hooks.
+    /// Stable path the hooks point to.
     bridge_target: PathBuf,
 }
 
@@ -50,8 +51,8 @@ impl ClaudeHookInstaller {
             Ok(raw) if raw.trim().is_empty() => Ok(Map::new()),
             Ok(raw) => match serde_json::from_str(&raw) {
                 Ok(Value::Object(map)) => Ok(map),
-                Ok(_) => Err(fail("settings.json no es un objeto JSON")),
-                Err(e) => Err(fail(format!("settings.json no es JSON válido: {e}"))),
+                Ok(_) => Err(fail(locale::SETTINGS_NOT_AN_OBJECT)),
+                Err(e) => Err(fail(locale::settings_invalid_json(e))),
             },
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Map::new()),
             Err(e) => Err(fail(e)),
@@ -73,19 +74,15 @@ impl ClaudeHookInstaller {
 
     fn copy_bridge(&self) -> PortResult<()> {
         let Some(source) = self.bridge_source.as_ref().filter(|s| s.exists()) else {
-            return if self.bridge_target.exists() {
-                Ok(())
-            } else {
-                Err(fail("no se encuentra el binario warroom-hook; compílalo con `cargo build -p warroom-hook`"))
-            };
+            return if self.bridge_target.exists() { Ok(()) } else { Err(fail(locale::BRIDGE_NOT_FOUND)) };
         };
         if !is_executable_binary(source) {
-            return Err(fail(format!("{} no es un ejecutable válido del puente", source.display())));
+            return Err(fail(locale::invalid_bridge(source.display())));
         }
         if let Some(dir) = self.bridge_target.parent() {
             fs::create_dir_all(dir).map_err(fail)?;
         }
-        // Copia a temporal + rename: sobrescribir el binario mientras un hook lo ejecuta daría ETXTBSY.
+        // Copy to a temp file + rename: overwriting the binary while a hook runs it would fail with ETXTBSY.
         let tmp = self.bridge_target.with_extension("new");
         fs::copy(source, &tmp).map_err(fail)?;
         set_executable(&tmp)?;
@@ -96,11 +93,8 @@ impl ClaudeHookInstaller {
 impl IntegrationInstaller for ClaudeHookInstaller {
     fn status(&self) -> PortResult<IntegrationStatus> {
         let settings = self.read_settings()?;
-        let hooked_events: Vec<String> = HOOKED_EVENTS
-            .iter()
-            .filter(|event| event_has_ours(&settings, event))
-            .map(|e| e.to_string())
-            .collect();
+        let hooked_events: Vec<String> =
+            HOOKED_EVENTS.iter().filter(|event| event_has_ours(&settings, event)).map(|e| e.to_string()).collect();
         Ok(IntegrationStatus {
             installed: hooked_events.len() == HOOKED_EVENTS.len(),
             hooked_events,
@@ -129,15 +123,13 @@ impl IntegrationInstaller for ClaudeHookInstaller {
 }
 
 fn add_hooks(settings: &mut Map<String, Value>, command: &str) {
-    // Reinstalar reemplaza nuestras entradas (p. ej. si cambió la ruta del puente).
+    // Reinstalling replaces our entries (e.g. if the bridge path changed).
     remove_hooks(settings);
-    let hooks = settings
-        .entry("hooks")
-        .or_insert_with(|| Value::Object(Map::new()));
+    let hooks = settings.entry("hooks").or_insert_with(|| Value::Object(Map::new()));
     if !hooks.is_object() {
         *hooks = Value::Object(Map::new());
     }
-    let hooks = hooks.as_object_mut().expect("recién asegurado como objeto");
+    let hooks = hooks.as_object_mut().expect("just ensured to be an object");
     for event in HOOKED_EVENTS {
         let groups = hooks.entry(*event).or_insert_with(|| Value::Array(Vec::new()));
         if let Some(groups) = groups.as_array_mut() {
@@ -150,7 +142,7 @@ fn add_hooks(settings: &mut Map<String, Value>, command: &str) {
     }
 }
 
-/// Quita nuestras entradas y lo que quede vacío por ello. Devuelve si cambió algo.
+/// Removes our entries and whatever is left empty because of it. Returns whether anything changed.
 fn remove_hooks(settings: &mut Map<String, Value>) -> bool {
     let Some(hooks) = settings.get_mut("hooks").and_then(Value::as_object_mut) else {
         return false;
@@ -192,7 +184,7 @@ fn is_ours(hook: &Value) -> bool {
     hook.get("command").and_then(Value::as_str).is_some_and(|c| c.contains(MARKER))
 }
 
-/// Un ELF de verdad: apuntar los hooks a un fichero vacío o roto haría fallar cada hook de Claude.
+/// A real ELF: pointing the hooks at an empty or broken file would make every Claude hook fail.
 fn is_executable_binary(path: &Path) -> bool {
     use std::io::Read;
     let mut magic = [0u8; 4];
@@ -254,7 +246,7 @@ mod tests {
         let settings = read(&installer);
         assert_eq!(settings["model"], "opus");
         let stop = settings["hooks"]["Stop"].as_array().unwrap();
-        assert_eq!(stop.len(), 2, "el ajeno + el nuestro, sin duplicar");
+        assert_eq!(stop.len(), 2, "the foreign one + ours, no duplicates");
         assert_eq!(stop[0]["hooks"][0]["command"], "node other.js");
         assert!(backup_path(&installer.settings_path).exists());
         assert_eq!(settings["hooks"]["PermissionRequest"][0]["hooks"][0]["timeout"], 600);
@@ -284,7 +276,7 @@ mod tests {
         let (dir, installer) = setup(None);
         fs::write(dir.path().join("build/warroom-hook"), "").unwrap();
         assert!(installer.install().is_err());
-        assert!(!installer.settings_path.exists(), "no toca settings.json");
+        assert!(!installer.settings_path.exists(), "does not touch settings.json");
     }
 
     #[test]

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import type { WarRoomStore } from "../application/warRoomStore";
 import type { SessionView } from "../domain/attention";
+import { copy } from "../domain/copy";
 
-/** Mensaje rápido a la sesión, como si lo escribieras en su terminal. */
+/** Quick message to the session, as if typed into its terminal. */
 export function QuickInput({ session, store }: { session: SessionView; store: WarRoomStore }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -20,9 +21,9 @@ export function QuickInput({ session, store }: { session: SessionView; store: Wa
       <input
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="Escribir a la sesión… (Enter envía)"
+        placeholder={copy.quickInput.placeholder}
         disabled={sending}
-        aria-label="Mensaje para la sesión"
+        aria-label={copy.quickInput.label}
       />
     </form>
   );

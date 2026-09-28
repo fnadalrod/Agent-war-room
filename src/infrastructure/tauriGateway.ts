@@ -9,7 +9,7 @@ import type {
 } from "../application/ports";
 import type { IntegrationStatus, SessionDetail, SubagentPreview, WarRoomView } from "../domain/attention";
 
-/** Deben coincidir con `adapters.rs` en src-tauri. */
+/** Must match the event names in src-tauri (`adapters.rs`, `lib.rs`). */
 const VIEW_EVENT = "warroom://view";
 const PTY_OUTPUT_EVENT = "pty://output";
 const PTY_EXIT_EVENT = "pty://exit";

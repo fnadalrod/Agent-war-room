@@ -1,19 +1,20 @@
-//! Raíz de composición: construye los adaptadores, los conecta al servicio y arranca Tauri.
+//! Composition root: builds the adapters, wires them into the service and starts Tauri.
 
 mod adapters;
 mod commands;
+mod locale;
 mod tray;
 
-use awr_application::{Ports, WarRoomService};
 use awr_application::ports::IntegrationInstaller;
+use awr_application::{Ports, WarRoomService};
 use awr_infrastructure::claude::{ClaudeHookInstaller, ClaudeProvider, ClaudeTranscriptReader, FsSkillCatalog};
 use awr_infrastructure::desktop::DesktopNavigator;
 use awr_infrastructure::git::GitRepoResolver;
-use awr_infrastructure::sqlite::SqliteEventStore;
-use awr_infrastructure::system::{ProcProbe, SystemClock};
 use awr_infrastructure::ingress;
 use awr_infrastructure::launch::{DesktopLauncher, TerminalInput};
 use awr_infrastructure::pty::PtyManager;
+use awr_infrastructure::sqlite::SqliteEventStore;
+use awr_infrastructure::system::{ProcProbe, SystemClock};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,7 +22,7 @@ use tauri::{AppHandle, Manager};
 
 const TICK_EVERY: Duration = Duration::from_secs(5);
 pub const MAIN_WINDOW: &str = "main";
-/// Arranque automático al iniciar sesión: directo a la bandeja, sin ventana.
+/// Autostart on login: straight to the tray, no window.
 const HIDDEN_FLAG: &str = "--hidden";
 pub const OPEN_DETAIL_EVENT: &str = "warroom://open-detail";
 
@@ -70,23 +71,23 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Cerrar la ventana no apaga la vigilancia: la app sigue en la bandeja.
+            // Closing the window does not stop monitoring: the app stays in the tray.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
             }
         })
         .run(tauri::generate_context!())
-        .expect("error al arrancar Agent War Room");
+        .expect("failed to start Agent War Room");
 }
 
 fn compose(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let data_dir = dirs::data_dir().ok_or("sin directorio de datos")?.join("agent-war-room");
+    let data_dir = dirs::data_dir().ok_or("no data directory")?.join("agent-war-room");
     let tray = tray::create(app)?;
     let (notice_actions, picked) = std::sync::mpsc::channel();
     let pty = PtyManager::new(adapters::pty_sink(app.clone()));
     app.manage(pty.clone());
-    let warp_tab_configs = dirs::data_dir().ok_or("sin directorio de datos")?.join("warp-terminal/tab_configs");
+    let warp_tab_configs = dirs::data_dir().ok_or("no data directory")?.join("warp-terminal/tab_configs");
 
     let service = Arc::new(WarRoomService::new(Ports {
         providers: vec![Arc::new(ClaudeProvider)],
@@ -100,19 +101,19 @@ fn compose(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         navigator: Arc::new(DesktopNavigator::detect()),
         launcher: Arc::new(DesktopLauncher::new(pty.clone(), warp_tab_configs)),
         input: Arc::new(TerminalInput::new(pty)),
-        skills: Arc::new(FsSkillCatalog::new(dirs::home_dir().ok_or("sin HOME")?.join(".claude"))),
+        skills: Arc::new(FsSkillCatalog::new(dirs::home_dir().ok_or("no HOME directory")?.join(".claude"))),
     }));
     service.restore()?;
     app.manage(service.clone());
 
     let installer: Arc<dyn IntegrationInstaller> = Arc::new(ClaudeHookInstaller::new(
-        dirs::home_dir().ok_or("sin HOME")?.join(".claude/settings.json"),
+        dirs::home_dir().ok_or("no HOME directory")?.join(".claude/settings.json"),
         built_bridge(),
         data_dir.join("bin/warroom-hook"),
     ));
     app.manage(installer);
 
-    // Botones de los avisos.
+    // Notification buttons.
     let (on_notice, handle) = (service.clone(), app.clone());
     std::thread::spawn(move || {
         use adapters::NoticeAction;
@@ -127,7 +128,7 @@ fn compose(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 NoticeAction::Approve(id) => on_notice.approve(id).map_err(|e| e.to_string()),
             };
             if let Err(e) = outcome {
-                eprintln!("[avisos] {e}");
+                eprintln!("[notices] {e}");
             }
         }
     });
@@ -146,11 +147,11 @@ fn compose(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 )
                 .await
             }
-            Err(e) => eprintln!("[ingress] no se pudo abrir el socket: {e}"),
+            Err(e) => eprintln!("[ingress] could not open the socket: {e}"),
         }
     });
 
-    // Procesos muertos sin SessionEnd y transcripts de las sesiones en marcha.
+    // Dead processes without SessionEnd, and transcripts of running sessions.
     let ticker = service;
     tauri::async_runtime::spawn(async move {
         let mut tick = tokio::time::interval(TICK_EVERY);
@@ -164,7 +165,7 @@ fn compose(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// El puente se compila en el mismo `target/` que la app (workspace), junto al ejecutable.
+/// The bridge is built into the same `target/` as the app (workspace), next to the executable.
 fn built_bridge() -> Option<PathBuf> {
     std::env::current_exe().ok()?.parent().map(|dir| dir.join("warroom-hook"))
 }

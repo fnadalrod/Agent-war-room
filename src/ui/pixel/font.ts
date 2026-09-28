@@ -1,4 +1,4 @@
-// Fuente bitmap de 3×5 píxeles: cada glifo son 5 filas de 3 bits (bit alto = columna izquierda).
+// 3×5 pixel bitmap font: each glyph is 5 rows of 3 bits (high bit = left column).
 const GLYPHS: Record<string, number[]> = {
   A: [0b010, 0b101, 0b111, 0b101, 0b101],
   B: [0b110, 0b101, 0b110, 0b101, 0b110],
@@ -57,10 +57,10 @@ const GLYPHS: Record<string, number[]> = {
 
 export const GLYPH_W = 3;
 export const GLYPH_H = 5;
-/** Ancho de un carácter más su separación. */
+/** Width of a character plus its spacing. */
 export const ADVANCE = GLYPH_W + 1;
 
-/** Mayúsculas sin tildes; lo que no tenga glifo se vuelve "?". */
+/** Uppercase without accents; anything without a glyph becomes "?". */
 export function normalize(text: string): string {
   return text
     .normalize("NFD")
@@ -75,14 +75,14 @@ export function textWidth(text: string): number {
   return text.length === 0 ? 0 : text.length * ADVANCE - 1;
 }
 
-/** Recorta a `maxWidth` píxeles con "." final si no cabe. */
+/** Truncates to `maxWidth` pixels with a trailing "." if it does not fit. */
 export function fit(text: string, maxWidth: number): string {
   const t = normalize(text);
   const max = Math.floor((maxWidth + 1) / ADVANCE);
   return t.length <= max ? t : `${t.slice(0, Math.max(0, max - 1))}.`;
 }
 
-/** Pinta texto ya normalizado en coordenadas lógicas. */
+/** Draws text (normalized here) at logical coordinates. */
 export function drawText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string) {
   ctx.fillStyle = color;
   let cx = Math.round(x);

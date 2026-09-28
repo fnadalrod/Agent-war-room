@@ -9,6 +9,7 @@ import {
   toggle,
   type WarRoomView,
 } from "../domain/attention";
+import { copy } from "../domain/copy";
 import type {
   FilterStorage,
   IntegrationGateway,
@@ -20,14 +21,14 @@ import type {
 
 export type Toast = { text: string; tone: "ok" | "warn" };
 
-/** Vista previa abierta: `data` es null mientras carga. `agent`: se está viendo uno de sus subagentes. */
+/** Open preview: `data` is null while loading. `agent`: one of its subagents is being viewed. */
 export type OpenDetail = {
   id: string;
   data: SessionDetail | null;
   agent: { id: string; data: SubagentPreview | null } | null;
 };
 
-/** Terminal de la app abierto en el panel. */
+/** In-app terminal open in the panel. */
 export type OpenTerminal = { id: string; label: string };
 
 export type WarRoomState = {
@@ -44,7 +45,7 @@ export type WarRoomState = {
 
 const TOAST_MS = 3500;
 
-/** Store sin framework: la UI se suscribe con `useSyncExternalStore`. */
+/** Framework-free store: the UI subscribes with `useSyncExternalStore`. */
 export class WarRoomStore {
   private state: WarRoomState = { view: null, filter: NO_FILTER, detail: null, terminal: null, integration: null, autostart: null, error: null, toast: null, busy: false };
   private readonly listeners = new Set<() => void>();
@@ -123,7 +124,7 @@ export class WarRoomStore {
 
   readonly snapshot = () => this.state;
 
-  /** Ir a la ventana de la sesión; si era un "terminado", el núcleo lo marca como revisado. */
+  /** Go to the session window; if it was finished, the core marks it as seen. */
   goTo(s: SessionView) {
     void this.rooms.focus(s.id).then(
       (via) => this.notify({ text: `→ ${s.title ?? s.worktree_path} (${via})`, tone: "ok" }),
@@ -132,14 +133,14 @@ export class WarRoomStore {
   }
 
   approve(s: SessionView) {
-    void this.run(() => this.rooms.approve(s.id)).then((ok) => ok && this.notify({ text: "Permiso aprobado", tone: "ok" }));
+    void this.run(() => this.rooms.approve(s.id)).then((ok) => ok && this.notify({ text: copy.toasts.approved, tone: "ok" }));
   }
 
   deny(s: SessionView) {
-    void this.run(() => this.rooms.deny(s.id)).then((ok) => ok && this.notify({ text: "Permiso denegado", tone: "ok" }));
+    void this.run(() => this.rooms.deny(s.id)).then((ok) => ok && this.notify({ text: copy.toasts.denied, tone: "ok" }));
   }
 
-  /** Escribe un mensaje en la sesión y lo envía. Resuelve a `true` si se entregó. */
+  /** Types a message into the session and sends it. Resolves to `true` if delivered. */
   async send(s: SessionView, text: string): Promise<boolean> {
     try {
       await this.rooms.sendInput(s.id, text);
@@ -164,13 +165,13 @@ export class WarRoomStore {
     );
   }
 
-  /** Abre la vista previa de una sesión (o la cambia a otra). */
+  /** Opens a session preview (or switches it to another session). */
   openDetail(id: string) {
     this.set({ detail: { id, data: this.state.detail?.id === id ? this.state.detail.data : null, agent: null } });
     void this.loadDetail(id);
   }
 
-  /** Abre la vista previa de un subagente (dentro del panel de su sesión). */
+  /** Opens a subagent preview (inside its session panel). */
   openSubagent(id: string, agent: string) {
     const same = this.state.detail?.id === id;
     this.set({ detail: { id, data: same ? this.state.detail!.data : null, agent: { id: agent, data: null } } });
@@ -178,7 +179,7 @@ export class WarRoomStore {
     void this.loadSubagent(id, agent);
   }
 
-  /** Del subagente, de vuelta a su sesión. */
+  /** From the subagent back to its session. */
   backToSession() {
     const open = this.state.detail;
     if (open) this.set({ detail: { ...open, agent: null } });
@@ -206,7 +207,7 @@ export class WarRoomStore {
   private async loadDetail(id: string) {
     try {
       const data = await this.rooms.detail(id);
-      // Puede haberse cerrado o cambiado a otra mientras cargaba.
+      // It may have been closed or switched while loading.
       const open = this.state.detail;
       if (open?.id === id) this.set({ detail: { ...open, data } });
     } catch (e) {
@@ -215,7 +216,7 @@ export class WarRoomStore {
     }
   }
 
-  /** La vista previa sigue viva: se recarga cuando su sesión tiene actividad nueva. */
+  /** The preview stays live: it reloads when its session has new activity. */
   private refreshDetailIfChanged(view: WarRoomView) {
     const open = this.state.detail;
     if (!open?.data) return;
@@ -228,7 +229,7 @@ export class WarRoomStore {
       fresh.can_approve !== shown.can_approve ||
       fresh.title !== shown.title
     ) {
-      // Pinta ya la tarjeta nueva y trae la conversación detrás.
+      // Paint the fresh card now and fetch the conversation behind it.
       this.set({ detail: { ...open, data: { ...open.data, session: fresh } } });
       void this.loadDetail(open.id);
       if (open.agent) void this.loadSubagent(open.id, open.agent.id);
@@ -245,7 +246,7 @@ export class WarRoomStore {
 
   private afterLaunch(launched: Launched, label: string) {
     if (launched.pty_id) this.openTerminal(launched.pty_id, label);
-    else this.notify({ text: `Abierto en ${launched.via}`, tone: "ok" });
+    else this.notify({ text: copy.toasts.openedIn(launched.via), tone: "ok" });
   }
 
   acknowledge(s: SessionView) {
@@ -286,7 +287,7 @@ export class WarRoomStore {
     this.toastTimer = setTimeout(() => this.set({ toast: null }), TOAST_MS);
   }
 
-  /** Ejecuta una acción mostrando el error si falla. Resuelve a si tuvo éxito. */
+  /** Runs an action, showing the error if it fails. Resolves to whether it succeeded. */
   private async run(action: () => Promise<unknown>): Promise<boolean> {
     this.set({ busy: true });
     try {

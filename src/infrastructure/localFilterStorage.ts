@@ -3,7 +3,7 @@ import type { Filter } from "../domain/attention";
 
 const KEY = "awr.filter";
 
-/** Filtro en `localStorage`. Si no está disponible (o trae basura), se empieza sin filtro. */
+/** Filter in `localStorage`. If unavailable (or holding garbage), start with no filter. */
 export const localFilterStorage: FilterStorage = {
   load() {
     try {
@@ -26,7 +26,7 @@ export const localFilterStorage: FilterStorage = {
     try {
       localStorage.setItem(KEY, JSON.stringify(filter));
     } catch {
-      // Sin almacenamiento: el filtro dura lo que la ventana.
+      // No storage: the filter lasts as long as the window.
     }
   },
 };

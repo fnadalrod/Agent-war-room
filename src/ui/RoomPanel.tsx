@@ -1,5 +1,6 @@
 import type { WarRoomStore } from "../application/warRoomStore";
 import { roomHome, type RoomView } from "../domain/attention";
+import { copy } from "../domain/copy";
 import { PlusIcon } from "./icons";
 import { SessionScreen } from "./SessionScreen";
 
@@ -17,15 +18,15 @@ export function RoomPanel({ room, store, now, showArchived }: Props) {
         <span className="count">{sessions.length}</span>
         {home && (
           <span className="room-actions">
-            <button className="ghost" onClick={() => store.launch(home, room.repo_name, "app")} title={`Abrir claude en ${home}`}>
-              <PlusIcon size={14} /> Agente
+            <button className="ghost" onClick={() => store.launch(home, room.repo_name, "app")} title={copy.room.newAgentTitle(home)}>
+              <PlusIcon size={14} /> {copy.room.newAgent}
             </button>
             <button
               className="ghost"
               onClick={() => store.launch(home, room.repo_name, "warp")}
-              title={`Abrir claude en una pestaña de Warp, en ${home}`}
+              title={copy.room.newAgentInWarpTitle(home)}
             >
-              <PlusIcon size={14} /> en Warp
+              <PlusIcon size={14} /> {copy.actions.inWarp}
             </button>
           </span>
         )}

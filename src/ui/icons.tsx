@@ -1,4 +1,4 @@
-// Iconos de trazo (24×24, heredan el color del texto).
+// Stroke icons (24×24, inherit the text color).
 type IconProps = { size?: number };
 
 function Svg({ size = 16, children }: IconProps & { children: React.ReactNode }) {

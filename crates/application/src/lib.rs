@@ -1,6 +1,7 @@
-//! Casos de uso de la war room y los puertos que necesitan. Sin IO propio: todo lo externo entra
-//! por los traits de [`ports`].
+//! War room use cases and the ports they need. No IO of its own: everything external comes in
+//! through the traits in [`ports`].
 
+pub mod locale;
 pub mod ports;
 mod service;
 pub mod view;

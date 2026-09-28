@@ -1,6 +1,7 @@
-// Pintado pixel art de la sala. Coordenadas lógicas; el canvas se escala con `pixelated`.
+// Pixel-art painting of the room. Logical coordinates; the canvas is scaled with `pixelated`.
 import type { AttentionView, SessionView } from "../../domain/attention";
 import { deskName } from "../../domain/attention";
+import { copy } from "../../domain/copy";
 import { drawText, fit, textWidth } from "./font";
 import { type Bay, type DeskSpot, DRONE_H, DRONE_W, type Scene, WALL_H } from "./layout";
 
@@ -31,7 +32,7 @@ export type Paint = {
   hovered: string | null;
   hoveredAgent: string | null;
   now: Date;
-  /** Títulos de lo que te necesita, para el rótulo de la pantalla principal. */
+  /** Titles of what needs you, for the main screen ticker. */
   alerts: string[];
 };
 
@@ -41,7 +42,7 @@ function hash(text: string): number {
   return h >>> 0;
 }
 
-/** Pseudoaleatorio estable por semilla (para decorado que no baila entre fotogramas). */
+/** Seeded stable pseudo-random (so decoration does not jitter between frames). */
 function rand(seed: number): number {
   const x = Math.sin(seed * 12.9898) * 43758.5453;
   return x - Math.floor(x);
@@ -66,14 +67,14 @@ function withAlpha(ctx: CanvasRenderingContext2D, alpha: number, draw: () => voi
   ctx.restore();
 }
 
-/** Halo escalonado alrededor de algo que brilla. */
+/** Stepped halo around something glowing. */
 function glow(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string, strength: number) {
   for (let i = 3; i >= 1; i--) {
     withAlpha(ctx, (strength * (4 - i)) / 12, () => rect(ctx, x - i, y - i, w + 2 * i, h + 2 * i, color));
   }
 }
 
-/** Charco de luz en el suelo (elipse aproximada con franjas). */
+/** Pool of light on the floor (ellipse approximated with stripes). */
 function floorLight(ctx: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, color: string, alpha: number) {
   for (let dy = -ry; dy <= ry; dy++) {
     const half = Math.round(rx * Math.sqrt(1 - (dy * dy) / (ry * ry)));
@@ -96,7 +97,7 @@ function paintFloor(ctx: CanvasRenderingContext2D, scene: Scene) {
       rect(ctx, x, y, 8, 8, ((x + y) / 8) % 2 === 0 ? "#0a1120" : "#0c1426");
     }
   }
-  // Sombra de la pared sobre el suelo.
+  // Wall shadow on the floor.
   withAlpha(ctx, 0.35, () => rect(ctx, 0, WALL_H, scene.width, 3, "#000"));
 }
 
@@ -110,7 +111,7 @@ function paintWall(ctx: CanvasRenderingContext2D, scene: Scene, p: Paint) {
   const sw = Math.min(200, w - 80);
   const sx = Math.round((w - sw) / 2);
 
-  // Ventanas con la ciudad de noche, a ambos lados de la pantalla principal.
+  // Windows with the city at night, on both sides of the main screen.
   const winW = 34;
   const space = Math.floor((sx - 40) / (winW + 8));
   for (let i = 0; i < Math.min(space, 3); i++) {
@@ -122,7 +123,7 @@ function paintWall(ctx: CanvasRenderingContext2D, scene: Scene, p: Paint) {
   paintRack(ctx, w - 34, WALL_H - 38, p.frame, 2);
   paintMainScreen(ctx, scene, sx, sw, p);
 
-  // Balizas: giran cuando alguien te necesita.
+  // Beacons: they spin when something needs you.
   const alarm = scene.aggregate === "needs_you";
   for (const bx of [6, w - 12]) {
     const on = alarm && p.frame % 6 < 3;
@@ -136,10 +137,10 @@ function paintWindow(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
   rect(ctx, x - 2, y - 2, w + 4, h + 4, "#1e293b");
   rect(ctx, x, y, w, h, "#0b1a33");
   rect(ctx, x, y, w, 8, "#0e2244");
-  // Luna o estrellas.
+  // Moon or stars.
   if (seed % 3 === 1) rect(ctx, x + w - 8, y + 3, 3, 3, "#e2e8f0");
   for (let i = 0; i < 4; i++) rect(ctx, x + Math.floor(rand(seed + i) * w), y + 1 + Math.floor(rand(seed + i + 9) * 8), 1, 1, "#94a3b8");
-  // Edificios.
+  // Buildings.
   let bx = x;
   let n = 0;
   while (bx < x + w) {
@@ -147,7 +148,7 @@ function paintWindow(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
     const bh = 8 + Math.floor(rand(seed * 17 + n) * (h - 12));
     const width = Math.min(bw, x + w - bx);
     rect(ctx, bx, y + h - bh, width, bh, n % 2 ? "#111b30" : "#16223b");
-    // Ventanitas encendidas que parpadean de vez en cuando.
+    // Lit windows that flicker now and then.
     for (let wy = y + h - bh + 2; wy < y + h - 1; wy += 3) {
       for (let wx = bx + 1; wx < bx + width - 1; wx += 2) {
         const r = rand(seed * 101 + wx * 7 + wy * 13);
@@ -158,7 +159,7 @@ function paintWindow(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
     bx += bw;
     n++;
   }
-  // Marco en cruz.
+  // Cross-shaped frame.
   rect(ctx, x + Math.floor(w / 2), y, 1, h, "#1e293b");
 }
 
@@ -184,7 +185,7 @@ function paintMainScreen(ctx: CanvasRenderingContext2D, scene: Scene, sx: number
   rect(ctx, sx - 2, sy - 2, sw + 4, sh + 4, "#1e293b");
   rect(ctx, sx, sy, sw, sh, SCREEN_BG[scene.aggregate]);
 
-  const title = "AGENT WAR ROOM";
+  const title = copy.pixel.title;
   drawText(ctx, title, sx + Math.round((sw - textWidth(title)) / 2), sy + 4, "#e7ecf5");
 
   const counts = countOnWatch(scene);
@@ -195,10 +196,10 @@ function paintMainScreen(ctx: CanvasRenderingContext2D, scene: Scene, sx: number
       counts.working ? `>> ${counts.working}` : "",
     ]
       .filter(Boolean)
-      .join("   ") || "TODO TRANQUILO";
+      .join("   ") || copy.pixel.allQuiet;
   drawText(ctx, line, sx + Math.round((sw - textWidth(line)) / 2), sy + 13, color);
 
-  // Rótulo: lo que te necesita desfila; si nada, la hora.
+  // Ticker: what needs you scrolls by; otherwise, the time.
   if (p.alerts.length > 0) {
     const text = p.alerts.map((a) => `! ${a}`).join("     ");
     const tw = textWidth(text);
@@ -245,12 +246,12 @@ function paintPlants(ctx: CanvasRenderingContext2D, scene: Scene) {
 
 function paintBay(ctx: CanvasRenderingContext2D, bay: Bay, p: Paint) {
   const color = COLOR[bay.room.attention];
-  // Alfombra con borde.
+  // Rug with a border.
   rect(ctx, bay.x, bay.y, bay.w, bay.h, "#0f1629");
   withAlpha(ctx, 0.08, () => rect(ctx, bay.x, bay.y, bay.w, bay.h, color));
   frameRect(ctx, bay.x, bay.y, bay.w, bay.h, "#1e293b");
   frameRect(ctx, bay.x + 2, bay.y + 2, bay.w - 4, bay.h - 4, "#141d33");
-  // Placa con el nombre.
+  // Name plate.
   const name = fit(bay.room.repo_name, bay.w - 16);
   rect(ctx, bay.x + 4, bay.y + 2, textWidth(name) + 10, 8, "#1e293b");
   rect(ctx, bay.x + 6, bay.y + 4, 3, 3, color);
@@ -271,13 +272,13 @@ function paintDesk(ctx: CanvasRenderingContext2D, d: DeskSpot, p: Paint) {
   if (lit) floorLight(ctx, x + 24, y + 38, 20, 6, COLOR[s.attention], s.attention === "needs_you" && p.frame % 8 < 4 ? 0.22 : 0.12);
 
   paintMonitor(ctx, s, x + 10, y + 3, p.frame);
-  // Mesa: tablero con canto, frente y patas.
+  // Desk: top with edge, front and legs.
   rect(ctx, x + 4, y + 25, 40, 1, "#64748b");
   rect(ctx, x + 4, y + 26, 40, 3, "#475569");
   rect(ctx, x + 4, y + 29, 40, 3, "#334155");
   rect(ctx, x + 6, y + 32, 2, 6, "#1e293b");
   rect(ctx, x + 40, y + 32, 2, 6, "#1e293b");
-  // Teclado y ratón.
+  // Keyboard and mouse.
   rect(ctx, x + 17, y + 26, 14, 2, "#1e293b");
   rect(ctx, x + 18, y + 26, 12, 1, "#273449");
   rect(ctx, x + 34, y + 26, 2, 2, "#1e293b");
@@ -320,7 +321,7 @@ function paintMonitor(ctx: CanvasRenderingContext2D, s: SessionView, x: number, 
 
   const seed = hash(s.id);
   if (a === "working") {
-    // Código que va bajando: cada línea tiene su largo y se desplaza con el tiempo.
+    // Scrolling code: each line has its own length and moves over time.
     for (let i = 0; i < 6; i++) {
       const lineNo = i + Math.floor(frame / 2);
       const len = 3 + Math.floor(rand(seed + lineNo) * (sw - 7));
@@ -339,7 +340,7 @@ function paintMonitor(ctx: CanvasRenderingContext2D, s: SessionView, x: number, 
     for (let i = 0; i < 3; i++) rect(ctx, cx + i, cy + i, 2, 2, color);
     for (let i = 0; i < 5; i++) rect(ctx, cx + 3 + i, cy + 2 - i, 2, 2, color);
   } else if (a === "idle") {
-    // Salvapantallas: un punto que rebota.
+    // Screensaver: a bouncing dot.
     const t = frame % 40;
     const px = t < 20 ? t : 40 - t;
     rect(ctx, sx + 2 + Math.floor((px / 20) * (sw - 6)), sy + 2 + Math.floor(Math.abs(Math.sin(frame / 5)) * (sh - 5)), 2, 2, "#475569");
@@ -355,7 +356,7 @@ function paintMug(ctx: CanvasRenderingContext2D, x: number, y: number, frame: nu
   rect(ctx, x, y, 4, 4, "#e2e8f0");
   rect(ctx, x + 4, y + 1, 1, 2, "#e2e8f0");
   rect(ctx, x + 1, y, 2, 1, "#78350f");
-  // Vapor.
+  // Steam.
   const t = frame % 12;
   withAlpha(ctx, 0.6, () => {
     rect(ctx, x + 1 + (t < 6 ? 0 : 1), y - 2 - (t % 3), 1, 1, "#cbd5e1");
@@ -363,7 +364,7 @@ function paintMug(ctx: CanvasRenderingContext2D, x: number, y: number, frame: nu
   });
 }
 
-/** Operador de espaldas frente a su monitor. */
+/** Operator seen from behind, facing the monitor. */
 function paintOperator(ctx: CanvasRenderingContext2D, s: SessionView, x: number, y: number, frame: number) {
   const seed = hash(s.id);
   const hair = HAIR[seed % HAIR.length];
@@ -376,11 +377,11 @@ function paintOperator(ctx: CanvasRenderingContext2D, s: SessionView, x: number,
   const relaxed = a === "finished";
   const bob = a === "idle" && frame % 20 < 10 ? 1 : 0;
 
-  // Silla: respaldo, asiento y ruedas (se pintan antes para quedar detrás del torso).
+  // Chair base and wheels (painted first so they sit behind the torso).
   rect(ctx, x + 6, y + 19, 2, 3, "#0f172a");
   rect(ctx, x + 2, y + 22, 10, 1, "#0f172a");
 
-  // Cabeza (de espaldas): pelo, orejas y nuca.
+  // Head (from behind): hair, ears and nape.
   const hy = y + bob - (relaxed ? 1 : 0);
   rect(ctx, x + 3, hy, 8, 7, hair);
   rect(ctx, x + 2, hy + 3, 1, 2, skin);
@@ -394,7 +395,7 @@ function paintOperator(ctx: CanvasRenderingContext2D, s: SessionView, x: number,
   // Torso.
   rect(ctx, x, y + 8, 14, 7, shirt);
   withAlpha(ctx, 0.25, () => rect(ctx, x, y + 13, 14, 2, "#000"));
-  // Brazos y manos.
+  // Arms and hands.
   if (typing) {
     const up = frame % 2 === 0;
     rect(ctx, x - 1, y + 7, 2, 4, shirt);
@@ -407,7 +408,7 @@ function paintOperator(ctx: CanvasRenderingContext2D, s: SessionView, x: number,
     rect(ctx, x + 13, y + (high ? -4 : -2), 2, 2, skin);
     rect(ctx, x - 1, y + 9, 2, 4, shirt);
   } else if (relaxed) {
-    // Manos detrás de la cabeza.
+    // Hands behind the head.
     rect(ctx, x + 1, y + 1, 2, 7, shirt);
     rect(ctx, x + 11, y + 1, 2, 7, shirt);
     rect(ctx, x + 2, y, 2, 2, skin);
@@ -416,7 +417,7 @@ function paintOperator(ctx: CanvasRenderingContext2D, s: SessionView, x: number,
     rect(ctx, x - 1, y + 9, 2, 5, shirt);
     rect(ctx, x + 13, y + 9, 2, 5, shirt);
   }
-  // Respaldo de la silla.
+  // Chair back.
   rect(ctx, x + 1, y + 13, 12, 6, "#1e293b");
   rect(ctx, x + 1, y + 13, 12, 1, "#334155");
 }
@@ -428,7 +429,7 @@ function paintEmptyChair(ctx: CanvasRenderingContext2D, x: number, y: number) {
   rect(ctx, x + 1, y + 9, 10, 1, "#0f172a");
 }
 
-/** Drones de subagente en sus huecos junto al puesto: flotan si trabajan, aparcados si terminaron. */
+/** Subagent drones in their slots by the desk: hovering while working, parked when finished. */
 function paintSubagents(ctx: CanvasRenderingContext2D, d: DeskSpot, p: Paint) {
   d.drones.forEach((drone, i) => {
     const a = drone.agent;
@@ -443,7 +444,7 @@ function paintSubagents(ctx: CanvasRenderingContext2D, d: DeskSpot, p: Paint) {
       rect(ctx, x, y + DRONE_H - 2, DRONE_W, 1, "#94a3b8");
       rect(ctx, x + 1, y + 2, 2, 1, eye);
       rect(ctx, x + 4, y + 2, 2, 1, eye);
-      // Hélices o antena.
+      // Rotor.
       if (a.running) rect(ctx, x + (p.frame % 2 ? 0 : 4), y - 1, 3, 1, "#64748b");
     });
     if (p.selected === d.session.id && p.selectedAgent === a.id) {
@@ -462,10 +463,10 @@ function paintBubble(ctx: CanvasRenderingContext2D, s: SessionView, x: number, y
     symbol = frame % 8 < 6 ? "!" : null;
     ink = "#b91c1c";
   } else if (s.attention === "finished") {
-    symbol = "OK";
+    symbol = copy.pixel.finishedBubble;
     ink = "#0369a1";
   } else if (s.muted) {
-    symbol = "ZZ";
+    symbol = copy.pixel.mutedBubble;
     ink = "#64748b";
   }
   if (!symbol) return;

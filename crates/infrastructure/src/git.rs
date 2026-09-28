@@ -6,10 +6,10 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-/// La rama puede cambiar durante la sesión; no hace falta preguntarle a git en cada hook.
+/// The branch may change during a session, but there is no need to ask git on every hook.
 const CACHE_TTL: Duration = Duration::from_secs(30);
 
-/// Resuelve la sala (repo) y el puesto (worktree) de una carpeta con `git rev-parse`.
+/// Resolves a folder's room (repo) and desk (worktree) with `git rev-parse`.
 #[derive(Default)]
 pub struct GitRepoResolver {
     cache: Mutex<HashMap<String, (Instant, Workspace)>>,
@@ -35,7 +35,7 @@ impl RepoResolver for GitRepoResolver {
 }
 
 fn rev_parse(cwd: &str) -> Option<Workspace> {
-    // Sin HEAD: un repo sin commits sigue siendo un repo.
+    // No HEAD: a repo without commits is still a repo.
     let text = git(cwd, &["rev-parse", "--path-format=absolute", "--git-common-dir", "--git-dir", "--show-toplevel"])?;
     let mut lines = text.lines();
     let common_dir = lines.next()?.to_owned();
@@ -51,7 +51,7 @@ fn rev_parse(cwd: &str) -> Option<Workspace> {
     })
 }
 
-/// Rama actual (también sin commits); en detached HEAD, `@<sha corto>`.
+/// Current branch (also without commits); on a detached HEAD, `@<short sha>`.
 fn branch(cwd: &str) -> Option<String> {
     git(cwd, &["symbolic-ref", "-q", "--short", "HEAD"])
         .or_else(|| git(cwd, &["rev-parse", "--short", "HEAD"]).map(|sha| format!("@{sha}")))
@@ -66,7 +66,7 @@ fn git(cwd: &str, args: &[&str]) -> Option<String> {
     Some(text.trim_end().to_owned()).filter(|t| !t.is_empty())
 }
 
-/// `/code/Tintero3Repo/.git` → `Tintero3Repo`, también desde cualquiera de sus worktrees.
+/// `/code/Tintero3Repo/.git` → `Tintero3Repo`, also from any of its worktrees.
 fn repo_name(common_dir: &str, toplevel: &str) -> String {
     let common = Path::new(common_dir);
     let named = if common.file_name().is_some_and(|n| n == ".git") { common.parent() } else { Some(common) };
@@ -102,11 +102,11 @@ mod tests {
     #[test]
     fn worktrees_share_the_room_of_their_repo() {
         let tmp = tempfile::tempdir().unwrap();
-        let main = tmp.path().join("Proyecto");
+        let main = tmp.path().join("Project");
         std::fs::create_dir(&main).unwrap();
         git(&main, &["init", "-q", "-b", "main"]);
         git(&main, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"]);
-        let wt = tmp.path().join("Proyecto-wt-f1");
+        let wt = tmp.path().join("Project-wt-f1");
         git(&main, &["worktree", "add", "-q", "-b", "f1", wt.to_str().unwrap()]);
 
         let resolver = GitRepoResolver::new();
@@ -114,8 +114,8 @@ mod tests {
         let b = resolver.resolve(wt.to_str().unwrap());
 
         assert_eq!(a.repo, b.repo);
-        assert_eq!(a.repo_name, "Proyecto");
-        assert_eq!(b.repo_name, "Proyecto");
+        assert_eq!(a.repo_name, "Project");
+        assert_eq!(b.repo_name, "Project");
         assert_eq!(a.branch.as_deref(), Some("main"));
         assert_eq!(b.branch.as_deref(), Some("f1"));
         assert!(!a.is_linked_worktree);
@@ -125,13 +125,13 @@ mod tests {
     #[test]
     fn a_repo_without_commits_is_still_a_repo_and_detached_head_shows_the_sha() {
         let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("Nuevo");
+        let dir = tmp.path().join("Fresh");
         std::fs::create_dir(&dir).unwrap();
         git(&dir, &["init", "-q", "-b", "main"]);
 
         let ws = GitRepoResolver::new().resolve(dir.to_str().unwrap());
-        assert_eq!(ws.repo_name, "Nuevo");
-        assert!(ws.repo.0.ends_with("Nuevo/.git"));
+        assert_eq!(ws.repo_name, "Fresh");
+        assert!(ws.repo.0.ends_with("Fresh/.git"));
         assert_eq!(ws.branch.as_deref(), Some("main"));
 
         git(&dir, &["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"]);

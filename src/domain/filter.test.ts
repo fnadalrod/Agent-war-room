@@ -19,28 +19,28 @@ const view = aView([
   aRoom("kainban", [aSession({ id: "k1" })]),
 ]);
 
-describe("filtros", () => {
-  it("sin filtro devuelve la sala tal cual", () => {
+describe("filters", () => {
+  it("returns the view untouched without a filter", () => {
     expect(isFiltering(NO_FILTER)).toBe(false);
     expect(applyFilter(view, NO_FILTER)).toBe(view);
   });
 
-  it("filtra por repo", () => {
+  it("filters by repo", () => {
     const out = applyFilter(view, { ...NO_FILTER, repos: ["/code/kainban/.git"] });
     expect(out.rooms.map((r) => r.repo_name)).toEqual(["kainban"]);
   });
 
-  it("filtra por skill y quita las salas que se quedan vacías", () => {
+  it("filters by skill and drops rooms left empty", () => {
     const out = applyFilter(view, { ...NO_FILTER, skills: ["close-task"] });
     expect(out.rooms.map((r) => r.sessions.map((s) => s.id))).toEqual([["t1"]]);
   });
 
-  it("filtra por procedencia", () => {
+  it("filters by skill source", () => {
     const out = applyFilter(view, { ...NO_FILTER, sources: ["builtin"] });
     expect(out.rooms.flatMap((r) => r.sessions.map((s) => s.id))).toEqual(["t2"]);
   });
 
-  it("ofrece los repos y las skills que hay, con quién las lanzó", () => {
+  it("offers the repos and skills present, with who launched them", () => {
     const { repos, skills } = filterOptions(view);
     expect(repos.map((r) => r.name)).toEqual(["kainban", "tintero"]);
     expect(skills.map((s) => [s.name, s.byUser, s.byAgent])).toEqual([
@@ -49,12 +49,12 @@ describe("filtros", () => {
     ]);
   });
 
-  it("filtra por modelo y por esfuerzo", () => {
+  it("filters by model and effort", () => {
     const v = aView([
       aRoom("a", [
         aSession({ id: "opus", model: "claude-opus-5-5", effort: "high" }),
         aSession({ id: "sonnet", model: "claude-sonnet-5", effort: "medium" }),
-        aSession({ id: "nada" }),
+        aSession({ id: "none" }),
       ]),
     ]);
     const ids = (f: Partial<typeof NO_FILTER>) => applyFilter(v, { ...NO_FILTER, ...f }).rooms.flatMap((r) => r.sessions.map((s) => s.id));
@@ -65,7 +65,7 @@ describe("filtros", () => {
     expect(models).toHaveLength(2);
   });
 
-  it("toggle añade y quita", () => {
+  it("toggle adds and removes", () => {
     expect(toggle(toggle(["a"], "b"), "a")).toEqual(["b"]);
   });
 });

@@ -1,10 +1,10 @@
-//! Pruebas de punta a punta con un Claude Code real: hooks → `warroom-hook` → socket → servicio.
+//! End-to-end tests against a real Claude Code: hooks → `warroom-hook` → socket → service.
 //!
-//! Manual (cada una cuesta una llamada corta a Claude):
+//! Manual (each one costs a short Claude call):
 //! `cargo build -p warroom-hook && cargo test -p awr-infrastructure --test claude_e2e -- --ignored --nocapture`
 //!
-//! Todo va aislado: carpeta temporal, `XDG_RUNTIME_DIR` propio (socket), servidor tmux propio y
-//! `--settings` solo para estas sesiones. No toca `~/.claude/settings.json`.
+//! Everything is isolated: temp folder, own `XDG_RUNTIME_DIR` (socket), own tmux server and
+//! `--settings` only for these sessions. It does not touch `~/.claude/settings.json`.
 
 use awr_application::ports::*;
 use awr_application::view::{AttentionView, SessionView, WarRoomView};
@@ -42,11 +42,11 @@ impl WindowNavigator for NoWindows {
 
 fn bridge() -> PathBuf {
     let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/warroom-hook");
-    assert!(target.exists(), "compila antes el puente: cargo build -p warroom-hook");
+    assert!(target.exists(), "build the bridge first: cargo build -p warroom-hook");
     target.canonicalize().unwrap()
 }
 
-/// Servicio real con socket propio y una carpeta de trabajo con `--settings` que apunta al puente.
+/// Real service with its own socket and a work folder whose `--settings` point at the bridge.
 struct Room {
     work: tempfile::TempDir,
     runtime: PathBuf,
@@ -60,14 +60,20 @@ impl Room {
     fn start() -> Self {
         let work = tempfile::Builder::new().prefix("awr-e2e").tempdir_in("/tmp").unwrap();
         let dir = work.path();
-        // Rutas cortas: el socket Unix no admite más de 108 bytes.
+        // Short paths: a Unix socket path cannot exceed 108 bytes.
         let runtime = dir.join("r");
         std::fs::create_dir_all(&runtime).unwrap();
         Command::new("git").arg("-C").arg(dir).args(["init", "-q"]).status().unwrap();
 
         let events = [
-            "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest",
-            "Notification", "Stop", "SessionEnd",
+            "SessionStart",
+            "UserPromptSubmit",
+            "PreToolUse",
+            "PostToolUse",
+            "PermissionRequest",
+            "Notification",
+            "Stop",
+            "SessionEnd",
         ];
         let hook = |event: &str| {
             let timeout = if event == "PermissionRequest" { 600 } else { 5 };
@@ -121,14 +127,14 @@ impl Room {
     }
 
     fn diag(&self, screen: &dyn Fn() -> String) -> String {
-        format!("--- pantalla ---\n{}\n--- vista ---\n{:#?}", screen(), self.view.0.lock().unwrap())
+        format!("--- screen ---\n{}\n--- view ---\n{:#?}", screen(), self.view.0.lock().unwrap())
     }
 }
 
 fn wait_for(what: &str, timeout: Duration, mut check: impl FnMut() -> bool, diag: &dyn Fn() -> String) {
     let start = Instant::now();
     while !check() {
-        assert!(start.elapsed() < timeout, "timeout esperando: {what}\n{}", diag());
+        assert!(start.elapsed() < timeout, "timed out waiting for: {what}\n{}", diag());
         std::thread::sleep(Duration::from_millis(300));
     }
 }
@@ -149,7 +155,7 @@ fn a_real_permission_request_is_approved_from_the_war_room() {
     let dir = room.dir();
     let tmux_socket = dir.join("t.sock");
     let args: Vec<String> = room
-        .claude_args(Some("Ejecuta con Bash exactamente: touch aprobado.txt"))
+        .claude_args(Some("Run exactly this with Bash: touch approved.txt"))
         .into_iter()
         .map(|a| format!("'{a}'"))
         .collect();
@@ -159,32 +165,41 @@ fn a_real_permission_request_is_approved_from_the_war_room() {
     let screen = || tmux(&tmux_socket, &["capture-pane", "-p"]);
     let diag = || room.diag(&screen);
 
-    // Carpeta nueva: Claude pregunta si confiamos en ella. `SessionStart` llega antes que ese
-    // diálogo, así que "ya hay sesión" no basta: hay que ver trabajo o el propio diálogo.
-    wait_for("diálogo de confianza o trabajo", Duration::from_secs(30), || {
-        screen().contains("trust this folder") || room.session().is_some_and(|s| is_busy(&s))
-    }, &diag);
+    // New folder: Claude asks whether we trust it. `SessionStart` arrives before that dialog,
+    // so "there is a session" is not enough: wait for work or the dialog itself.
+    wait_for(
+        "trust dialog or work",
+        Duration::from_secs(30),
+        || screen().contains("trust this folder") || room.session().is_some_and(|s| is_busy(&s)),
+        &diag,
+    );
     if screen().contains("trust this folder") {
         tmux(&tmux_socket, &["send-keys", "Down"]);
         std::thread::sleep(Duration::from_millis(300));
         tmux(&tmux_socket, &["send-keys", "Enter"]);
     }
 
-    wait_for("permiso aprobable en la war room", Duration::from_secs(90), || {
-        room.session().is_some_and(|s| s.attention == AttentionView::NeedsYou && s.can_approve)
-    }, &diag);
+    wait_for(
+        "permission approvable from the war room",
+        Duration::from_secs(90),
+        || room.session().is_some_and(|s| s.attention == AttentionView::NeedsYou && s.can_approve),
+        &diag,
+    );
     let session = room.session().unwrap();
-    println!("pantalla: {}", session.status_label);
-    assert!(screen().contains("Do you want to proceed"), "Claude muestra su diálogo a la vez");
+    println!("status: {}", session.status_label);
+    assert!(screen().contains("Do you want to proceed"), "Claude shows its own dialog at the same time");
 
     room.service.approve(SessionId(session.id.clone())).unwrap();
 
-    wait_for("fichero creado por Claude", Duration::from_secs(60), || dir.join("aprobado.txt").exists(), &diag);
-    wait_for("fin de turno", Duration::from_secs(60), || {
-        room.session().is_some_and(|s| s.attention == AttentionView::Finished)
-    }, &diag);
+    wait_for("file created by Claude", Duration::from_secs(60), || dir.join("approved.txt").exists(), &diag);
+    wait_for(
+        "end of turn",
+        Duration::from_secs(60),
+        || room.session().is_some_and(|s| s.attention == AttentionView::Finished),
+        &diag,
+    );
     assert!(screen().contains("Allowed by PermissionRequest hook"));
-    println!("título: {:?}", room.service.view().rooms[0].sessions[0].title);
+    println!("title: {:?}", room.service.view().rooms[0].sessions[0].title);
 
     tmux(&tmux_socket, &["kill-server"]);
 }
@@ -207,7 +222,7 @@ fn a_session_in_an_app_terminal_is_linked_and_can_be_typed_into() {
     let screen = || String::from_utf8_lossy(&room.pty.snapshot(&pty_id).unwrap_or_default()).into_owned();
     let diag = || room.diag(&screen);
 
-    // Aquí no hay emulador (en la app lo es xterm.js): contestamos como él las consultas del TUI.
+    // There is no emulator here (in the app it is xterm.js): answer the TUI's queries like it would.
     let answered = std::cell::Cell::new((0usize, 0usize));
     let answer_queries = || {
         let out = screen();
@@ -222,12 +237,17 @@ fn a_session_in_an_app_terminal_is_linked_and_can_be_typed_into() {
         answered.set((seen_da1, seen_version));
     };
 
-    // Salida cruda del PTY: entre palabras hay códigos de posicionamiento, no espacios.
+    // Raw PTY output: words are separated by cursor-positioning codes, not spaces.
     let asks_trust = || screen().contains("trust") && screen().contains("folder");
-    wait_for("diálogo de confianza o sesión enlazada", Duration::from_secs(30), || {
-        answer_queries();
-        asks_trust() || room.session().is_some()
-    }, &diag);
+    wait_for(
+        "trust dialog or linked session",
+        Duration::from_secs(30),
+        || {
+            answer_queries();
+            asks_trust() || room.session().is_some()
+        },
+        &diag,
+    );
     if asks_trust() {
         std::thread::sleep(Duration::from_secs(1));
         room.pty.write(&pty_id, b"\x1b[B").unwrap();
@@ -235,22 +255,32 @@ fn a_session_in_an_app_terminal_is_linked_and_can_be_typed_into() {
         room.pty.write(&pty_id, b"\r").unwrap();
     }
 
-    wait_for("sesión enlazada a su terminal", Duration::from_secs(30), || {
-        answer_queries();
-        room.session().is_some_and(|s| s.pty_id.as_deref() == Some(pty_id.as_str()))
-    }, &diag);
+    wait_for(
+        "session linked to its terminal",
+        Duration::from_secs(30),
+        || {
+            answer_queries();
+            room.session().is_some_and(|s| s.pty_id.as_deref() == Some(pty_id.as_str()))
+        },
+        &diag,
+    );
     let id = SessionId(room.session().unwrap().id);
-    // El TUI tarda un poco en aceptar input tras arrancar.
+    // The TUI takes a moment to accept input after starting.
     std::thread::sleep(Duration::from_secs(2));
 
-    room.service.send_input(id, "Responde solo con la palabra PONG, sin herramientas.").unwrap();
+    room.service.send_input(id, "Reply with just the word PONG, without using tools.").unwrap();
 
-    wait_for("respuesta al mensaje escrito desde la war room", Duration::from_secs(90), || {
-        answer_queries();
-        room.session().is_some_and(|s| {
-            s.attention == AttentionView::Finished && s.last_reply.as_deref().is_some_and(|r| r.contains("PONG"))
-        })
-    }, &diag);
-    println!("respuesta: {:?}", room.session().unwrap().last_reply);
+    wait_for(
+        "reply to the message typed from the war room",
+        Duration::from_secs(90),
+        || {
+            answer_queries();
+            room.session().is_some_and(|s| {
+                s.attention == AttentionView::Finished && s.last_reply.as_deref().is_some_and(|r| r.contains("PONG"))
+            })
+        },
+        &diag,
+    );
+    println!("reply: {:?}", room.session().unwrap().last_reply);
     room.pty.close(&pty_id).unwrap();
 }

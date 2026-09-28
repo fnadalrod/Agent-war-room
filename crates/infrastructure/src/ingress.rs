@@ -1,4 +1,4 @@
-//! Adaptador de entrada: socket Unix donde `warroom-hook` deja un envelope por conexión.
+//! Inbound adapter: Unix socket where `warroom-hook` drops one envelope per connection.
 
 use awr_application::IncomingSignal;
 use awr_application::ports::{ApprovalDecision, ApprovalResponder};
@@ -18,7 +18,7 @@ const REPLY_WRITE_TIMEOUT: Duration = Duration::from_secs(1);
 
 pub type SignalHandler = Arc<dyn Fn(IncomingSignal) + Send + Sync>;
 
-/// Deja el socket escuchando. Falla si otra instancia de la app ya lo tiene.
+/// Starts listening on the socket. Fails if another app instance already holds it.
 pub async fn bind(path: &Path) -> io::Result<UnixListener> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
@@ -27,14 +27,17 @@ pub async fn bind(path: &Path) -> io::Result<UnixListener> {
     }
     if path.exists() {
         if UnixStream::connect(path).await.is_ok() {
-            return Err(io::Error::new(io::ErrorKind::AddrInUse, "otra instancia ya escucha en el socket"));
+            return Err(io::Error::new(
+                io::ErrorKind::AddrInUse,
+                "another instance is already listening on the socket",
+            ));
         }
         std::fs::remove_file(path)?;
     }
     UnixListener::bind(path)
 }
 
-/// Acepta conexiones para siempre. El handler se ejecuta fuera del runtime async (hace IO bloqueante).
+/// Accepts connections forever. The handler runs outside the async runtime (it does blocking IO).
 pub async fn serve(listener: UnixListener, handler: SignalHandler) {
     loop {
         let Ok((stream, _)) = listener.accept().await else { continue };
@@ -45,7 +48,7 @@ pub async fn serve(listener: UnixListener, handler: SignalHandler) {
                     let _ = tokio::task::spawn_blocking(move || handler(signal)).await;
                 }
                 Ok(None) => {}
-                Err(e) => eprintln!("[ingress] envelope descartado: {e}"),
+                Err(e) => eprintln!("[ingress] envelope dropped: {e}"),
             }
         });
     }
@@ -55,14 +58,14 @@ pub fn default_socket_path() -> PathBuf {
     awr_wire::socket_path()
 }
 
-/// Lee una línea (o hasta EOF, como hacían los puentes antiguos) y, si el puente espera
-/// respuesta, conserva la conexión para contestarle.
+/// Reads one line (or up to EOF, as old bridges did) and, if the bridge expects a reply, keeps
+/// the connection open to answer it.
 async fn receive(stream: UnixStream) -> io::Result<Option<IncomingSignal>> {
     let mut reader = BufReader::new(stream.take(MAX_ENVELOPE_BYTES));
     let mut line = String::new();
     tokio::time::timeout(READ_TIMEOUT, reader.read_line(&mut line))
         .await
-        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "lectura lenta"))??;
+        .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "slow read"))??;
     let envelope: HookEnvelope =
         serde_json::from_str(line.trim_end()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
@@ -76,7 +79,7 @@ async fn receive(stream: UnixStream) -> io::Result<Option<IncomingSignal>> {
 
 fn to_signal(envelope: HookEnvelope, reply: Option<Arc<dyn ApprovalResponder>>) -> Option<IncomingSignal> {
     if envelope.v != PROTOCOL_VERSION {
-        eprintln!("[ingress] versión de protocolo {} no soportada", envelope.v);
+        eprintln!("[ingress] unsupported protocol version {}", envelope.v);
         return None;
     }
     Some(IncomingSignal {
@@ -85,13 +88,9 @@ fn to_signal(envelope: HookEnvelope, reply: Option<Arc<dyn ApprovalResponder>>) 
         host: TerminalHost {
             agent_pid: envelope.agent_pid,
             agent_command: envelope.agent_command,
-            ancestry: envelope
-                .ancestry
-                .into_iter()
-                .map(|p| ProcessInfo { pid: p.pid, name: p.name })
-                .collect(),
+            ancestry: envelope.ancestry.into_iter().map(|p| ProcessInfo { pid: p.pid, name: p.name }).collect(),
             tmux_pane: envelope.env.tmux_pane,
-            // `$TMUX` es `socket,pid_servidor,sesión`.
+            // `$TMUX` is `socket,server_pid,session`.
             tmux_socket: envelope.env.tmux.and_then(|t| t.split(',').next().map(str::to_owned)),
             term_program: envelope.env.term_program,
             warp_focus_url: envelope.env.warp_focus_url,
@@ -102,8 +101,8 @@ fn to_signal(envelope: HookEnvelope, reply: Option<Arc<dyn ApprovalResponder>>) 
     })
 }
 
-/// Conexión abierta con un `warroom-hook` que espera decisión. Si contestas en la terminal,
-/// Claude mata el hook y llega EOF: una tarea vigila un clon del socket para saberlo.
+/// Open connection to a `warroom-hook` waiting for a decision. If the user answers in the terminal,
+/// Claude kills the hook and EOF arrives: a task watches a clone of the socket to notice.
 struct SocketResponder {
     stream: Mutex<Option<std::os::unix::net::UnixStream>>,
     closed: Arc<AtomicBool>,
@@ -117,7 +116,7 @@ impl SocketResponder {
         let flag = closed.clone();
         tokio::spawn(async move {
             let mut buf = [0u8; 64];
-            // El puente no manda nada más: solo volvemos de aquí con EOF o error.
+            // The bridge sends nothing else: we only get past this on EOF or error.
             while let Ok(n) = watcher.read(&mut buf).await {
                 if n == 0 {
                     break;
@@ -145,8 +144,8 @@ impl ApprovalResponder for SocketResponder {
         };
         let Ok(mut line) = serde_json::to_vec(&reply) else { return false };
         line.push(b'\n');
-        // El socket es no bloqueante (lo comparte tokio); una línea corta cabe de sobra en el
-        // buffer, pero se reintenta por si acaso.
+        // The socket is non-blocking (shared with tokio); a short line easily fits in the buffer,
+        // but retry just in case.
         let deadline = std::time::Instant::now() + REPLY_WRITE_TIMEOUT;
         let mut written = 0;
         while written < line.len() {
@@ -176,7 +175,11 @@ mod tests {
             agent_pid: Some(7),
             ancestry: vec![WireProcess { pid: 7, name: "claude".into() }],
             agent_command: Some("claude --resume abc".into()),
-            env: EnvHints { tmux_pane: Some("%3".into()), tmux: Some("/tmp/tmux-1000/default,99,0".into()), ..Default::default() },
+            env: EnvHints {
+                tmux_pane: Some("%3".into()),
+                tmux: Some("/tmp/tmux-1000/default,99,0".into()),
+                ..Default::default()
+            },
             payload: serde_json::json!({ "hook_event_name": "Stop" }),
             expects_reply,
         }
@@ -230,7 +233,7 @@ mod tests {
         let mut answer = String::new();
         BufReader::new(client).read_line(&mut answer).await.unwrap();
         assert_eq!(serde_json::from_str::<HookReply>(answer.trim()).unwrap(), HookReply::Allow);
-        assert!(!reply.respond(ApprovalDecision::Allow), "una sola respuesta");
+        assert!(!reply.respond(ApprovalDecision::Allow), "only one reply");
     }
 
     #[tokio::test]

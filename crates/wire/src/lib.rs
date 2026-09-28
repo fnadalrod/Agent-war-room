@@ -1,8 +1,8 @@
-//! Contrato del socket entre `warroom-hook` y la app.
+//! Socket contract between `warroom-hook` and the app.
 //!
-//! Una conexión por hook: el puente escribe un [`HookEnvelope`] en una línea (`\n`). Si marca
-//! `expects_reply`, deja la conexión abierta y espera una línea con un [`HookReply`]; si la app
-//! la cierra sin responder, el agente sigue su flujo normal.
+//! One connection per hook: the bridge writes a [`HookEnvelope`] on a single line (`\n`). If it sets
+//! `expects_reply`, it keeps the connection open and waits for a line with a [`HookReply`]; if the app
+//! closes it without replying, the agent carries on as normal.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -12,25 +12,25 @@ pub const PROTOCOL_VERSION: u8 = 1;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HookEnvelope {
     pub v: u8,
-    /// Proveedor que emitió el hook (`claude`).
+    /// Provider that emitted the hook (`claude`).
     pub provider: String,
     pub received_at_ms: i64,
-    /// PID del proceso del agente, si se encontró en la cadena de padres.
+    /// PID of the agent process, if found in the parent chain.
     pub agent_pid: Option<u32>,
-    /// Cadena de procesos desde el padre del hook hacia arriba.
+    /// Process chain from the hook's parent upwards.
     pub ancestry: Vec<WireProcess>,
-    /// Línea de comandos con la que se lanzó el agente (`claude --resume …`).
+    /// Command line the agent was launched with (`claude --resume …`).
     #[serde(default)]
     pub agent_command: Option<String>,
     pub env: EnvHints,
-    /// JSON del hook tal cual lo entregó el agente.
+    /// Hook JSON exactly as the agent delivered it.
     pub payload: serde_json::Value,
-    /// El puente espera una decisión (p. ej. un permiso que se puede aprobar desde la app).
+    /// The bridge waits for a decision (e.g. a permission that can be approved from the app).
     #[serde(default)]
     pub expects_reply: bool,
 }
 
-/// Decisión de la app sobre un hook que la esperaba.
+/// The app's decision on a hook that was waiting for one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "decision", rename_all = "snake_case")]
 pub enum HookReply {
@@ -50,13 +50,13 @@ pub struct EnvHints {
     pub tmux: Option<String>,
     pub tmux_pane: Option<String>,
     pub term_program: Option<String>,
-    /// `$WARP_FOCUS_URL`: enfoca el pane exacto de Warp.
+    /// `$WARP_FOCUS_URL`: focuses the exact Warp pane.
     pub warp_focus_url: Option<String>,
-    /// `$AWR_PTY_ID`: la sesión corre en un terminal lanzado por la propia app.
+    /// `$AWR_PTY_ID`: the session runs in a terminal launched by the app itself.
     pub pty_id: Option<String>,
 }
 
-/// `$XDG_RUNTIME_DIR/agent-war-room/ingress.sock`, o `/tmp/agent-war-room-$USER/…` sin XDG.
+/// `$XDG_RUNTIME_DIR/agent-war-room/ingress.sock`, or `/tmp/agent-war-room-$USER/…` without XDG.
 pub fn socket_path() -> PathBuf {
     runtime_dir().join("ingress.sock")
 }

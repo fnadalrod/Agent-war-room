@@ -1,11 +1,11 @@
-//! `warroom-hook`: lo invoca el agente en cada hook y reenvía el evento a la app.
+//! `warroom-hook`: invoked by the agent on every hook; forwards the event to the app.
 //!
-//! Invariantes: sale siempre con 0, tarda milisegundos si la app no está, y solo escribe en
-//! stdout una decisión explícita de la app. Nunca debe romper ni frenar al agente.
+//! Invariants: always exits with 0, takes milliseconds if the app is not running, and only writes
+//! an explicit decision from the app to stdout. It must never break or slow down the agent.
 //!
-//! En `PermissionRequest` espera la decisión de la app (aprobar/denegar desde la war room). No
-//! bloquea a nadie: Claude muestra su diálogo a la vez y, si contestas en la terminal, mata este
-//! proceso y descarta su respuesta.
+//! On `PermissionRequest` it waits for the app's decision (approve/deny from the war room). It
+//! blocks nobody: Claude shows its own dialog at the same time and, if you answer in the terminal,
+//! kills this process and discards its reply.
 
 use awr_wire::{EnvHints, HookEnvelope, HookReply, PROTOCOL_VERSION, WireProcess};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -15,7 +15,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 const MAX_PAYLOAD_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_ANCESTRY: usize = 12;
 const AGENT_PROCESS_NAMES: &[&str] = &["claude"];
-/// Por debajo del timeout del hook (600 s) para salir por nuestro pie.
+/// Deny reason shown by Claude Code in the user's terminal when the app gives none. User-facing
+/// copy, so it stays in Spanish like the rest of the UI; it is the bridge's only such string.
+const DEFAULT_DENY_MESSAGE: &str = "Denegado desde Agent War Room";
+/// Below the hook timeout (600 s) so we exit on our own terms.
 const REPLY_WAIT: Duration = Duration::from_secs(590);
 
 fn main() {
@@ -27,7 +30,7 @@ fn main() {
     std::process::exit(0);
 }
 
-/// Devuelve lo que hay que imprimir para el agente, si la app decidió algo.
+/// Returns what to print for the agent, if the app decided something.
 fn run() -> Option<String> {
     let mut raw = String::new();
     std::io::stdin().take(MAX_PAYLOAD_BYTES).read_to_string(&mut raw).ok()?;
@@ -35,10 +38,7 @@ fn run() -> Option<String> {
     let event = payload.get("hook_event_name").and_then(|e| e.as_str()).unwrap_or_default().to_owned();
 
     let ancestry = ancestry(std::os::unix::process::parent_id());
-    let agent_pid = ancestry
-        .iter()
-        .find(|p| AGENT_PROCESS_NAMES.contains(&p.name.as_str()))
-        .map(|p| p.pid);
+    let agent_pid = ancestry.iter().find(|p| AGENT_PROCESS_NAMES.contains(&p.name.as_str())).map(|p| p.pid);
 
     let envelope = HookEnvelope {
         v: PROTOCOL_VERSION,
@@ -78,13 +78,13 @@ fn run() -> Option<String> {
     Some(permission_output(&reply))
 }
 
-/// Salida que Claude Code entiende para `PermissionRequest`.
+/// Output Claude Code understands for `PermissionRequest`.
 fn permission_output(reply: &HookReply) -> String {
     let decision = match reply {
         HookReply::Allow => serde_json::json!({ "behavior": "allow" }),
         HookReply::Deny { message } => serde_json::json!({
             "behavior": "deny",
-            "message": message.clone().unwrap_or_else(|| "Denegado desde Agent War Room".into()),
+            "message": message.clone().unwrap_or_else(|| DEFAULT_DENY_MESSAGE.into()),
         }),
     };
     serde_json::json!({
@@ -93,8 +93,8 @@ fn permission_output(reply: &HookReply) -> String {
     .to_string()
 }
 
-/// Sube por `/proc/<pid>/stat` desde el padre del hook. El agente puede lanzar el hook a través de
-/// un shell, así que no basta con `getppid()`.
+/// Walks up `/proc/<pid>/stat` from the hook's parent. The agent may launch the hook through a
+/// shell, so `getppid()` is not enough.
 fn ancestry(start: u32) -> Vec<WireProcess> {
     let mut chain = Vec::new();
     let mut pid = start;
@@ -106,7 +106,7 @@ fn ancestry(start: u32) -> Vec<WireProcess> {
     chain
 }
 
-/// `/proc/<pid>/stat` es `pid (comm) state ppid …`; `comm` puede contener espacios y paréntesis.
+/// `/proc/<pid>/stat` is `pid (comm) state ppid …`; `comm` may contain spaces and parentheses.
 fn read_stat(pid: u32) -> Option<(String, u32)> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
     let open = stat.find('(')?;
@@ -116,7 +116,7 @@ fn read_stat(pid: u32) -> Option<(String, u32)> {
     Some((name, ppid))
 }
 
-/// `/proc/<pid>/cmdline` legible: argumentos separados por espacios, entrecomillados si hace falta.
+/// Readable `/proc/<pid>/cmdline`: space-separated arguments, quoted when needed.
 fn command_line(pid: u32) -> Option<String> {
     let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
     let args: Vec<String> = raw
@@ -137,10 +137,7 @@ fn append_dump(path: &str, line: &[u8]) {
 }
 
 fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or_default()
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or_default()
 }
 
 #[cfg(test)]
