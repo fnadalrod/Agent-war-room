@@ -61,7 +61,7 @@ export function App({ store }: { store: WarRoomStore }) {
               Archivadas <span className="muted">{archivedCount(view)}</span>
             </label>
           )}
-          <IntegrationBadge status={state.integration} busy={state.busy} store={store} />
+          <IntegrationBadge status={state.integration} busy={state.busy} store={store} autostart={state.autostart} />
         </div>
       </header>
 

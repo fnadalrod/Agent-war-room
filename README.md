@@ -7,6 +7,10 @@ miras cuando cambia de color. Arquitectura y decisiones en
 
 ## Qué hace
 
+- **Vista previa de cada sesión:** encargo inicial y comando con que se lanzó, última respuesta
+  completa en Markdown y conversación reciente con las herramientas agrupadas.
+- **Cola "Requiere tu atención"** con lo que te espera en todos los repos.
+- **Avisos con botones:** "Ver", "Ir a" y "Aprobar" desde la propia notificación.
 - **Estado de cada agente** a partir de los hooks de Claude Code:
   - 🔴 te necesita: permiso, pregunta o plan pendiente
   - 🔵 terminado sin revisar
@@ -45,6 +49,17 @@ La primera vez, pulsa **Conectar Claude Code**. Eso:
 
 Las sesiones que arranquen a partir de entonces aparecerán en la sala.
 
+Para que se abra sola al iniciar sesión (oculta, en la bandeja), actívalo en el menú de
+**Claude Code** de la cabecera.
+
+### Instalar como paquete
+
+```sh
+npm run package      # compila el puente en release y genera .deb, .rpm y AppImage
+```
+
+Los paquetes quedan en `target/release/bundle/` e incluyen `warroom-hook` junto al ejecutable.
+
 Fuera de Tauri (`npm run dev` en un navegador), la UI usa adaptadores de demostración con una sala
 ficticia. Sirve para diseñar sin la app.
 
@@ -75,5 +90,5 @@ Otras utilidades:
   AWR_TRANSCRIPT=… cargo test -p awr-infrastructure transcript_live -- --ignored --nocapture
   ```
 
-- Datos: `~/.local/share/agent-war-room/events.db` (eventos append-only).
+- Datos: `~/.local/share/agent-war-room/events.db` (eventos append-only; se conservan 14 días).
 - Socket: `$XDG_RUNTIME_DIR/agent-war-room/ingress.sock`.

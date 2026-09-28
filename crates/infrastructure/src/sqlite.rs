@@ -67,6 +67,14 @@ impl EventStore for SqliteEventStore {
         }
         Ok(events)
     }
+
+    fn prune(&self, before: Timestamp) -> PortResult<usize> {
+        self.conn
+            .lock()
+            .unwrap()
+            .execute("DELETE FROM events WHERE at < ?1", params![before.0])
+            .map_err(fail)
+    }
 }
 
 fn fail(e: impl ToString) -> PortError {
@@ -92,5 +100,8 @@ mod tests {
         let loaded = store.load_since(Timestamp(15)).unwrap();
         let kinds: Vec<_> = loaded.into_iter().map(|e| e.kind).collect();
         assert_eq!(kinds, vec![SessionEventKind::Archived, SessionEventKind::Muted]);
+
+        assert_eq!(store.prune(Timestamp(25)).unwrap(), 2);
+        assert_eq!(store.load_since(Timestamp(0)).unwrap().len(), 1);
     }
 }

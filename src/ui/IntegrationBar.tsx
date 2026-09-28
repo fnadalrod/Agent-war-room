@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { WarRoomStore } from "../application/warRoomStore";
 import type { IntegrationStatus } from "../domain/attention";
 
-type Props = { status: IntegrationStatus | null; busy: boolean; store: WarRoomStore };
+type Props = { status: IntegrationStatus | null; busy: boolean; store: WarRoomStore; autostart?: boolean | null };
 
 export function isConnected(status: IntegrationStatus | null): boolean {
   return status != null && status.installed && status.bridge_present;
@@ -32,7 +32,7 @@ export function IntegrationBar({ status, busy, store }: Props) {
 }
 
 /** Indicador discreto en la cabecera una vez conectada. */
-export function IntegrationBadge({ status, busy, store }: Props) {
+export function IntegrationBadge({ status, busy, store, autostart }: Props) {
   const [open, setOpen] = useState(false);
   if (!isConnected(status)) return null;
   return (
@@ -48,6 +48,12 @@ export function IntegrationBadge({ status, busy, store }: Props) {
           <p>
             Puente: <code>{status!.bridge_path}</code>
           </p>
+          {autostart != null && (
+            <label className="toggle">
+              <input type="checkbox" checked={autostart} disabled={busy} onChange={(e) => store.setAutostart(e.target.checked)} />
+              Abrir al iniciar sesión (en la bandeja)
+            </label>
+          )}
           <div className="row">
             <button disabled={busy} onClick={() => store.install()}>
               Reinstalar

@@ -34,6 +34,8 @@ pub trait RepoResolver: Send + Sync {
 pub trait EventStore: Send + Sync {
     fn append(&self, event: &SessionEvent) -> PortResult<()>;
     fn load_since(&self, since: Timestamp) -> PortResult<Vec<SessionEvent>>;
+    /// Borra los eventos anteriores a `before`. Devuelve cuántos.
+    fn prune(&self, before: Timestamp) -> PortResult<usize>;
 }
 
 pub trait Clock: Send + Sync {
@@ -50,6 +52,8 @@ pub struct Notice {
     pub attention: Attention,
     pub title: String,
     pub body: String,
+    /// Se puede aprobar desde el propio aviso.
+    pub approvable: bool,
 }
 
 pub trait Notifier: Send + Sync {

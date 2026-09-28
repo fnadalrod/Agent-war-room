@@ -206,6 +206,7 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
   );
 
   const done = async () => {};
+  let autostart = false;
   const launched = async (): Promise<Launched> => ({ pty_id: null, via: "demo" });
 
   const status: IntegrationStatus = {
@@ -247,8 +248,15 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
         return { session: s, timeline: demoTimeline(s) };
       },
       openExternal: async (url) => void window.open(url, "_blank", "noopener"),
+      onOpenRequest: async () => () => {},
     },
-    integration: { status: async () => status, install: async () => status, uninstall: async () => status },
+    integration: {
+      status: async () => status,
+      install: async () => status,
+      uninstall: async () => status,
+      autostart: async () => autostart,
+      setAutostart: async (enabled) => (autostart = enabled),
+    },
     terminals: {
       list: async () => [],
       snapshot: async () => new TextEncoder().encode("Terminal de demostración\r\n$ "),

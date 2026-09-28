@@ -13,6 +13,7 @@ import type { IntegrationStatus, SessionDetail, WarRoomView } from "../domain/at
 const VIEW_EVENT = "warroom://view";
 const PTY_OUTPUT_EVENT = "pty://output";
 const PTY_EXIT_EVENT = "pty://exit";
+const OPEN_DETAIL_EVENT = "warroom://open-detail";
 
 export const tauriWarRoomGateway: WarRoomGateway = {
   load: () => invoke<WarRoomView>("get_view"),
@@ -31,6 +32,7 @@ export const tauriWarRoomGateway: WarRoomGateway = {
   resume: (id, target) => invoke<Launched>("resume", { id, target }),
   detail: (id) => invoke<SessionDetail>("session_detail", { id, limit: 80 }),
   openExternal: (url) => invoke("open_external", { url }),
+  onOpenRequest: (listener) => listen<string>(OPEN_DETAIL_EVENT, (e) => listener(e.payload)),
 };
 
 function fromBase64(data: string): Uint8Array {
@@ -55,4 +57,6 @@ export const tauriIntegrationGateway: IntegrationGateway = {
   status: () => invoke<IntegrationStatus>("integration_status"),
   install: () => invoke<IntegrationStatus>("install_integration"),
   uninstall: () => invoke<IntegrationStatus>("uninstall_integration"),
+  autostart: () => invoke<boolean>("autostart_enabled"),
+  setAutostart: (enabled) => invoke<boolean>("set_autostart", { enabled }),
 };

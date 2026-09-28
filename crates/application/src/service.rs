@@ -14,6 +14,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 /// Cuánto historial se reconstruye al arrancar.
 const RESTORE_WINDOW_MS: i64 = 3 * 24 * 60 * 60 * 1000;
+/// Lo que se conserva en el almacén; lo anterior se borra al arrancar.
+const RETENTION_MS: i64 = 14 * 24 * 60 * 60 * 1000;
 
 /// Señal cruda de un agente, ya separada del transporte.
 pub struct IncomingSignal {
@@ -56,7 +58,9 @@ impl WarRoomService {
 
     /// Reconstruye el estado desde el almacén sin avisar de nada. Devuelve los eventos aplicados.
     pub fn restore(&self) -> PortResult<usize> {
-        let since = Timestamp(self.ports.clock.now().0 - RESTORE_WINDOW_MS);
+        let now = self.ports.clock.now().0;
+        self.ports.store.prune(Timestamp(now - RETENTION_MS))?;
+        let since = Timestamp(now - RESTORE_WINDOW_MS);
         let events = self.ports.store.load_since(since)?;
         let count = events.len();
         let ids: Vec<SessionId> = {
@@ -353,7 +357,8 @@ impl WarRoomService {
             .title
             .or(summary.last_reply.map(|r| truncate(&r, 140)))
             .unwrap_or_else(|| fallback.to_string());
-        Some(Notice { session: change.session.clone(), attention: change.to, title, body })
+        let approvable = change.to == Attention::NeedsYou && self.approvals().contains_key(&change.session);
+        Some(Notice { session: change.session.clone(), attention: change.to, title, body, approvable })
     }
 
     fn room(&self) -> MutexGuard<'_, WarRoom> {
@@ -436,6 +441,12 @@ mod tests {
         }
         fn load_since(&self, since: Timestamp) -> PortResult<Vec<SessionEvent>> {
             Ok(self.0.lock().unwrap().iter().filter(|e| e.at >= since).cloned().collect())
+        }
+        fn prune(&self, before: Timestamp) -> PortResult<usize> {
+            let mut events = self.0.lock().unwrap();
+            let len = events.len();
+            events.retain(|e| e.at >= before);
+            Ok(len - events.len())
         }
     }
 
@@ -738,6 +749,29 @@ mod tests {
         assert_eq!(detail.timeline.len(), 1);
         assert_eq!(detail.timeline[0].text, "**hecho**");
         assert!(h.svc.session_detail(id("ghost"), 5).is_err());
+    }
+
+    #[test]
+    fn restore_forgets_events_older_than_the_retention() {
+        let store = Arc::new(MemoryStore::default());
+        let old = SessionEvent {
+            session: id("viejo"),
+            at: Timestamp(1_000_000_000_000 - 30 * 24 * 60 * 60 * 1000),
+            context: None,
+            kind: SessionEventKind::Seen,
+        };
+        store.append(&old).unwrap();
+        harness_with(store.clone(), true).svc.restore().unwrap();
+        assert!(store.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_permission_notice_says_it_can_be_approved_from_the_notification() {
+        let h = harness();
+        let (sig, _responder) = asking("a");
+        h.svc.ingest(sig).unwrap();
+        let notices = h.rec.notices.lock().unwrap();
+        assert!(notices[0].approvable);
     }
 
     #[test]

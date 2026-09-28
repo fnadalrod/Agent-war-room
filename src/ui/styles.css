@@ -312,6 +312,10 @@ button.linkish:hover:not(:disabled) {
   font-size: 13px;
 }
 
+.popover .toggle {
+  margin: 4px 0 12px;
+}
+
 .popover p {
   margin: 0 0 8px;
   overflow-wrap: anywhere;

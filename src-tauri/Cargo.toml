@@ -25,7 +25,8 @@ serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
-tauri-plugin-notification = "2"
+notify-rust = "4"
+tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 dirs = "6"
 base64 = "0.22"

@@ -2,12 +2,13 @@
 
 use crate::tray;
 use awr_application::ports::{Notice, Notifier, ViewPublisher};
+use awr_domain::{Attention, SessionId};
+use std::sync::mpsc::Sender;
 use awr_application::view::WarRoomView;
 use awr_infrastructure::pty::{PtyEvent, PtySink};
 use std::sync::Arc;
 use tauri::tray::TrayIcon;
 use tauri::{AppHandle, Emitter};
-use tauri_plugin_notification::NotificationExt;
 
 pub const VIEW_EVENT: &str = "warroom://view";
 pub const PTY_OUTPUT_EVENT: &str = "pty://output";
@@ -53,24 +54,71 @@ impl ViewPublisher for TauriPublisher {
     }
 }
 
+/// Lo que pulsaste en un aviso.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NoticeAction {
+    /// Clic en el aviso o "Ver": abrir la vista previa.
+    Open(SessionId),
+    Focus(SessionId),
+    Approve(SessionId),
+}
+
+/// Avisos de escritorio con botones (freedesktop). Cada sesión reemplaza su aviso anterior.
 pub struct DesktopNotifier {
-    app: AppHandle,
+    actions: Sender<NoticeAction>,
 }
 
 impl DesktopNotifier {
-    pub fn new(app: AppHandle) -> Self {
-        Self { app }
+    pub fn new(actions: Sender<NoticeAction>) -> Self {
+        Self { actions }
     }
 }
 
 impl Notifier for DesktopNotifier {
     fn notify(&self, notice: &Notice) {
-        let _ = self
-            .app
-            .notification()
-            .builder()
-            .title(&notice.title)
-            .body(&notice.body)
-            .show();
+        use notify_rust::{Notification, Timeout, Urgency};
+        let notice = notice.clone();
+        let actions = self.actions.clone();
+        // `wait_for_action` bloquea hasta que se pulsa o se cierra el aviso.
+        std::thread::spawn(move || {
+            let urgent = notice.attention == Attention::NeedsYou;
+            let mut n = Notification::new();
+            n.appname("Agent War Room")
+                .summary(&notice.title)
+                .body(&notice.body)
+                .icon("dialog-information")
+                .id(notification_id(&notice.session))
+                .urgency(if urgent { Urgency::Critical } else { Urgency::Normal })
+                .timeout(if urgent { Timeout::Never } else { Timeout::Milliseconds(10_000) })
+                .action("default", "Ver")
+                .action("focus", "Ir a");
+            if notice.approvable {
+                n.action("approve", "Aprobar");
+            }
+            match n.show() {
+                Ok(handle) => handle.wait_for_action(|action| {
+                    let session = notice.session.clone();
+                    let picked = match action {
+                        "default" => Some(NoticeAction::Open(session)),
+                        "focus" => Some(NoticeAction::Focus(session)),
+                        "approve" => Some(NoticeAction::Approve(session)),
+                        _ => None, // "__closed"
+                    };
+                    if let Some(picked) = picked {
+                        let _ = actions.send(picked);
+                    }
+                }),
+                Err(e) => eprintln!("[avisos] {e}"),
+            }
+        });
     }
+}
+
+/// Id estable por sesión (distinto de 0): un aviso nuevo sustituye al anterior de la misma sesión.
+fn notification_id(session: &SessionId) -> u32 {
+    let mut h: u32 = 2_166_136_261;
+    for b in session.0.bytes() {
+        h = (h ^ b as u32).wrapping_mul(16_777_619);
+    }
+    h.max(1)
 }

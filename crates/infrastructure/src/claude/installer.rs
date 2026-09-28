@@ -79,6 +79,9 @@ impl ClaudeHookInstaller {
                 Err(fail("no se encuentra el binario warroom-hook; compílalo con `cargo build -p warroom-hook`"))
             };
         };
+        if !is_executable_binary(source) {
+            return Err(fail(format!("{} no es un ejecutable válido del puente", source.display())));
+        }
         if let Some(dir) = self.bridge_target.parent() {
             fs::create_dir_all(dir).map_err(fail)?;
         }
@@ -189,6 +192,13 @@ fn is_ours(hook: &Value) -> bool {
     hook.get("command").and_then(Value::as_str).is_some_and(|c| c.contains(MARKER))
 }
 
+/// Un ELF de verdad: apuntar los hooks a un fichero vacío o roto haría fallar cada hook de Claude.
+fn is_executable_binary(path: &Path) -> bool {
+    use std::io::Read;
+    let mut magic = [0u8; 4];
+    fs::File::open(path).and_then(|mut f| f.read_exact(&mut magic)).is_ok() && magic == *b"\x7fELF"
+}
+
 fn backup_path(path: &Path) -> PathBuf {
     path.with_extension("json.warroom-bak")
 }
@@ -214,7 +224,7 @@ mod tests {
         }
         let source = dir.path().join("build/warroom-hook");
         fs::create_dir_all(source.parent().unwrap()).unwrap();
-        fs::write(&source, "#!/bin/sh\n").unwrap();
+        fs::write(&source, b"\x7fELF fake").unwrap();
         let target = dir.path().join("bin/warroom-hook");
         let installer = ClaudeHookInstaller::new(settings, Some(source), target);
         (dir, installer)
@@ -267,6 +277,14 @@ mod tests {
         installer.install().unwrap();
         installer.uninstall().unwrap();
         assert_eq!(read(&installer), json!({}));
+    }
+
+    #[test]
+    fn refuses_to_install_something_that_is_not_a_binary() {
+        let (dir, installer) = setup(None);
+        fs::write(dir.path().join("build/warroom-hook"), "").unwrap();
+        assert!(installer.install().is_err());
+        assert!(!installer.settings_path.exists(), "no toca settings.json");
     }
 
     #[test]

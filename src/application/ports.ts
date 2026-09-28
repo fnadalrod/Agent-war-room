@@ -28,6 +28,8 @@ export interface WarRoomGateway {
   detail(id: string): Promise<SessionDetail>;
   /** Abre un enlace en el navegador del sistema. */
   openExternal(url: string): Promise<void>;
+  /** El núcleo pide abrir la vista previa de una sesión (p. ej. clic en un aviso). */
+  onOpenRequest(listener: (id: string) => void): Promise<Unsubscribe>;
 }
 
 export type TerminalInfo = { id: string; label: string; cwd: string; alive: boolean };
@@ -47,4 +49,7 @@ export interface IntegrationGateway {
   status(): Promise<IntegrationStatus>;
   install(): Promise<IntegrationStatus>;
   uninstall(): Promise<IntegrationStatus>;
+  /** Arrancar la app (oculta, en la bandeja) al iniciar sesión. */
+  autostart(): Promise<boolean>;
+  setAutostart(enabled: boolean): Promise<boolean>;
 }

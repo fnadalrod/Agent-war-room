@@ -182,3 +182,18 @@ pub fn open_external(url: String) -> Result<(), String> {
     awr_infrastructure::desktop::open_url(&url);
     Ok(())
 }
+
+/// Si la app arranca sola al iniciar sesión.
+#[tauri::command]
+pub fn autostart_enabled(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let launcher = app.autolaunch();
+    if enabled { launcher.enable() } else { launcher.disable() }.map_err(|e| e.to_string())?;
+    launcher.is_enabled().map_err(|e| e.to_string())
+}

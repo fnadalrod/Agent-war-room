@@ -14,6 +14,7 @@ export type WarRoomState = {
   detail: OpenDetail | null;
   terminal: OpenTerminal | null;
   integration: IntegrationStatus | null;
+  autostart: boolean | null;
   error: string | null;
   toast: Toast | null;
   busy: boolean;
@@ -23,7 +24,7 @@ const TOAST_MS = 3500;
 
 /** Store sin framework: la UI se suscribe con `useSyncExternalStore`. */
 export class WarRoomStore {
-  private state: WarRoomState = { view: null, detail: null, terminal: null, integration: null, error: null, toast: null, busy: false };
+  private state: WarRoomState = { view: null, detail: null, terminal: null, integration: null, autostart: null, error: null, toast: null, busy: false };
   private readonly listeners = new Set<() => void>();
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly rooms: WarRoomGateway;
@@ -41,11 +42,19 @@ export class WarRoomStore {
       this.set({ view });
       this.refreshDetailIfChanged(view);
     });
+    const offOpen = await this.rooms.onOpenRequest((id) => this.openDetail(id));
     await this.run(async () => {
       const [view, integration] = await Promise.all([this.rooms.load(), this.integration.status()]);
       this.set({ view, integration });
     });
-    return unsubscribe;
+    this.integration.autostart().then(
+      (autostart) => this.set({ autostart }),
+      () => this.set({ autostart: null }),
+    );
+    return () => {
+      unsubscribe();
+      offOpen();
+    };
   }
 
   readonly subscribe = (listener: () => void) => {
@@ -171,6 +180,10 @@ export class WarRoomStore {
 
   install() {
     void this.run(async () => this.set({ integration: await this.integration.install() }));
+  }
+
+  setAutostart(enabled: boolean) {
+    void this.run(async () => this.set({ autostart: await this.integration.setAutostart(enabled) }));
   }
 
   uninstall() {
