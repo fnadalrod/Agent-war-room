@@ -8,6 +8,8 @@ import {
   isWritable,
   contextRatio,
   modelAndEffort,
+  providerName,
+  unpriced,
   money,
   tokenCount,
   toolDigest,
@@ -73,7 +75,7 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
           {s.branch && <span className="branch">{s.branch}</span>}
           {s.is_linked_worktree && <span className="tag">{copy.session.worktree}</span>}
           <span className="muted">
-            {[modelAndEffort(s.model, s.effort), contextLabel(s) && copy.session.context(contextLabel(s)!), copy.session.turns(s.turns), whereItLives(s)]
+            {[providerName(s.provider), modelAndEffort(s.model, s.effort), contextLabel(s) && copy.session.context(contextLabel(s)!), copy.session.turns(s.turns), whereItLives(s)]
               .filter(Boolean)
               .join(" · ")}
           </span>
@@ -123,7 +125,8 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
               </p>
             )}
             <p className="usage-line">
-              <strong>{tokenCount(s.usage.total_tokens)} tok</strong> · {copy.detail.estimatedCost(money(s.usage.cost_usd))}
+              <strong>{tokenCount(s.usage.total_tokens)} tok</strong>
+              {!unpriced(s.usage) && <> · {copy.detail.estimatedCost(money(s.usage.cost_usd))}</>}
               {s.usage.partial_cost && <span className="muted"> {copy.detail.partialCost}</span>}
             </p>
             <p className="muted small">

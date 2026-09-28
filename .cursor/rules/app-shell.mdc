@@ -11,6 +11,9 @@ alwaysApply: false
 `compose()` builds every adapter, `WarRoomService::new(Ports{…})`, `restore()` (events), then spawns:
 transcript first read (thread), socket ingress (tokio), the 5 s `tick` (liveness, transcripts of
 working sessions, stall detection) and the notification-actions loop. Closing the window hides it.
+One `AgentPorts` per agent (Claude, Codex) and one hook installer per agent (`commands::Integrations`):
+`integration_status` returns all of them; `install_integration`/`uninstall_integration`/`launch` take
+the `provider` (`claude`, `codex`).
 
 ## Contract with the front
 

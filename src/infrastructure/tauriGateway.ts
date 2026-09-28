@@ -34,7 +34,7 @@ export const tauriWarRoomGateway: WarRoomGateway = {
   approve: (id) => invoke("approve", { id }),
   deny: (id, message) => invoke("deny", { id, message: message ?? null }),
   sendInput: (id, text) => invoke("send_input", { id, text }),
-  launch: (cwd, target) => invoke<Launched>("launch", { cwd, target }),
+  launch: (provider, cwd, target) => invoke<Launched>("launch", { provider, cwd, target }),
   resume: (id, target) => invoke<Launched>("resume", { id, target }),
   detail: (id) => invoke<SessionDetail>("session_detail", { id, limit: 80 }),
   subagentDetail: (id, agent) => invoke<SubagentPreview>("subagent_detail", { id, agent }),
@@ -65,9 +65,9 @@ export const tauriTerminalGateway: TerminalGateway = {
 };
 
 export const tauriIntegrationGateway: IntegrationGateway = {
-  status: () => invoke<IntegrationStatus>("integration_status"),
-  install: () => invoke<IntegrationStatus>("install_integration"),
-  uninstall: () => invoke<IntegrationStatus>("uninstall_integration"),
+  status: () => invoke<IntegrationStatus[]>("integration_status"),
+  install: (provider) => invoke<IntegrationStatus>("install_integration", { provider }),
+  uninstall: (provider) => invoke<IntegrationStatus>("uninstall_integration", { provider }),
   autostart: () => invoke<boolean>("autostart_enabled"),
   setAutostart: (enabled) => invoke<boolean>("set_autostart", { enabled }),
 };

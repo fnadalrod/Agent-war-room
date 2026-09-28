@@ -1,5 +1,5 @@
 ---
-description: How Agent War Room is tested — unit tests per crate and front, ignored live/e2e tests with a real Claude, screenshots of the demo UI, and the scoped check script. Read before adding tests or claiming something works.
+description: How Agent War Room is tested — unit tests per crate and front, ignored live/e2e tests with a real Claude or Codex, screenshots of the demo UI, and the scoped check script. Read before adding tests or claiming something works.
 globs: scripts/check.sh, scripts/shot.mjs, crates/infrastructure/tests/**, src/**/*.test.ts, src/test/**
 alwaysApply: false
 ---
@@ -13,7 +13,7 @@ alwaysApply: false
 | Adapters | real temp dirs, private tmux socket, temp git repos, real `/proc`, Node for the KWin script | each file in `crates/infrastructure/src` |
 | Front | Vitest next to the code; fixtures in `src/test/fixtures.ts`; the store tested against the demo gateway | `src/**/*.test.ts` |
 | UI look | screenshots of the demo UI | `npm run shot -- <dir>` |
-| End to end | real `claude` + real bridge + real socket, isolated | `crates/infrastructure/tests/claude_e2e.rs` (ignored) |
+| End to end | real `claude`/`codex` + real bridge + real socket, isolated; shared harness in `tests/e2e/mod.rs` | `claude_e2e.rs`, `codex_e2e.rs` in `crates/infrastructure/tests` (ignored) |
 | Live desktop | real KWin, real transcript | `kwin_live`, `transcript_live` (ignored) |
 
 ## Commands

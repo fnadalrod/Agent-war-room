@@ -6,13 +6,17 @@ mod locale;
 mod tray;
 
 use awr_application::ports::IntegrationInstaller;
-use awr_application::{Ports, WarRoomService};
-use awr_infrastructure::claude::{ClaudeHookInstaller, ClaudeProvider, ClaudeTranscriptReader, FsSkillCatalog};
+use awr_application::{AgentPorts, Ports, WarRoomService};
+use awr_domain::ProviderKind;
+use awr_infrastructure::claude::{CLAUDE_HOOKS, ClaudeProvider, ClaudeTranscriptReader};
+use awr_infrastructure::codex::{CODEX_HOOKS, CodexProvider, CodexTranscriptReader, codex_home};
 use awr_infrastructure::desktop::DesktopNavigator;
 use awr_infrastructure::git::{GitCli, GitRepoResolver};
+use awr_infrastructure::hook_installer::HookInstaller;
 use awr_infrastructure::ingress;
 use awr_infrastructure::launch::{DesktopLauncher, TerminalInput};
 use awr_infrastructure::pty::PtyManager;
+use awr_infrastructure::skills::FsSkillCatalog;
 use awr_infrastructure::sqlite::SqliteEventStore;
 use awr_infrastructure::system::{ProcProbe, SystemClock};
 use std::path::PathBuf;
@@ -110,20 +114,31 @@ fn compose(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let pty = PtyManager::new(adapters::pty_sink(app.clone()));
     app.manage(pty.clone());
     let warp_tab_configs = dirs::data_dir().ok_or("no data directory")?.join("warp-terminal/tab_configs");
+    let home = dirs::home_dir().ok_or("no HOME directory")?;
+    let codex_home = codex_home(&home);
 
     let service = Arc::new(WarRoomService::new(Ports {
-        providers: vec![Arc::new(ClaudeProvider)],
+        agents: vec![
+            AgentPorts {
+                provider: Arc::new(ClaudeProvider),
+                transcripts: Arc::new(ClaudeTranscriptReader::new()),
+                skills: Arc::new(FsSkillCatalog::claude(&home)),
+            },
+            AgentPorts {
+                provider: Arc::new(CodexProvider),
+                transcripts: Arc::new(CodexTranscriptReader::new()),
+                skills: Arc::new(FsSkillCatalog::codex(&home, codex_home.clone())),
+            },
+        ],
         resolver: Arc::new(GitRepoResolver::new()),
         store: Arc::new(SqliteEventStore::open(&data_dir.join("events.db"))?),
         clock: Arc::new(SystemClock),
         probe: Arc::new(ProcProbe),
         notifier: Arc::new(adapters::DesktopNotifier::new(notice_actions)),
         publisher: Arc::new(adapters::TauriPublisher::new(app.clone(), tray)),
-        transcripts: Arc::new(ClaudeTranscriptReader::new()),
         navigator: Arc::new(DesktopNavigator::detect()),
         launcher: Arc::new(DesktopLauncher::new(pty.clone(), warp_tab_configs)),
         input: Arc::new(TerminalInput::new(pty)),
-        skills: Arc::new(FsSkillCatalog::new(dirs::home_dir().ok_or("no HOME directory")?.join(".claude"))),
         git: Arc::new(GitCli),
     }));
     service.restore()?;
@@ -132,12 +147,24 @@ fn compose(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let reader = service.clone();
     std::thread::spawn(move || reader.refresh_all_summaries());
 
-    let installer: Arc<dyn IntegrationInstaller> = Arc::new(ClaudeHookInstaller::new(
-        dirs::home_dir().ok_or("no HOME directory")?.join(".claude/settings.json"),
-        built_bridge(),
-        data_dir.join("bin/warroom-hook"),
-    ));
-    app.manage(installer);
+    // One bridge binary for every agent; each gets our hooks in its own file.
+    let bridge = data_dir.join("bin/warroom-hook");
+    let installers: commands::Integrations = Arc::new(vec![
+        (
+            ProviderKind::Claude,
+            Arc::new(HookInstaller::new(
+                &CLAUDE_HOOKS,
+                home.join(".claude/settings.json"),
+                built_bridge(),
+                bridge.clone(),
+            )) as Arc<dyn IntegrationInstaller>,
+        ),
+        (
+            ProviderKind::Codex,
+            Arc::new(HookInstaller::new(&CODEX_HOOKS, codex_home.join("hooks.json"), built_bridge(), bridge)),
+        ),
+    ]);
+    app.manage(installers);
 
     // Notification buttons.
     let (on_notice, handle) = (service.clone(), app.clone());

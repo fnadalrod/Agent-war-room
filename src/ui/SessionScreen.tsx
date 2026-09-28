@@ -5,10 +5,10 @@ import {
   extraActivity,
   isWritable,
   modelAndEffort,
-  money,
   stalledMinutes,
-  tokenCount,
   plainText,
+  providerName,
+  usageLabel,
   whereItLives,
   type SessionView,
 } from "../domain/attention";
@@ -30,10 +30,10 @@ import { QuickInput } from "./QuickInput";
 import { SkillTags } from "./SkillTag";
 import { since } from "./useStore";
 
-type Props = { session: SessionView; store: WarRoomStore; now: number };
+type Props = { session: SessionView; store: WarRoomStore; now: number; showProvider?: boolean };
 
 /** A session card. Clicking the body opens the preview. */
-export function SessionScreen({ session: s, store, now }: Props) {
+export function SessionScreen({ session: s, store, now, showProvider = false }: Props) {
   const stalled = stalledMinutes(s, now);
   const excerpt = s.attention !== "working" && s.last_reply ? plainText(s.last_reply) : null;
   const label = s.title ?? deskName(s);
@@ -98,8 +98,9 @@ export function SessionScreen({ session: s, store, now }: Props) {
         </div>
         <div className="card-meta">
           {[
+            showProvider && providerName(s.provider),
             modelAndEffort(s.model, s.effort),
-            s.usage.total_tokens > 0 && `${tokenCount(s.usage.total_tokens)} tok · ${money(s.usage.cost_usd)}`,
+            s.usage.total_tokens > 0 && usageLabel(s.usage),
             whereItLives(s),
           ]
             .filter(Boolean)

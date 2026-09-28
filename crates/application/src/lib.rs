@@ -6,4 +6,4 @@ pub mod ports;
 mod service;
 pub mod view;
 
-pub use service::{IncomingSignal, Ports, WarRoomService};
+pub use service::{AgentPorts, IncomingSignal, Ports, WarRoomService};

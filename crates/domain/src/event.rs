@@ -85,6 +85,8 @@ pub enum SessionEventKind {
     /// The agent has been waiting for input for a while (not necessarily after an observed turn end).
     IdlePrompt,
     TurnEnded,
+    /// You stopped the turn yourself: it is your turn, but there is nothing new to review.
+    Interrupted,
     SubagentStarted {
         id: String,
         kind: Option<String>,

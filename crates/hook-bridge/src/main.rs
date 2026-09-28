@@ -4,8 +4,8 @@
 //! an explicit decision from the app to stdout. It must never break or slow down the agent.
 //!
 //! On `PermissionRequest` it waits for the app's decision (approve/deny from the war room). It
-//! blocks nobody: Claude shows its own dialog at the same time and, if you answer in the terminal,
-//! kills this process and discards its reply.
+//! blocks nobody: the agent shows its own dialog at the same time and, if you answer in the terminal,
+//! kills this process and discards its reply. Claude Code and Codex share this protocol.
 
 use awr_wire::{EnvHints, HookEnvelope, HookReply, PROTOCOL_VERSION, WireProcess};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -14,7 +14,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const MAX_PAYLOAD_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_ANCESTRY: usize = 12;
-const AGENT_PROCESS_NAMES: &[&str] = &["claude"];
+/// Agent processes that run hooks, and the provider each one is: the bridge is the same binary for
+/// all of them, so the agent is recognised by walking up to it.
+const AGENTS: &[(&str, &str)] = &[("claude", "claude"), ("codex", "codex")];
+/// Agents that show their own permission dialog while this hook waits for the war room, so the first
+/// answer wins. Codex runs the hook first and shows its dialog only after it returns: waiting there
+/// would freeze its terminal, so for Codex the war room only reports the request.
+const DIALOG_WHILE_WAITING: &[&str] = &["claude"];
 /// Below the hook timeout (600 s) so we exit on our own terms.
 const REPLY_WAIT: Duration = Duration::from_secs(590);
 
@@ -35,11 +41,16 @@ fn run() -> Option<String> {
     let event = payload.get("hook_event_name").and_then(|e| e.as_str()).unwrap_or_default().to_owned();
 
     let ancestry = ancestry(std::os::unix::process::parent_id());
-    let agent_pid = ancestry.iter().find(|p| AGENT_PROCESS_NAMES.contains(&p.name.as_str())).map(|p| p.pid);
+    let agent = ancestry
+        .iter()
+        .find_map(|p| AGENTS.iter().find(|(name, _)| *name == p.name).map(|(_, provider)| (p.pid, *provider)));
+    let agent_pid = agent.map(|(pid, _)| pid);
 
+    let provider = provider(std::env::var("WARROOM_PROVIDER").ok(), agent.map(|(_, p)| p));
+    let expects_reply = event == "PermissionRequest" && DIALOG_WHILE_WAITING.contains(&provider.as_str());
     let envelope = HookEnvelope {
         v: PROTOCOL_VERSION,
-        provider: std::env::var("WARROOM_PROVIDER").unwrap_or_else(|_| "claude".into()),
+        provider,
         received_at_ms: now_ms(),
         agent_command: agent_pid.and_then(command_line),
         agent_pid,
@@ -52,7 +63,7 @@ fn run() -> Option<String> {
             pty_id: std::env::var("AWR_PTY_ID").ok(),
         },
         payload,
-        expects_reply: event == "PermissionRequest",
+        expects_reply,
     };
     let mut line = serde_json::to_vec(&envelope).ok()?;
     line.push(b'\n');
@@ -75,7 +86,12 @@ fn run() -> Option<String> {
     Some(permission_output(&reply))
 }
 
-/// Output Claude Code understands for `PermissionRequest`.
+/// `WARROOM_PROVIDER` wins; then the agent found among the ancestors; Claude by default.
+fn provider(env: Option<String>, ancestor: Option<&str>) -> String {
+    env.filter(|p| !p.is_empty()).or_else(|| ancestor.map(str::to_owned)).unwrap_or_else(|| "claude".into())
+}
+
+/// Output Claude Code and Codex understand for `PermissionRequest` (the same contract).
 fn permission_output(reply: &HookReply) -> String {
     let decision = match reply {
         HookReply::Allow => serde_json::json!({ "behavior": "allow" }),
@@ -152,6 +168,13 @@ mod tests {
     fn reads_the_command_line_of_a_process() {
         let own = command_line(std::process::id()).unwrap();
         assert!(own.contains("warroom_hook"), "{own}");
+    }
+
+    #[test]
+    fn the_provider_comes_from_the_environment_then_from_the_agent_process() {
+        assert_eq!(provider(Some("codex".into()), Some("claude")), "codex");
+        assert_eq!(provider(None, Some("codex")), "codex");
+        assert_eq!(provider(Some(String::new()), None), "claude");
     }
 
     #[test]

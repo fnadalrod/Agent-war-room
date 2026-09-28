@@ -33,7 +33,8 @@ domain`; `infrastructure/` implements the ports in `application/ports.ts`.
 | Something the core needs from the outside world | a port in `crates/application/src/ports.rs`, its adapter in `crates/infrastructure`, wired in `src-tauri/src/lib.rs` **and** the e2e `Room::start` |
 | What the UI receives | `crates/application/src/view.rs` (TS types regenerate from it) |
 | Derived data that must not be persisted (transcript facts, pending approvals, stall notices) | fields of `WarRoomService`, never the domain |
-| Claude-specific knowledge (hook names, transcript shape, prices) | `crates/infrastructure/src/claude/` — the domain must not know Claude |
+| Agent-specific knowledge (hook dialect, transcript shape, prices, config paths) | `crates/infrastructure/src/<agent>/` (`claude/`, `codex/`) — the domain must not know any agent |
+| Something several agents share (hook protocol, installer, JSONL reading, skill folders, tool labels) | `hooks.rs`, `hook_installer.rs`, `jsonl.rs`, `skills.rs`, `tools.rs` in `crates/infrastructure/src/` |
 | User-visible text | a key in every `locales/*.json`, exposed by the crate's `locale.rs` / `src/domain/copy.ts` (`i18n.mdc`) |
 | A Tauri command or event | `src-tauri/src/commands.rs` / `adapters.rs`, mirrored in `src/infrastructure/tauriGateway.ts` |
 
@@ -41,8 +42,10 @@ domain`; `infrastructure/` implements the ports in `application/ports.ts`.
 
 AgentProvider · RepoResolver · EventStore · Clock · ProcessProbe · Notifier · ViewPublisher ·
 TranscriptReader · WindowNavigator · AgentLauncher · SessionInput · SkillCatalog · GitHistory ·
-ApprovalResponder · IntegrationInstaller. All bundled in `service::Ports`. A new port means: trait +
-fake in `service.rs` tests + real adapter + wiring in `src-tauri/src/lib.rs` + `claude_e2e.rs`.
+ApprovalResponder · IntegrationInstaller. All bundled in `service::Ports`; what is specific to one
+agent (provider, transcripts, skills) comes as an `AgentPorts` per agent in `Ports.agents`, and the
+service picks it by the session's `ProviderKind`. A new port means: trait + fake in `service.rs` tests
++ real adapter + wiring in `src-tauri/src/lib.rs` + the e2e harness (`tests/e2e/mod.rs`).
 
 ## Service rules (crates/application/src/service.rs)
 

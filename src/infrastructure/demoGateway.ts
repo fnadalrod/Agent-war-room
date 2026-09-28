@@ -219,12 +219,15 @@ function initialRooms(): RoomView[] {
           status_label: "Bash",
           last_action: "Bash · go test ./...",
           title: "Role-based permissions",
-          model: "claude-sonnet-5",
-          effort: "medium",
+          provider: "codex",
+          model: "gpt-6-astra",
+          effort: "high",
+          context_window: 258_400,
+          context_tokens: 131_000,
           skills: [{ name: "run-epic", source: "project", by_user: true, by_agent: true, count: 2, last_at: minutes(2) }],
           worktree_path: "/code/trellis",
           tmux_pane: "%4",
-          usage: usage(12_600_000, 3.4),
+          usage: { ...usage(12_600_000, 0), partial_cost: true },
         }),
         session({
           id: "k2k2k2k2-trellis-notify",
@@ -270,9 +273,12 @@ function initialRooms(): RoomView[] {
           last_action: "Read · tauri.conf.json",
           title: "Upgrade Tauri plugins",
           worktree_path: "/code/pr-lens",
-          model: "claude-sonnet-5",
-          effort: "low",
-          usage: usage(2_100_000, 0.4),
+          provider: "codex",
+          model: "gpt-6-astra",
+          effort: "medium",
+          context_window: 258_400,
+          context_tokens: 64_000,
+          usage: { ...usage(2_100_000, 0), partial_cost: true },
           subagents: [agent("t1", "Explore", "Breaking changes in plugins", "WebFetch · tauri.app/release")],
         }),
       ],
@@ -392,13 +398,17 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
   let autostart = false;
   const launched = async (): Promise<Launched> => ({ pty_id: null, via: "demo" });
 
-  const status: IntegrationStatus = {
+  const integration = (provider: string, settings_path: string): IntegrationStatus => ({
+    provider,
+    agent_found: true,
     installed: true,
     hooked_events: [],
-    settings_path: "~/.claude/settings.json",
+    settings_path,
     bridge_path: "~/.local/share/agent-war-room/bin/warroom-hook",
     bridge_present: true,
-  };
+  });
+  const statuses = [integration("claude", "~/.claude/settings.json"), integration("codex", "~/.codex/hooks.json")];
+  const byProvider = async (provider: string) => statuses.find((s) => s.provider === provider) ?? statuses[0];
 
   return {
     rooms: {
@@ -471,9 +481,9 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
       commitDiff: async () => DEMO_DIFF,
     },
     integration: {
-      status: async () => status,
-      install: async () => status,
-      uninstall: async () => status,
+      status: async () => statuses,
+      install: byProvider,
+      uninstall: byProvider,
       autostart: async () => autostart,
       setAutostart: async (enabled) => (autostart = enabled),
     },

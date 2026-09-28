@@ -43,7 +43,8 @@ export type WarRoomState = {
   filter: Filter;
   detail: OpenDetail | null;
   terminal: OpenTerminal | null;
-  integration: IntegrationStatus | null;
+  /** One per supported agent; empty until loaded. */
+  integrations: IntegrationStatus[];
   autostart: boolean | null;
   error: string | null;
   toast: Toast | null;
@@ -54,7 +55,7 @@ const TOAST_MS = 3500;
 
 /** Framework-free store: the UI subscribes with `useSyncExternalStore`. */
 export class WarRoomStore {
-  private state: WarRoomState = { view: null, filter: NO_FILTER, detail: null, terminal: null, integration: null, autostart: null, error: null, toast: null, busy: false };
+  private state: WarRoomState = { view: null, filter: NO_FILTER, detail: null, terminal: null, integrations: [], autostart: null, error: null, toast: null, busy: false };
   private readonly listeners = new Set<() => void>();
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly rooms: WarRoomGateway;
@@ -111,8 +112,8 @@ export class WarRoomStore {
     });
     const offOpen = await this.rooms.onOpenRequest((id, reply) => this.openDetail(id, { reply }));
     await this.run(async () => {
-      const [view, integration] = await Promise.all([this.rooms.load(), this.integration.status()]);
-      this.set({ view, integration });
+      const [view, integrations] = await Promise.all([this.rooms.load(), this.integration.status()]);
+      this.set({ view, integrations });
     });
     this.integration.autostart().then(
       (autostart) => this.set({ autostart }),
@@ -158,8 +159,8 @@ export class WarRoomStore {
     }
   }
 
-  launch(cwd: string, label: string, target: LaunchTarget) {
-    void this.rooms.launch(cwd, target).then(
+  launch(provider: string, cwd: string, label: string, target: LaunchTarget) {
+    void this.rooms.launch(provider, cwd, target).then(
       (launched) => this.afterLaunch(launched, label),
       (e) => this.notify({ text: String(e), tone: "warn" }),
     );
@@ -329,16 +330,20 @@ export class WarRoomStore {
     void this.run(() => (s.muted ? this.rooms.unmute(s.id) : this.rooms.mute(s.id)));
   }
 
-  install() {
-    void this.run(async () => this.set({ integration: await this.integration.install() }));
+  install(provider: string) {
+    void this.run(async () => this.replaceIntegration(await this.integration.install(provider)));
   }
 
   setAutostart(enabled: boolean) {
     void this.run(async () => this.set({ autostart: await this.integration.setAutostart(enabled) }));
   }
 
-  uninstall() {
-    void this.run(async () => this.set({ integration: await this.integration.uninstall() }));
+  uninstall(provider: string) {
+    void this.run(async () => this.replaceIntegration(await this.integration.uninstall(provider)));
+  }
+
+  private replaceIntegration(status: IntegrationStatus) {
+    this.set({ integrations: this.state.integrations.map((i) => (i.provider === status.provider ? status : i)) });
   }
 
   dismissError() {

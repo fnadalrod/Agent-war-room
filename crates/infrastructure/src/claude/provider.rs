@@ -1,6 +1,8 @@
-use super::tools::{clip, tool_argument};
-use awr_application::ports::{AgentProvider, PortError, PortResult, Translated};
-use awr_domain::{EndReason, ProviderKind, SessionEventKind, SessionId, SkillInvoker, SkillSource, WaitReason};
+//! Claude Code's dialect of the hook protocol (see `crate::hooks`).
+
+use crate::hooks::{Dialect, translate};
+use awr_application::ports::{AgentProvider, PortResult, Translated};
+use awr_domain::ProviderKind;
 use serde_json::Value;
 
 /// Claude Code's built-in commands: they start with `/` but are not skills.
@@ -55,134 +57,36 @@ const BUILTIN_COMMANDS: &[&str] = &[
     "vim",
 ];
 
-/// `/name args` → `name`, if it looks like a skill rather than a built-in command.
-fn slash_skill(prompt: &str) -> Option<String> {
-    let name = prompt.trim_start().strip_prefix('/')?.split_whitespace().next()?;
-    let valid =
-        !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'));
-    (valid && !BUILTIN_COMMANDS.contains(&name)).then(|| name.to_owned())
-}
-
-/// Tools whose `PreToolUse` means Claude is asking the user something.
-const QUESTION_TOOLS: &[&str] = &["AskUserQuestion", "ExitPlanMode"];
+pub const CLAUDE: Dialect = Dialect {
+    kind: ProviderKind::Claude,
+    wire_name: "claude",
+    skill_prefix: '/',
+    builtin_commands: BUILTIN_COMMANDS,
+    // `PreToolUse` of these means Claude is asking the user something.
+    question_tools: &["AskUserQuestion", "ExitPlanMode"],
+    skill_tool: Some("Skill"),
+};
 
 pub struct ClaudeProvider;
 
 impl AgentProvider for ClaudeProvider {
     fn kind(&self) -> ProviderKind {
-        ProviderKind::Claude
+        CLAUDE.kind
     }
 
     fn wire_name(&self) -> &'static str {
-        "claude"
+        CLAUDE.wire_name
     }
 
     fn translate(&self, payload: &Value) -> PortResult<Option<Translated>> {
-        let field = |name: &str| payload.get(name).and_then(Value::as_str);
-        let (Some(session), Some(event)) = (field("session_id"), field("hook_event_name")) else {
-            return Err(PortError::Failed("Claude hook without session_id or hook_event_name".into()));
-        };
-        let tool = field("tool_name").map(str::to_owned);
-        // Tool hooks fired from a subagent carry `agent_id`.
-        let subagent = field("agent_id").map(str::to_owned);
-
-        let mut extra = Vec::new();
-        let skill = |name: String, by| SessionEventKind::SkillInvoked { name, by, source: SkillSource::Builtin };
-        let kind = match event {
-            "SessionStart" => SessionEventKind::Started,
-            "UserPromptSubmit" => {
-                if let Some(name) = field("prompt").and_then(slash_skill) {
-                    extra.push(skill(name, SkillInvoker::User));
-                }
-                SessionEventKind::PromptSubmitted
-            }
-            "PreToolUse" => match tool {
-                Some(t) if QUESTION_TOOLS.contains(&t.as_str()) => {
-                    SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: Some(t), detail: None }
-                }
-                Some(t) => {
-                    if t == "Skill"
-                        && let Some(name) = payload.pointer("/tool_input/skill").and_then(Value::as_str)
-                    {
-                        extra.push(skill(name.to_owned(), SkillInvoker::Agent));
-                    }
-                    match subagent {
-                        Some(id) => SessionEventKind::SubagentTool { id, tool: t },
-                        None => SessionEventKind::ToolStarted { tool: t },
-                    }
-                }
-                None => return Ok(None),
-            },
-            "PostToolUse" | "PostToolUseFailure" => match (tool, subagent) {
-                (Some(t), None) => SessionEventKind::ToolFinished { tool: t, failed: event == "PostToolUseFailure" },
-                _ => return Ok(None),
-            },
-            "PermissionRequest" => SessionEventKind::AwaitingYou {
-                reason: WaitReason::Permission,
-                tool,
-                // For Bash the command says more than its description.
-                detail: payload
-                    .pointer("/tool_input/command")
-                    .and_then(Value::as_str)
-                    .map(|c| clip(c, 80))
-                    .or_else(|| tool_argument(payload.get("tool_input"))),
-            },
-            "Notification" => match notification_kind(field("notification_type"), field("message")) {
-                Some(kind) => kind,
-                None => return Ok(None),
-            },
-            "Stop" => SessionEventKind::TurnEnded,
-            "SubagentStart" => SessionEventKind::SubagentStarted {
-                id: field("agent_id").unwrap_or("unknown").to_owned(),
-                kind: field("agent_type").map(str::to_owned),
-            },
-            "SubagentStop" => {
-                SessionEventKind::SubagentStopped { id: field("agent_id").unwrap_or("unknown").to_owned() }
-            }
-            "PreCompact" => SessionEventKind::CompactionStarted,
-            "SessionEnd" => {
-                SessionEventKind::Ended { reason: EndReason::Exited(field("reason").unwrap_or("other").to_owned()) }
-            }
-            _ => return Ok(None),
-        };
-
-        Ok(Some(Translated {
-            session: SessionId(session.to_owned()),
-            cwd: field("cwd").unwrap_or_default().to_owned(),
-            transcript_path: field("transcript_path").map(str::to_owned),
-            kind,
-            extra,
-        }))
-    }
-}
-
-/// Recent versions send `notification_type`; older ones only the message.
-fn notification_kind(kind: Option<&str>, message: Option<&str>) -> Option<SessionEventKind> {
-    let kind = kind.map(str::to_owned).or_else(|| {
-        let message = message?.to_lowercase();
-        if message.contains("permission") {
-            Some("permission_prompt".into())
-        } else if message.contains("waiting for your input") {
-            Some("idle_prompt".into())
-        } else {
-            None
-        }
-    })?;
-    match kind.as_str() {
-        "permission_prompt" => {
-            Some(SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: None, detail: None })
-        }
-        "elicitation_dialog" => {
-            Some(SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: None, detail: None })
-        }
-        "idle_prompt" => Some(SessionEventKind::IdlePrompt),
-        _ => None,
+        translate(&CLAUDE, payload)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use awr_domain::{EndReason, SessionEventKind, SessionId, SkillInvoker, SkillSource, WaitReason};
     use serde_json::json;
 
     fn translate(payload: Value) -> Option<SessionEventKind> {

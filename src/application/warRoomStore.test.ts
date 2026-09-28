@@ -15,7 +15,8 @@ describe("WarRoomStore", () => {
     const store = storeWith();
     await store.start();
     expect(store.snapshot().view?.rooms.length).toBeGreaterThan(0);
-    expect(store.snapshot().integration?.installed).toBe(true);
+    expect(store.snapshot().integrations.map((i) => i.provider)).toEqual(["claude", "codex"]);
+    expect(store.snapshot().integrations.every((i) => i.installed)).toBe(true);
   });
 
   it("only confirms the approval if the core accepted it", async () => {
@@ -27,7 +28,7 @@ describe("WarRoomStore", () => {
 
   it("opens the in-app terminal when launching an agent in the app", async () => {
     const store = storeWith({ launch: vi.fn().mockResolvedValue({ pty_id: "pty-1", via: "app" }) });
-    store.launch("/code/app", "app", "app");
+    store.launch("codex", "/code/app", "app", "app");
     await vi.waitFor(() => expect(store.snapshot().terminal).toEqual({ id: "pty-1", label: "app" }));
   });
 

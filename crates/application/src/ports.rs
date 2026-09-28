@@ -252,8 +252,10 @@ pub enum LaunchTarget {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchRequest {
+    /// Which agent to run.
+    pub provider: ProviderKind,
     pub cwd: String,
-    /// Resume this session (`claude --resume <id>`) instead of starting a new one.
+    /// Resume this session (`claude --resume <id>`, `codex resume <id>`) instead of starting a new one.
     pub resume: Option<SessionId>,
     pub target: LaunchTarget,
     /// Name for the tab or terminal.

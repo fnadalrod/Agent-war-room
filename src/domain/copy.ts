@@ -25,6 +25,12 @@ export const copy = {
     offline: t("attention.offline"),
   } satisfies Record<AttentionView, string>,
 
+  /** Agent names, by provider id. */
+  provider: {
+    claude: t("provider.claude"),
+    codex: t("provider.codex"),
+  } as Record<string, string>,
+
   skillSource: {
     project: t("skill_source.project"),
     personal: t("skill_source.personal"),
@@ -128,6 +134,9 @@ export const copy = {
     newAgent: t("room.new_agent"),
     newAgentTitle: (cwd: string) => t("room.new_agent_title", { cwd }),
     newAgentInWarpTitle: (cwd: string) => t("room.new_agent_in_warp_title", { cwd }),
+    launchTitle: (cwd: string) => t("room.launch_title", { cwd }),
+    launchInApp: (agent: string) => t("room.launch_in_app", { agent }),
+    launchInWarp: (agent: string) => t("room.launch_in_warp", { agent }),
   },
 
   skill: {
@@ -235,17 +244,17 @@ export const copy = {
   },
 
   integration: {
-    incomplete: t("integration.incomplete"),
-    notConnected: t("integration.not_connected"),
+    incomplete: (agent: string) => t("integration.incomplete", { agent }),
+    notConnected: (agent: string) => t("integration.not_connected", { agent }),
     /** Wraps two inline `<code>` elements: the settings path and the backup suffix. */
     installNote: {
       beforePath: t("integration.install_before_path"),
       beforeBackup: t("integration.install_before_backup"),
       end: t("integration.install_end"),
     },
-    connect: t("integration.connect"),
-    badge: t("integration.badge"),
-    title: t("integration.title"),
+    connect: (agent: string) => t("integration.connect", { agent }),
+    title: (agent: string) => t("integration.title", { agent }),
+    codexTrust: t("integration.codex_trust"),
     hooksIn: t("integration.hooks_in"),
     bridge: t("integration.bridge"),
     autostart: t("integration.autostart"),

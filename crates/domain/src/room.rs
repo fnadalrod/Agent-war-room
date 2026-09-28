@@ -134,6 +134,15 @@ mod tests {
     }
 
     #[test]
+    fn interrupting_a_turn_yourself_gives_you_the_turn_without_a_notice() {
+        let mut room = WarRoom::new();
+        room.apply(signal("s", 1, SessionEventKind::PromptSubmitted));
+        let change = room.apply(signal("s", 2, SessionEventKind::Interrupted)).unwrap();
+        assert_eq!(change.to, Attention::Idle);
+        assert!(!change.deserves_notice());
+    }
+
+    #[test]
     fn permission_and_questions_need_you() {
         let mut room = WarRoom::new();
         room.apply(signal("s", 1, SessionEventKind::PromptSubmitted));

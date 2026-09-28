@@ -2,7 +2,7 @@
 
 use crate::locale;
 use crate::ports::{TranscriptSummary, Usage};
-use awr_domain::{Attention, Session, SessionId, SessionStatus, WaitReason, WarRoom, Timestamp};
+use awr_domain::{Attention, Session, SessionId, SessionStatus, Timestamp, WaitReason, WarRoom};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use ts_rs::TS;
@@ -284,6 +284,10 @@ impl From<crate::ports::TimelineItem> for TimelineEntryView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[ts(export)]
 pub struct IntegrationStatus {
+    /// `claude`, `codex`…
+    pub provider: String,
+    /// The agent's configuration folder exists (it is installed on this machine).
+    pub agent_found: bool,
     pub installed: bool,
     /// Hook events pointing at our bridge.
     pub hooked_events: Vec<String>,
@@ -353,7 +357,7 @@ pub(crate) fn session_view(
         status_label: status_label(s),
         title: summary.title.clone(),
         first_prompt: summary.first_prompt.clone(),
-        command: s.host.agent_command.clone(),
+        command: s.host.agent_command.as_deref().map(readable_command),
         last_prompt: summary.last_prompt.clone(),
         last_reply: summary.last_reply.clone(),
         last_action: summary.last_action.clone(),
@@ -438,6 +442,13 @@ fn status_label(s: &Session) -> String {
 }
 
 /// First ancestor of the agent that looks like a terminal or IDE (what needs focusing).
+/// The command as you would type it: `/…/vendor/…/bin/codex resume x` → `codex resume x`.
+fn readable_command(command: &str) -> String {
+    let (program, args) = command.split_once(' ').unwrap_or((command, ""));
+    let program = program.rsplit('/').next().unwrap_or(program);
+    if args.is_empty() { program.to_owned() } else { format!("{program} {args}") }
+}
+
 fn terminal_name(s: &Session) -> Option<String> {
     if let Some(program) = &s.host.term_program {
         return Some(program.clone());
@@ -451,4 +462,18 @@ fn terminal_name(s: &Session) -> Option<String> {
         .skip(1)
         .find(|p| !SHELLS.contains(&p.name.as_str()))
         .map(|p| p.name.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn launch_commands_read_as_typed() {
+        assert_eq!(
+            readable_command("/home/u/.npm/vendor/x86_64/bin/codex --sandbox read-only"),
+            "codex --sandbox read-only"
+        );
+        assert_eq!(readable_command("claude"), "claude");
+    }
 }

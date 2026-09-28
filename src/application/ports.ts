@@ -29,7 +29,8 @@ export interface WarRoomGateway {
   approve(id: string): Promise<void>;
   deny(id: string, message?: string): Promise<void>;
   sendInput(id: string, text: string): Promise<void>;
-  launch(cwd: string, target: LaunchTarget): Promise<Launched>;
+  /** `provider`: which agent to run (`claude`, `codex`…). */
+  launch(provider: string, cwd: string, target: LaunchTarget): Promise<Launched>;
   resume(id: string, target: LaunchTarget): Promise<Launched>;
   /** Preview: card + recent conversation. */
   detail(id: string): Promise<SessionDetail>;
@@ -61,10 +62,11 @@ export interface TerminalGateway {
   onExit(listener: (id: string) => void): Promise<Unsubscribe>;
 }
 
+/** Hooks of each supported agent (Claude Code, Codex…). */
 export interface IntegrationGateway {
-  status(): Promise<IntegrationStatus>;
-  install(): Promise<IntegrationStatus>;
-  uninstall(): Promise<IntegrationStatus>;
+  status(): Promise<IntegrationStatus[]>;
+  install(provider: string): Promise<IntegrationStatus>;
+  uninstall(provider: string): Promise<IntegrationStatus>;
   /** Start the app (hidden, in the tray) on login. */
   autostart(): Promise<boolean>;
   setAutostart(enabled: boolean): Promise<boolean>;

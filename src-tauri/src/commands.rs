@@ -4,13 +4,23 @@ use crate::locale;
 use awr_application::WarRoomService;
 use awr_application::ports::{FocusOutcome, IntegrationInstaller, LaunchOutcome, LaunchTarget, PortResult};
 use awr_application::view::{IntegrationStatus, SessionChanges, SessionDetail, SubagentPreview, WarRoomView};
-use awr_domain::SessionId;
+use awr_domain::{ProviderKind, SessionId};
 use awr_infrastructure::pty::{PtyInfo, PtyManager};
 use std::sync::Arc;
 use tauri::State;
 
 type Service<'a> = State<'a, Arc<WarRoomService>>;
-type Installer<'a> = State<'a, Arc<dyn IntegrationInstaller>>;
+/// Hook installers, one per agent.
+pub type Integrations = Arc<Vec<(ProviderKind, Arc<dyn IntegrationInstaller>)>>;
+type Installers<'a> = State<'a, Integrations>;
+
+fn installer(installers: &Integrations, provider: ProviderKind) -> Result<&Arc<dyn IntegrationInstaller>, String> {
+    installers
+        .iter()
+        .find(|(p, _)| *p == provider)
+        .map(|(_, i)| i)
+        .ok_or_else(|| format!("unknown provider: {provider:?}"))
+}
 type Ptys<'a> = State<'a, Arc<PtyManager>>;
 
 /// Result of launching an agent, so the UI can open its terminal if it is an app terminal.
@@ -96,18 +106,18 @@ pub fn unmute(service: Service, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn integration_status(installer: Installer) -> Result<IntegrationStatus, String> {
-    installer.status().map_err(|e| e.to_string())
+pub fn integration_status(installers: Installers) -> Result<Vec<IntegrationStatus>, String> {
+    installers.iter().map(|(_, i)| i.status().map_err(|e| e.to_string())).collect()
 }
 
 #[tauri::command]
-pub fn install_integration(installer: Installer) -> Result<IntegrationStatus, String> {
-    installer.install().map_err(|e| e.to_string())
+pub fn install_integration(installers: Installers, provider: ProviderKind) -> Result<IntegrationStatus, String> {
+    installer(&installers, provider)?.install().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn uninstall_integration(installer: Installer) -> Result<IntegrationStatus, String> {
-    installer.uninstall().map_err(|e| e.to_string())
+pub fn uninstall_integration(installers: Installers, provider: ProviderKind) -> Result<IntegrationStatus, String> {
+    installer(&installers, provider)?.uninstall().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -128,10 +138,11 @@ pub async fn send_input(service: State<'_, Arc<WarRoomService>>, id: String, tex
 #[tauri::command]
 pub async fn launch(
     service: State<'_, Arc<WarRoomService>>,
+    provider: ProviderKind,
     cwd: String,
     target: LaunchTarget,
 ) -> Result<Launched, String> {
-    blocking(&service, move |s| s.launch(cwd, target)).await.map(Launched::from)
+    blocking(&service, move |s| s.launch(provider, cwd, target)).await.map(Launched::from)
 }
 
 #[tauri::command]

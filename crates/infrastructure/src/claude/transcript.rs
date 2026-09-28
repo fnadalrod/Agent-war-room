@@ -3,16 +3,16 @@
 //! `<project>/<session>.jsonl` is the main conversation; subagents live in
 //! `<project>/<session>/subagents/agent-<id>.jsonl` with an `agent-<id>.meta.json` next to it.
 
-use super::tools::tool_label;
 use super::pricing;
+use crate::jsonl::{Follow, cap, head_lines, local_day, parse_iso_ms, tail_lines};
+use crate::tools::tool_label;
 use awr_application::ports::{
-    AgentTranscript, SubagentDetail, TouchedFile, Usage, TimelineItem, TimelineKind, TranscriptReader, TranscriptSummary,
+    AgentTranscript, SubagentDetail, TimelineItem, TimelineKind, TouchedFile, TranscriptReader, TranscriptSummary,
+    Usage,
 };
+use chrono::{Local, NaiveDate};
 use serde_json::Value;
-use chrono::{Local, NaiveDate, TimeZone};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -33,9 +33,14 @@ pub struct ClaudeTranscriptReader {
     first_prompts: Mutex<HashMap<PathBuf, String>>,
 }
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 struct Tail {
-    offset: u64,
+    follow: Follow,
+    state: State,
+}
+
+#[derive(Default, Clone)]
+struct State {
     facts: Facts,
     /// API message ids already counted: each message is written as several lines (one per content
     /// block), all repeating the same usage.
@@ -66,7 +71,7 @@ impl ClaudeTranscriptReader {
         let mut files = self.files.lock().unwrap();
         let tail = files.entry(path.to_path_buf()).or_default();
         advance(path, tail).ok()?;
-        Some(tail.facts.clone())
+        Some(tail.state.facts.clone())
     }
 
     /// The session's first prompt. Searched for in the head only once: it never changes.
@@ -261,41 +266,10 @@ fn count_usage(facts: &mut Facts, seen: &mut HashSet<String>, entry: &Value) {
         None => message.unpriced_messages = 1,
     }
     facts.usage.add(&message);
-    let day = entry
-        .get("timestamp")
-        .and_then(Value::as_str)
-        .and_then(parse_iso_ms)
-        .and_then(|ms| Local.timestamp_millis_opt(ms).single())
-        .map(|t| t.date_naive());
+    let day = entry.get("timestamp").and_then(Value::as_str).and_then(parse_iso_ms).and_then(local_day);
     if let Some(day) = day {
         facts.daily.entry(day).or_default().add(&message);
     }
-}
-
-/// Complete JSON lines within the first `bytes` of the file.
-fn head_lines(path: &Path, bytes: u64) -> std::io::Result<Vec<Value>> {
-    let mut buf = Vec::new();
-    File::open(path)?.take(bytes).read_to_end(&mut buf)?;
-    let complete = match buf.iter().rposition(|&b| b == b'\n') {
-        Some(i) => &buf[..i],
-        None => &buf[..],
-    };
-    Ok(complete.split(|&b| b == b'\n').filter_map(|l| serde_json::from_slice(l).ok()).collect())
-}
-
-/// Complete JSON lines within the last `bytes` of the file.
-fn tail_lines(path: &Path, bytes: u64) -> std::io::Result<Vec<Value>> {
-    let mut file = File::open(path)?;
-    let len = file.metadata()?.len();
-    let start = len.saturating_sub(bytes);
-    file.seek(SeekFrom::Start(start))?;
-    let mut buf = Vec::with_capacity((len - start) as usize);
-    file.read_to_end(&mut buf)?;
-    let mut lines = buf.split(|&b| b == b'\n');
-    if start > 0 {
-        lines.next();
-    }
-    Ok(lines.filter_map(|l| serde_json::from_slice(l).ok()).collect())
 }
 
 /// `sidechain`: reading a subagent's transcript, whose entries are all marked as such. In the
@@ -347,72 +321,11 @@ fn timeline_items(entry: &Value, sidechain: bool) -> Vec<TimelineItem> {
     }
 }
 
-/// `2026-09-27T22:44:39.232Z` → milliseconds since the epoch (UTC only, which is what Claude writes).
-fn parse_iso_ms(s: &str) -> Option<i64> {
-    let s = s.strip_suffix('Z')?;
-    let (date, time) = s.split_once('T')?;
-    let mut d = date.split('-').map(|p| p.parse::<i64>());
-    let (y, m, day) = (d.next()?.ok()?, d.next()?.ok()?, d.next()?.ok()?);
-    let (hms, frac) = time.split_once('.').unwrap_or((time, "0"));
-    let mut t = hms.split(':').map(|p| p.parse::<i64>());
-    let (h, min, sec) = (t.next()?.ok()?, t.next()?.ok()?, t.next()?.ok()?);
-    let ms: i64 = format!("{frac:0<3}")[..3].parse().ok()?;
-    // Days since 1970-01-01 (Howard Hinnant's algorithm).
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + day - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    Some(((days * 24 + h) * 60 + min) * 60_000 + sec * 1000 + ms)
-}
-
-/// Truncates by chars, keeping the formatting.
-fn cap(text: &str, max: usize) -> String {
-    if text.chars().count() <= max {
-        text.to_owned()
-    } else {
-        format!("{}…", text.chars().take(max - 1).collect::<String>())
-    }
-}
-
-/// Reads the new complete lines from `tail.offset` and absorbs them.
+/// Reads the new complete lines and absorbs them.
 fn advance(path: &Path, tail: &mut Tail) -> std::io::Result<()> {
-    let mut file = File::open(path)?;
-    let len = file.metadata()?.len();
-    if len < tail.offset {
-        // Truncated or rewritten: start over.
-        *tail = Tail::default();
-    }
-    let mut skip_partial_first_line = false;
-    if tail.offset == 0 && len > INITIAL_TAIL_BYTES {
-        tail.offset = len - INITIAL_TAIL_BYTES;
-        skip_partial_first_line = true;
-    }
-    if tail.offset == len {
-        return Ok(());
-    }
-
-    file.seek(SeekFrom::Start(tail.offset))?;
-    let mut buf = Vec::with_capacity((len - tail.offset) as usize);
-    file.take(len - tail.offset).read_to_end(&mut buf)?;
-
-    // Only finished lines: the last one may be half-written.
-    let Some(last_newline) = buf.iter().rposition(|&b| b == b'\n') else {
-        return Ok(());
-    };
-    let complete = &buf[..=last_newline];
-    let mut lines = complete.split(|&b| b == b'\n');
-    if skip_partial_first_line {
-        lines.next();
-    }
-    for line in lines.filter(|l| !l.is_empty()) {
-        if let Ok(entry) = serde_json::from_slice::<Value>(line) {
-            absorb(&mut tail.facts, &mut tail.seen_messages, &entry);
-        }
-    }
-    tail.offset += last_newline as u64 + 1;
-    Ok(())
+    tail.follow.advance(path, INITIAL_TAIL_BYTES, &mut tail.state, |state, entry| {
+        absorb(&mut state.facts, &mut state.seen_messages, entry)
+    })
 }
 
 fn absorb(facts: &mut Facts, seen: &mut HashSet<String>, entry: &Value) {
@@ -725,10 +638,13 @@ mod tests {
         append(&path, &block("c"));
         let subs = dir.path().join("s/subagents");
         std::fs::create_dir_all(&subs).unwrap();
-        append(&subs.join("agent-old.jsonl"), &line(json!({
-            "type": "assistant",
-            "message": { "id": "msg_sub", "model": "claude-haiku-4-5", "content": [], "usage": { "input_tokens": 1_000_000, "output_tokens": 0 } }
-        })));
+        append(
+            &subs.join("agent-old.jsonl"),
+            &line(json!({
+                "type": "assistant",
+                "message": { "id": "msg_sub", "model": "claude-haiku-4-5", "content": [], "usage": { "input_tokens": 1_000_000, "output_tokens": 0 } }
+            })),
+        );
 
         let s = ClaudeTranscriptReader::new().read(path.to_str().unwrap(), &[]).unwrap();
         assert_eq!(s.usage.output_tokens, 1_000_000, "counted once");
@@ -743,7 +659,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.jsonl");
         let tool = |name: &str, file: &str| {
-            line(json!({ "type": "assistant", "message": { "content": [{ "type": "tool_use", "name": name, "input": { "file_path": file } }] } }))
+            line(
+                json!({ "type": "assistant", "message": { "content": [{ "type": "tool_use", "name": name, "input": { "file_path": file } }] } }),
+            )
         };
         append(&path, &tool("Edit", "/r/a.rs"));
         append(&path, &tool("Edit", "/r/a.rs"));
@@ -755,13 +673,6 @@ mod tests {
         let files = ClaudeTranscriptReader::new().touched_files(path.to_str().unwrap());
         let got: Vec<_> = files.iter().map(|f| (f.path.as_str(), f.edits, f.written)).collect();
         assert_eq!(got, vec![("/r/a.rs", 2, false), ("/r/new.md", 1, true)]);
-    }
-
-    #[test]
-    fn parses_claude_timestamps() {
-        assert_eq!(parse_iso_ms("1970-01-01T00:00:00.000Z"), Some(0));
-        assert_eq!(parse_iso_ms("2000-03-01T12:30:05.5Z"), Some(951_913_805_500));
-        assert_eq!(parse_iso_ms("tomorrow"), None);
     }
 
     #[test]

@@ -1498,3 +1498,26 @@ pre.diff [data-line="file"] {
 .card-top > .muted {
   white-space: nowrap;
 }
+
+/* "+ Agent" with several agents: a menu of agent × terminal. */
+.launch-menu {
+  position: relative;
+}
+
+.launch-menu .popover {
+  width: max-content;
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+}
+
+.launch-row {
+  display: flex;
+  gap: 4px;
+}
+
+.launch-row button {
+  flex: 1;
+  text-align: left;
+  white-space: nowrap;
+}

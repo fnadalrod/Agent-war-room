@@ -1,13 +1,13 @@
 use crate::locale;
 use crate::ports::{
-    AgentLauncher, AgentProvider, ApprovalDecision, ApprovalResponder, Clock, EventStore, FocusOutcome, GitHistory, FocusTarget,
-    LaunchOutcome, LaunchRequest, LaunchTarget, Notice, Notifier, PortError, PortResult, ProcessProbe, RepoResolver,
-    SessionInput, SkillCatalog, TranscriptReader, TranscriptSummary, ViewPublisher, WindowNavigator,
+    AgentLauncher, AgentProvider, ApprovalDecision, ApprovalResponder, Clock, EventStore, FocusOutcome, FocusTarget,
+    GitHistory, LaunchOutcome, LaunchRequest, LaunchTarget, Notice, Notifier, PortError, PortResult, ProcessProbe,
+    RepoResolver, SessionInput, SkillCatalog, TranscriptReader, TranscriptSummary, ViewPublisher, WindowNavigator,
 };
 use crate::view::{self, CommitView, SessionChanges, SessionDetail, SubagentPreview, TouchedFileView, WarRoomView};
 use awr_domain::{
-    Attention, AttentionChange, SessionContext, SessionEvent, SessionEventKind, SessionId, SessionStatus, TerminalHost,
-    Timestamp, WarRoom,
+    Attention, AttentionChange, ProviderKind, SessionContext, SessionEvent, SessionEventKind, SessionId, SessionStatus,
+    TerminalHost, Timestamp, WarRoom,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -28,19 +28,24 @@ pub struct IncomingSignal {
 }
 
 /// Everything external the service needs.
+/// Everything specific to one kind of agent (Claude Code, Codex…). The rest of the ports are shared.
+pub struct AgentPorts {
+    pub provider: Arc<dyn AgentProvider>,
+    pub transcripts: Arc<dyn TranscriptReader>,
+    pub skills: Arc<dyn SkillCatalog>,
+}
+
 pub struct Ports {
-    pub providers: Vec<Arc<dyn AgentProvider>>,
+    pub agents: Vec<AgentPorts>,
     pub resolver: Arc<dyn RepoResolver>,
     pub store: Arc<dyn EventStore>,
     pub clock: Arc<dyn Clock>,
     pub probe: Arc<dyn ProcessProbe>,
     pub notifier: Arc<dyn Notifier>,
     pub publisher: Arc<dyn ViewPublisher>,
-    pub transcripts: Arc<dyn TranscriptReader>,
     pub navigator: Arc<dyn WindowNavigator>,
     pub launcher: Arc<dyn AgentLauncher>,
     pub input: Arc<dyn SessionInput>,
-    pub skills: Arc<dyn SkillCatalog>,
     pub git: Arc<dyn GitHistory>,
 }
 
@@ -118,11 +123,16 @@ impl WarRoomService {
             let room = self.room();
             let s = known(&room, &id)?;
             let until = (!s.is_alive()).then_some(s.last_activity_at.0);
-            (s.transcript_path.clone(), s.workspace.worktree_path.clone(), s.started_at.0, until)
+            (
+                s.transcript_path.clone().map(|p| (s.provider, p)),
+                s.workspace.worktree_path.clone(),
+                s.started_at.0,
+                until,
+            )
         };
         let prefix = format!("{}/", worktree.trim_end_matches('/'));
         let mut files: Vec<TouchedFileView> = transcript
-            .map(|path| self.ports.transcripts.touched_files(&path))
+            .and_then(|(provider, path)| Some(self.agent(provider)?.transcripts.touched_files(&path)))
             .unwrap_or_default()
             .into_iter()
             .map(|f| TouchedFileView {
@@ -162,12 +172,13 @@ impl WarRoomService {
     }
 
     pub fn ingest(&self, signal: IncomingSignal) -> PortResult<()> {
-        let provider = self
+        let agent = self
             .ports
-            .providers
+            .agents
             .iter()
-            .find(|p| p.wire_name() == signal.provider)
+            .find(|a| a.provider.wire_name() == signal.provider)
             .ok_or_else(|| PortError::Failed(format!("unknown provider: {}", signal.provider)))?;
+        let provider = &agent.provider;
         let Some(translated) = provider.translate(&signal.payload)? else {
             return Ok(());
         };
@@ -200,7 +211,7 @@ impl WarRoomService {
         for kind in translated.extra {
             let kind = match kind {
                 SessionEventKind::SkillInvoked { name, by, .. } => {
-                    let source = self.ports.skills.classify(&name, &translated.cwd, &worktree);
+                    let source = agent.skills.classify(&name, &translated.cwd, &worktree);
                     SessionEventKind::SkillInvoked { name, by, source }
                 }
                 other => other,
@@ -264,11 +275,14 @@ impl WarRoomService {
             let session = known(&room, &id)?;
             let can_approve = self.approvals().contains_key(&id);
             let view = view::session_view(session, self.summaries().get(&id), can_approve, self.ports.clock.now());
-            (view, session.transcript_path.clone())
+            (view, session.transcript_path.clone().map(|p| (session.provider, p)))
         };
         let timeline = transcript
-            .map(|path| self.ports.transcripts.recent(&path, limit).into_iter().map(Into::into).collect())
-            .unwrap_or_default();
+            .and_then(|(provider, path)| Some(self.agent(provider)?.transcripts.recent(&path, limit)))
+            .unwrap_or_default()
+            .into_iter()
+            .map(Into::into)
+            .collect();
         Ok(SessionDetail { session, timeline })
     }
 
@@ -284,10 +298,11 @@ impl WarRoomService {
                 .into_iter()
                 .find(|a| a.id == agent_id)
                 .ok_or_else(|| PortError::Failed(locale::unknown_subagent(agent_id)))?;
-            (agent, session.transcript_path.clone())
+            (agent, session.transcript_path.clone().map(|p| (session.provider, p)))
         };
-        let transcript =
-            transcript.and_then(|path| self.ports.transcripts.subagent(&path, agent_id, limit)).unwrap_or_default();
+        let transcript = transcript
+            .and_then(|(provider, path)| self.agent(provider)?.transcripts.subagent(&path, agent_id, limit))
+            .unwrap_or_default();
         Ok(SubagentPreview {
             session_id: id.0,
             agent,
@@ -297,13 +312,22 @@ impl WarRoomService {
         })
     }
 
-    /// Opens a new agent in a folder (usually a room's worktree).
-    pub fn launch(&self, cwd: String, target: LaunchTarget) -> PortResult<LaunchOutcome> {
-        let label = folder_name(&cwd);
-        self.ports.launcher.launch(&LaunchRequest { cwd, resume: None, target, label })
+    /// The agents this app watches, in the order they were wired.
+    pub fn providers(&self) -> Vec<ProviderKind> {
+        self.ports.agents.iter().map(|a| a.provider.kind()).collect()
     }
 
-    /// Resumes a closed session (`claude --resume`) in its original folder.
+    fn agent(&self, provider: ProviderKind) -> Option<&AgentPorts> {
+        self.ports.agents.iter().find(|a| a.provider.kind() == provider)
+    }
+
+    /// Opens a new agent in a folder (usually a room's worktree).
+    pub fn launch(&self, provider: ProviderKind, cwd: String, target: LaunchTarget) -> PortResult<LaunchOutcome> {
+        let label = folder_name(&cwd);
+        self.ports.launcher.launch(&LaunchRequest { provider, cwd, resume: None, target, label })
+    }
+
+    /// Resumes a closed session (`claude --resume`, `codex resume`) in its original folder.
     pub fn resume(&self, id: SessionId, target: LaunchTarget) -> PortResult<LaunchOutcome> {
         let request = {
             let room = self.room();
@@ -316,7 +340,13 @@ impl WarRoomService {
                 .get(&id)
                 .and_then(|s| s.title.clone())
                 .unwrap_or_else(|| folder_name(&session.workspace.worktree_path));
-            LaunchRequest { cwd: session.launch_dir().to_owned(), resume: Some(id.clone()), target, label }
+            LaunchRequest {
+                provider: session.provider,
+                cwd: session.launch_dir().to_owned(),
+                resume: Some(id.clone()),
+                target,
+                label,
+            }
         };
         self.ports.launcher.launch(&request)
     }
@@ -477,10 +507,11 @@ impl WarRoomService {
     fn refresh_summary(&self, id: &SessionId) -> bool {
         let source = self.room().get(id).and_then(|s| {
             let path = s.transcript_path.clone()?;
-            Some((path, s.subagents.keys().cloned().collect::<Vec<_>>()))
+            Some((s.provider, path, s.subagents.keys().cloned().collect::<Vec<_>>()))
         });
-        let Some((path, subagents)) = source else { return false };
-        let Some(summary) = self.ports.transcripts.read(&path, &subagents) else { return false };
+        let Some((provider, path, subagents)) = source else { return false };
+        let Some(agent) = self.agent(provider) else { return false };
+        let Some(summary) = agent.transcripts.read(&path, &subagents) else { return false };
         self.summaries().insert(id.clone(), summary.clone()) != Some(summary)
     }
 
@@ -752,18 +783,20 @@ mod tests {
         let clock = Arc::new(TickClock(AtomicI64::new(1_000_000_000_000)));
         let git = Arc::new(FakeGit::default());
         let svc = WarRoomService::new(Ports {
-            providers: vec![Arc::new(FakeProvider)],
+            agents: vec![AgentPorts {
+                provider: Arc::new(FakeProvider),
+                transcripts: transcript.clone(),
+                skills: Arc::new(RepoSkills),
+            }],
             resolver: Arc::new(FixedResolver),
             store: store.clone(),
             clock: clock.clone(),
             probe: Arc::new(Probe(alive)),
             notifier: rec.clone(),
             publisher: rec.clone(),
-            transcripts: transcript.clone(),
             navigator: rec.clone(),
             launcher: rec.clone(),
             input: rec.clone(),
-            skills: Arc::new(RepoSkills),
             git: git.clone(),
         });
         Harness { svc, clock, git, store, rec, transcript }

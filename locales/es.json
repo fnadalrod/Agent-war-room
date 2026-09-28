@@ -174,7 +174,10 @@
     "room": {
       "new_agent": "Agente",
       "new_agent_title": "Abrir claude en {cwd}",
-      "new_agent_in_warp_title": "Abrir claude en una pestaña de Warp, en {cwd}"
+      "new_agent_in_warp_title": "Abrir claude en una pestaña de Warp, en {cwd}",
+      "launch_title": "Abrir un agente en {cwd}",
+      "launch_in_app": "{agent} · terminal de la app",
+      "launch_in_warp": "{agent} · pestaña de Warp"
     },
     "skill": {
       "tag_title": "{name} · {source} · la lanzó {who}",
@@ -276,19 +279,19 @@
       "terminate": "Terminar"
     },
     "integration": {
-      "incomplete": "La integración con Claude Code está incompleta",
-      "not_connected": "Claude Code aún no avisa a la war room",
+      "incomplete": "La integración con {agent} está incompleta",
+      "not_connected": "{agent} aún no avisa a la war room",
       "install_before_path": "Se añadirán hooks a",
       "install_before_backup": "sin tocar los que ya tengas (queda una copia",
       "install_end": "). Solo las sesiones que arranquen después quedan conectadas.",
-      "connect": "Conectar Claude Code",
-      "badge": "Claude Code",
-      "title": "Integración con Claude Code",
+      "connect": "Conectar {agent}",
+      "title": "Integración con {agent}",
       "hooks_in": "Hooks en",
       "bridge": "Puente:",
       "autostart": "Abrir al iniciar sesión (en la bandeja)",
       "reinstall": "Reinstalar",
-      "disconnect": "Desconectar"
+      "disconnect": "Desconectar",
+      "codex_trust": "La primera vez, Codex te pedirá revisar los hooks nuevos: elige «Trust all and continue»."
     },
     "toasts": {
       "approved": "Permiso aprobado",
@@ -304,6 +307,10 @@
       "subagent_of": " — subagente de {session}",
       "subagent_of_unknown": " — subagente de la sesión",
       "empty": "Sala vacía: los puestos aparecerán cuando un agente arranque."
+    },
+    "provider": {
+      "claude": "Claude Code",
+      "codex": "Codex"
     }
   }
 }

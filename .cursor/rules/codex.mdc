@@ -1,0 +1,50 @@
+---
+description: Codex support — what differs from Claude Code (hook trust prompt, no dialog while a hook waits, Interrupt), rollout transcripts, CODEX_HOME, skills folders, prices and how it was verified. Read before touching crates/infrastructure/src/codex or codex_e2e.
+globs: crates/infrastructure/src/codex/**, crates/infrastructure/tests/codex_e2e.rs
+alwaysApply: false
+---
+
+# Codex
+
+Verified against Codex CLI 0.154 (hooks feature stable). Shared machinery → `hooks-ingest.mdc`; here
+only what is Codex's own. Real captured samples: `crates/infrastructure/src/codex/fixtures/`.
+
+## Hooks
+
+- Config: `$CODEX_HOME/hooks.json` (default `~/.codex`), same shape as Claude's `"hooks"`. Events:
+  `SessionStart` (`source`), `UserPromptSubmit`, `PreToolUse`/`PostToolUse` (shell = `tool_name:
+  "Bash"`, `tool_input.command`), `PermissionRequest`, `Stop` (`last_assistant_message`),
+  `Interrupt`, `SubagentStart`/`SubagentStop` (`agent_transcript_path`), `Pre`/`PostCompact`,
+  `SessionEnd`. No `Notification`, no `PostToolUseFailure`. Every event carries `model`, `turn_id`.
+- **Trust**: Codex runs no new or changed hook until you trust it. The first TUI start after
+  installing shows "Hooks need review" → "Trust all and continue"; trust lands in `config.toml`
+  (`[hooks.state."<file>:<event>:<i>:<j>"] trusted_hash`). `codex exec` never asks and just skips
+  them. Never write that trust ourselves: it is the user's security decision.
+- **Approvals**: Codex shows its own dialog only after the `PermissionRequest` hook returns, so the
+  bridge does not hold it (see `hooks-ingest.mdc`): the room shows "needs you" without Approve/Deny.
+- Unverified: whether `request_user_input` (the question tool in the dialect) reaches `PreToolUse`,
+  and that the hook's `agent_id` is the subagent's thread id (the reader assumes so).
+
+## Rollouts (codex/transcript.rs)
+
+`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<time>-<thread uuid>.jsonl`, lines
+`{timestamp, type, payload}`. Read the `event_msg`/`item_completed` items (`UserMessage`,
+`AgentMessage` with `phase`, `CommandExecution` with `command` argv, `FileChange` with
+`changes{path: {type: add|update|delete}}`, `McpToolCall`, `SubAgentActivity` with `agent_thread_id`
+and `agent_path`), not `response_item` (raw API, code-mode JS). Model/effort: `turn_context`. Tokens:
+`token_usage_record` per `response_id` (input **includes** cached; output includes reasoning);
+context: `token_count.info.last_token_usage.input_tokens` and `model_context_window`. Titles:
+`$CODEX_HOME/session_index.jsonl` (`id`, `thread_name`, latest wins). Subagents are other threads with
+their own rollout, found by thread id next to the parent or under `sessions/`.
+
+## Other
+
+- Prices: Codex's models have no public per-token price here → usage is "unpriced" (UI shows tokens
+  only). Don't invent prices; add a table only with a source.
+- Skills: `.codex/` and `.agents/` in the repo, `$CODEX_HOME` and `~/.agents` for yours; invoked as
+  `$name` in the prompt.
+- Launch/resume: `codex`, `codex resume <id>` (`launch.rs`).
+- E2E: `cargo build -p warroom-hook && cargo test -p awr-infrastructure --test codex_e2e -- --ignored
+  --nocapture`. Own `CODEX_HOME` (copies only your login, auth.json), real installer, TUI in a private tmux;
+  it answers the trust prompt and uses `--sandbox read-only` so writing a file needs approval.
+  `--ask-for-approval untrusted` does not exist in 0.154 (only `on-request`, `never`).

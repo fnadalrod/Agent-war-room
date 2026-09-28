@@ -6,7 +6,7 @@ use crate::pty::{PtyManager, PtySpec};
 use awr_application::ports::{
     AgentLauncher, LaunchOutcome, LaunchRequest, LaunchTarget, PortError, PortResult, SessionInput,
 };
-use awr_domain::TerminalHost;
+use awr_domain::{ProviderKind, TerminalHost};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -74,7 +74,7 @@ impl DesktopLauncher {
 
 impl AgentLauncher for DesktopLauncher {
     fn launch(&self, request: &LaunchRequest) -> PortResult<LaunchOutcome> {
-        let command = claude_command(request)?;
+        let command = agent_command(request)?;
         match request.target {
             LaunchTarget::Warp => self.launch_in_warp(request, &command),
             LaunchTarget::App => {
@@ -113,12 +113,17 @@ pub fn inherited_agent_markers() -> Vec<String> {
         .collect()
 }
 
-fn claude_command(request: &LaunchRequest) -> PortResult<String> {
+/// The shell line that starts (or resumes) the requested agent.
+fn agent_command(request: &LaunchRequest) -> PortResult<String> {
+    let (program, resume) = match request.provider {
+        ProviderKind::Claude => ("claude", "claude --resume"),
+        ProviderKind::Codex => ("codex", "codex resume"),
+    };
     match &request.resume {
-        None => Ok("claude".into()),
+        None => Ok(program.into()),
         // The id ends up in a shell line: only its alphabet is allowed.
         Some(id) if !id.0.is_empty() && id.0.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') => {
-            Ok(format!("claude --resume {}", id.0))
+            Ok(format!("{resume} {}", id.0))
         }
         Some(id) => Err(PortError::Failed(locale::invalid_session_id(id))),
     }
@@ -179,6 +184,7 @@ mod tests {
 
     fn request(resume: Option<&str>, target: LaunchTarget) -> LaunchRequest {
         LaunchRequest {
+            provider: ProviderKind::Claude,
             cwd: "/code/My \"app\"".into(),
             resume: resume.map(|r| SessionId(r.into())),
             target,
@@ -188,12 +194,15 @@ mod tests {
 
     #[test]
     fn resume_ids_are_validated_before_reaching_a_shell() {
-        assert_eq!(claude_command(&request(None, LaunchTarget::App)).unwrap(), "claude");
+        assert_eq!(agent_command(&request(None, LaunchTarget::App)).unwrap(), "claude");
         assert_eq!(
-            claude_command(&request(Some("d96c47e0-0e79"), LaunchTarget::App)).unwrap(),
+            agent_command(&request(Some("d96c47e0-0e79"), LaunchTarget::App)).unwrap(),
             "claude --resume d96c47e0-0e79"
         );
-        assert!(claude_command(&request(Some("x; rm -rf ~"), LaunchTarget::App)).is_err());
+        assert!(agent_command(&request(Some("x; rm -rf ~"), LaunchTarget::App)).is_err());
+        let codex = |resume| LaunchRequest { provider: ProviderKind::Codex, ..request(resume, LaunchTarget::App) };
+        assert_eq!(agent_command(&codex(None)).unwrap(), "codex");
+        assert_eq!(agent_command(&codex(Some("01a0e7a2-87d7"))).unwrap(), "codex resume 01a0e7a2-87d7");
     }
 
     #[test]
@@ -202,7 +211,7 @@ mod tests {
         let launcher = DesktopLauncher::new(PtyManager::new(Arc::new(|_| {})), dir.path().join("tab_configs"));
         let req = request(Some("d96c47e0-0e79-4c98"), LaunchTarget::Warp);
 
-        let stem = launcher.write_warp_config(&req, &claude_command(&req).unwrap()).unwrap();
+        let stem = launcher.write_warp_config(&req, &agent_command(&req).unwrap()).unwrap();
         assert_eq!(stem, "awr-d96c47e0");
         let toml = std::fs::read_to_string(dir.path().join("tab_configs/awr-d96c47e0.toml")).unwrap();
         assert!(toml.contains(r#"name = "War Room · Fix the login""#));

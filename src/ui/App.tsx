@@ -1,13 +1,13 @@
 import { lazy, Suspense, useState } from "react";
 import type { WarRoomStore } from "../application/warRoomStore";
 import { money, tokenCount } from "../domain/attention";
-import { applyFilter, archivedCount, countBy } from "../domain/attention";
+import { applyFilter, archivedCount, countBy, launchableAgents, mixesAgents } from "../domain/attention";
 import { copy } from "../domain/copy";
 import { AttentionQueue } from "./AttentionQueue";
 import { DetailPanel } from "./DetailPanel";
 import { FilterBar } from "./FilterBar";
 import { GoIcon } from "./icons";
-import { IntegrationBadge, IntegrationBar } from "./IntegrationBar";
+import { IntegrationBadges, IntegrationBar } from "./IntegrationBar";
 import { WarRoomScene } from "./pixel/WarRoomScene";
 import { RoomPanel } from "./RoomPanel";
 import { useNow, usePreference, useWarRoom } from "./useStore";
@@ -25,6 +25,7 @@ export function App({ store }: { store: WarRoomStore }) {
   const fullView = state.view;
   // What is shown goes through the filter; the header counters always count the whole room.
   const view = fullView ? applyFilter(fullView, state.filter) : null;
+  const mixed = fullView ? mixesAgents(fullView) : false;
   const detailFallback =
     state.detail && view ? (view.rooms.flatMap((r) => r.sessions).find((x) => x.id === state.detail!.id) ?? null) : null;
   const aggregate = fullView?.aggregate ?? "offline";
@@ -75,7 +76,7 @@ export function App({ store }: { store: WarRoomStore }) {
               {copy.topbar.archived} <span className="muted">{archivedCount(view)}</span>
             </label>
           )}
-          <IntegrationBadge status={state.integration} busy={state.busy} store={store} autostart={state.autostart} />
+          <IntegrationBadges integrations={state.integrations} busy={state.busy} store={store} autostart={state.autostart} />
         </div>
       </header>
 
@@ -89,7 +90,7 @@ export function App({ store }: { store: WarRoomStore }) {
           </div>
         )}
 
-        <IntegrationBar status={state.integration} busy={state.busy} store={store} />
+        <IntegrationBar integrations={state.integrations} busy={state.busy} store={store} />
 
         {fullView && view && <FilterBar view={fullView} shown={view} filter={state.filter} store={store} />}
 
@@ -109,7 +110,15 @@ export function App({ store }: { store: WarRoomStore }) {
           {view?.rooms
             .filter((room) => showArchived || room.sessions.some((s) => !s.archived))
             .map((room) => (
-              <RoomPanel key={room.repo_id} room={room} store={store} now={now} showArchived={showArchived} />
+              <RoomPanel
+                key={room.repo_id}
+                room={room}
+                store={store}
+                now={now}
+                showArchived={showArchived}
+                agents={launchableAgents(state.integrations)}
+                showProvider={mixed}
+              />
             ))}
           {view && fullView && view.rooms.length === 0 && fullView.rooms.length > 0 && (
             <div className="empty">

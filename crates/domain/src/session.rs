@@ -181,6 +181,10 @@ impl Session {
                 self.unseen = true;
                 self.set_status(SessionStatus::AwaitingInput, at);
             }
+            SessionEventKind::Interrupted => {
+                self.unseen = false;
+                self.set_status(SessionStatus::AwaitingInput, at);
+            }
             SessionEventKind::SubagentStarted { id, kind } => {
                 self.subagents.insert(
                     id.clone(),

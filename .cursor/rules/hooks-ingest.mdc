@@ -1,52 +1,66 @@
 ---
-description: How Claude Code hooks reach the app — the warroom-hook bridge, the socket protocol, the Claude provider mapping and the settings.json installer. Read before touching the bridge, ingress, provider or installer.
-globs: crates/hook-bridge/**, crates/wire/**, crates/infrastructure/src/ingress.rs, crates/infrastructure/src/claude/provider.rs, crates/infrastructure/src/claude/installer.rs, crates/infrastructure/src/claude/skills.rs, crates/infrastructure/src/claude/tools.rs
+description: How agent hooks reach the app — the shared Claude-style hook protocol (Claude Code and Codex), the warroom-hook bridge, the socket, the per-agent dialects and the hook installer. Read before touching the bridge, ingress, hooks.rs, a provider or the installer.
+globs: crates/hook-bridge/**, crates/wire/**, crates/infrastructure/src/ingress.rs, crates/infrastructure/src/hooks.rs, crates/infrastructure/src/hook_installer.rs, crates/infrastructure/src/tools.rs, crates/infrastructure/src/skills.rs, crates/infrastructure/src/claude/provider.rs, crates/infrastructure/src/codex/provider.rs
 alwaysApply: false
 ---
 
 # Hooks → app
 
 ```
-claude ─(hook stdin JSON)→ warroom-hook ─(Unix socket, 1 line)→ ingress.rs → IncomingSignal
-       → WarRoomService::ingest → ClaudeProvider::translate → SessionEvent (+ extra) → commit
+claude | codex ─(hook stdin JSON)→ warroom-hook ─(Unix socket, 1 line)→ ingress.rs → IncomingSignal
+   → WarRoomService::ingest → AgentPorts{provider}.translate → hooks::translate(dialect) → SessionEvent
 ```
+
+Claude Code and Codex speak **the same hook protocol**: same event names, same payload fields
+(`session_id`, `cwd`, `transcript_path`, `tool_name`, `tool_input`, `agent_id`…), same
+`PermissionRequest` reply. So there is one translation (`hooks.rs`), one bridge, one installer
+(`hook_installer.rs`); each agent only brings a `Dialect` (skill prefix, question tools, skill tool)
+and a `HookSpec` (events + timeouts). Codex specifics → `codex.mdc`.
 
 ## Bridge invariants (crates/hook-bridge/src/main.rs) — never break these
 
 - **Exit 0 always, in milliseconds when the app is down** (connect fails → exit). A slow or failing
-  hook degrades every Claude session on the machine.
+  hook degrades every agent session on the machine.
 - **stdout only carries an explicit app decision** (PermissionRequest reply). Anything else printed
-  is interpreted by Claude.
+  is interpreted by the agent.
 - It walks `/proc` from its parent upward: hooks may run through a shell, so `getppid()` is not the
-  agent. The chain gives the agent PID (liveness) and the terminal/IDE (focus).
+  agent. The chain gives the agent PID (liveness), **which agent it is** (`claude`/`codex` process →
+  provider; `WARROOM_PROVIDER` overrides) and the terminal/IDE (focus).
+- It only waits for a decision on `PermissionRequest` for agents that show their own dialog meanwhile
+  (`DIALOG_WHILE_WAITING`: Claude). Codex runs the hook *before* its dialog: holding it would freeze
+  the terminal, so for Codex the war room reports the request but can't approve it.
 - Env hints captured at hook time: `TMUX`, `TMUX_PANE`, `TERM_PROGRAM`, `WARP_FOCUS_URL`, `AWR_PTY_ID`
   (set by our own PTYs). Plus `/proc/<agent>/cmdline` for the launch command.
 
 ## Socket protocol (crates/wire)
 
-One connection per hook, one JSON line (`HookEnvelope`, `v: 1`). If `expects_reply`, the bridge keeps
-the connection open and waits for a `HookReply` line; the app answering is how approvals work. Old
-bridges sent no newline — ingress reads to newline **or** EOF. Socket:
+One connection per hook, one JSON line (`HookEnvelope`, `v: 1`, with `provider`). If `expects_reply`,
+the bridge keeps the connection open and waits for a `HookReply` line; the app answering is how
+approvals work. Old bridges sent no newline — ingress reads to newline **or** EOF. Socket:
 `$XDG_RUNTIME_DIR/agent-war-room/ingress.sock` (dir 0700; paths must stay < 108 bytes).
 
-## Mapping (provider.rs)
+## Mapping (hooks.rs)
 
-Each hook → one `SessionEventKind` (+ `extra` events: a `/skill` prompt is also a `SkillInvoked`;
-a `Skill` tool call too). Question tools (`AskUserQuestion`, `ExitPlanMode`) are `AwaitingYou`.
-Tools with `agent_id` belong to a subagent. Unknown hooks → `Ok(None)` (ignored, not an error).
+Each hook → one `SessionEventKind` (+ `extra`: a `/skill` or `$skill` prompt is also a
+`SkillInvoked`; so is the dialect's skill tool). Question tools are `AwaitingYou`. Tools with
+`agent_id` belong to a subagent. `Interrupt` (Codex) → `Interrupted` (your turn, no notice).
+`Notification` exists only in Claude. Unknown hooks → `Ok(None)` (ignored, not an error).
 
 ## Trigger table
 
 | If you… | Read |
 |---|---|
 | touch approvals (PermissionRequest, reply, EOF detection) | `hooks-approvals.md` |
-| rely on a hook field, a notification type or add a hook | `hooks-claude-reference.md` |
-| change what the installer writes | below |
+| rely on a Claude hook field, a notification type or add a hook | `hooks-claude-reference.md` |
+| touch anything Codex-specific (trust prompt, rollouts, CODEX_HOME) | `codex.mdc` |
+| add another agent | skill `add-provider` |
 
-## Installer (installer.rs)
+## Installer (hook_installer.rs)
 
-Non-destructive merge into `~/.claude/settings.json`: our entries are recognised by the `warroom-hook`
-marker in `command`; foreign hooks are untouched; a `.warroom-bak` copy is written before each change;
-invalid JSON is refused; the bridge is copied (tmp + rename, to avoid ETXTBSY) to
-`~/.local/share/agent-war-room/bin/` only if it is a real ELF. `PermissionRequest` gets a 600 s timeout
-(the bridge gives up at 590 s), every other hook 5 s.
+Non-destructive merge into the agent's hook file (`~/.claude/settings.json`, `$CODEX_HOME/hooks.json`;
+same `"hooks"` shape): our entries are recognised by the `warroom-hook` marker in `command`; foreign
+hooks are untouched; a `.warroom-bak` copy is written before each change; invalid JSON is refused; the
+bridge is copied (tmp + rename, to avoid ETXTBSY) to `~/.local/share/agent-war-room/bin/` only if it
+is a real ELF. `PermissionRequest` gets 600 s (the bridge gives up at 590 s), others 5 s (Codex caps
+`SessionEnd`/`Interrupt` at 3 s and warns otherwise). `IntegrationStatus` says which agent and whether
+its config folder exists (`agent_found`).

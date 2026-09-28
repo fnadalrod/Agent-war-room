@@ -1,19 +1,19 @@
 # Agent War Room
 
-A control room for your coding agents. If you run several Claude Code sessions at once, spread across
-repos, terminals and IDE windows, you end up losing track of which one is waiting for you. Agent War
-Room shows **one screen per session, grouped by repository**, that lights up when something needs
-you, when it finishes or when it looks stuck. It lives in the system tray: you only look at it when it
-changes color.
+A control room for your coding agents, **Claude Code and Codex**. If you run several agent sessions
+at once, spread across repos, terminals and IDE windows, you end up losing track of which one is
+waiting for you. Agent War Room shows **one screen per session, grouped by repository**, that lights up
+when something needs you, when it finishes or when it looks stuck. It lives in the system tray: you
+only look at it when it changes color.
 
 ![Classic view: several repos, sessions and subagents](docs/screenshots/classic.png)
 
 ![Pixel-art War Room: the same state as a room full of desks](docs/screenshots/pixel.png)
 
-- **Fully local.** No server, no account: it reads Claude Code's hooks and transcripts on your
+- **Fully local.** No server, no account: it reads the agents' hooks and transcripts on your
   machine.
 - **Never gets in the agent's way.** If the app is closed, the hook bridge exits immediately and
-  Claude carries on as if nothing happened.
+  the agent carries on as if nothing happened.
 - **Linux first** (KDE Plasma on Wayland is the tested environment). The core is Rust and the UI is
   React on Tauri 2.
 
@@ -22,7 +22,7 @@ changes color.
 - [What you see](#what-you-see)
 - [Usage guide](#usage-guide)
 - [Installation](#installation)
-- [Connecting Claude Code](#connecting-claude-code)
+- [Connecting your agents](#connecting-your-agents)
 - [Languages](#languages)
 - [How it works](#how-it-works)
 - [Data and privacy](#data-and-privacy)
@@ -97,8 +97,9 @@ made in its worktree since it started**, with each one's diff. Nothing is comput
   - tmux: to the pane, switching the client if needed.
   - KDE: to the window, found through its process chain and disambiguated by title. That way several
     projects open in the same IDE are told apart.
-- **Approve or deny permissions from the room** or straight from the notification. Claude still shows
-  its own dialog in the terminal: whoever answers first wins.
+- **Approve or deny permissions from the room** or straight from the notification (Claude Code).
+  Claude still shows its own dialog in the terminal: whoever answers first wins. Codex's requests are
+  reported and answered in Codex (see [Codex](#codex)).
 - **Reply.** Write into the session when it runs in an app terminal or in tmux. The notifications'
   "Reply" button opens the preview with the cursor in the message box (Linux notifications do not
   support typing inside the notification).
@@ -145,9 +146,14 @@ npm run package      # builds the bridge in release and produces .deb, .rpm and 
 
 Packages end up in `target/release/bundle/` and ship `warroom-hook` next to the executable.
 
-## Connecting Claude Code
+## Connecting your agents
 
-The first time, click **Connect Claude Code** in the header. It:
+The app shows a banner for each supported agent it finds on your machine (`~/.claude`, `~/.codex`)
+that is not connected yet. Both use the same bridge; each gets hooks in its own configuration.
+
+### Claude Code
+
+Click **Connect Claude Code**. It:
 
 - Adds hooks to `~/.claude/settings.json` without touching yours, saving a
   `settings.json.warroom-bak` copy first.
@@ -156,10 +162,28 @@ The first time, click **Connect Claude Code** in the header. It:
   `PostToolUseFailure`, `PermissionRequest`, `Notification`, `Stop`, `SubagentStart`,
   `SubagentStop` and `PreCompact` events.
 
-Only sessions started afterwards are connected. **Disconnect**, in the same menu, removes exactly
-those hooks and leaves the rest as it was.
+Only sessions started afterwards are connected. **Disconnect**, in the agent's menu in the header,
+removes exactly those hooks and leaves the rest as it was.
 
-That menu also has **Open at login (in the tray)**, which starts the app hidden in the tray.
+### Codex
+
+Click **Connect Codex**. It adds the same kind of hooks to `$CODEX_HOME/hooks.json` (`~/.codex` by
+default), with its own `.warroom-bak` copy. Then:
+
+- **Trust the hooks once.** The next time you open Codex it says *Hooks need review*: choose **Trust
+  all and continue**. Until then Codex does not run them (and `codex exec` never asks, so it skips
+  them).
+- **Approvals are answered in Codex.** Codex shows its permission dialog only after the hook returns,
+  so the room does not hold it: you get the red screen and the notification, and you answer in Codex
+  (**Go to** takes you there). With Claude Code you can also approve from the room.
+- **Cost is not estimated.** Codex's models have no public per-token price the app knows, so it shows
+  tokens and context but no dollar figure.
+
+Everything else works the same: states, queue, preview, subagents, skills (`$name`), model and
+effort, context, changes and commits, "Next", launching and resuming (`codex resume`).
+
+The first agent's menu also has **Open at login (in the tray)**, which starts the app hidden in the
+tray.
 
 ### Global "next" shortcut (KDE)
 
@@ -183,7 +207,8 @@ and the same placeholders. Preview it with `npm run shot -- /tmp/shots 1500 <cod
 ## How it works
 
 ```
- Claude Code ──hook──▶ warroom-hook ──unix socket──▶ Agent War Room (Tauri)
+ Claude Code ─┐
+ Codex ───────┴hook──▶ warroom-hook ──unix socket──▶ Agent War Room (Tauri)
    (each event)        (bridge, Rust)                 ├─ Rust core (hexagonal)
                         · walks /proc up to the        │   domain ─ application ─ infrastructure
                           terminal/IDE                 ├─ SQLite: append-only events
@@ -191,14 +216,15 @@ and the same placeholders. Preview it with `npm run shot -- /tmp/shots 1500 <cod
                         · always exits 0               └─ React UI: classic and pixel-art views
 ```
 
-1. Claude Code runs `warroom-hook` on every event. The bridge works out where the session runs
+1. The agent runs `warroom-hook` on every event (Claude Code and Codex share the hook protocol). The
+   bridge works out which agent it is and where the session runs
    (process, terminal, tmux or Warp pane) and sends an envelope to the app's socket. If the app is not
    there, it exits at once.
-2. For `PermissionRequest`, the bridge waits for the room's decision (up to ~10 minutes). If you answer
-   in the terminal, Claude kills the hook and the room notices.
+2. For Claude's `PermissionRequest`, the bridge waits for the room's decision (up to ~10 minutes). If
+   you answer in the terminal, Claude kills the hook and the room notices.
 3. The app stores every event in SQLite and recomputes the session's state. The domain is pure: one
    state machine per session that decides its attention level.
-4. In parallel it reads the JSONL transcript incrementally for the title, answers, model, skills,
+4. In parallel it reads the agent's JSONL transcript (Claude's, or Codex's rollout) incrementally for the title, answers, model, skills,
    subagents, usage and touched files.
 5. The UI receives a precomputed view; the TypeScript types are generated from Rust with `ts-rs`.
 
@@ -208,15 +234,17 @@ The project is split like this:
 |---|---|
 | `crates/domain` | Sessions, states, attention, subagents, skills. No dependencies but serde. |
 | `crates/application` | Use cases (`WarRoomService`), ports and the view the UI consumes. |
-| `crates/infrastructure` | Adapters: Claude (hooks, transcripts, prices), SQLite, socket, KWin, tmux, Warp, PTYs, git. |
+| `crates/infrastructure` | Adapters: the shared hook protocol and installer; `claude/` and `codex/` (dialects, transcripts, prices); SQLite, socket, KWin, tmux, Warp, PTYs, git. |
 | `crates/wire` | Protocol between the bridge and the app. |
 | `crates/i18n` | Translation lookup over `locales/<lang>.json` (the front reads the same catalogs). |
 | `crates/hook-bridge` | The `warroom-hook` binary. |
 | `src-tauri` | Composition, commands and events, tray, notifications, `--next`, autostart. |
 | `src` | Layered React: domain, application, infrastructure (Tauri or demo) and UI. |
 
-Agents sit behind a port (`AgentProvider`). Today there is only a Claude Code adapter, but adding
-another one does not touch the domain. Decisions and alternatives in
+Each agent is a bundle of adapters (`AgentPorts`: hook dialect, transcript reader, skill folders)
+behind ports; the domain and use cases do not know which agent they are watching. Codex was added
+without touching them except for one event (`Interrupted`); the skill `add-provider` describes how
+to add the next one. Decisions and alternatives in
 [`docs/adr/0001-architecture.md`](docs/adr/0001-architecture.md).
 
 ## Data and privacy
@@ -228,9 +256,10 @@ Everything stays on your machine; the app makes no network requests.
 | Events (append-only, 14 days) | `~/.local/share/agent-war-room/events.db` |
 | Installed bridge | `~/.local/share/agent-war-room/bin/warroom-hook` |
 | Socket (`0700` permissions) | `$XDG_RUNTIME_DIR/agent-war-room/ingress.sock` |
-| Added hooks | `~/.claude/settings.json` (copy in `.warroom-bak`) |
+| Added hooks | `~/.claude/settings.json`, `$CODEX_HOME/hooks.json` (copies in `.warroom-bak`) |
 
-The app **reads** the transcripts in `~/.claude/projects/`, `/proc` (to locate processes and
+The app **reads** the transcripts in `~/.claude/projects/` and `~/.codex/sessions/` (plus Codex's
+`session_index.jsonl` for titles), `/proc` (to locate processes and
 windows) and, when you click **Changes**, the `git log` of the session's worktree. It only **writes**
 into your sessions when you reply or approve something from the room.
 
@@ -261,12 +290,14 @@ npm run shot -- /tmp/shots # screenshots of the demo UI (the ones in docs/screen
 Outside Tauri (`npm run dev` in the browser), the UI uses a demo room with 5 repos and 11 sessions.
 Handy for designing without the app or real agents.
 
-End-to-end tests against a real Claude Code. They are isolated (their own socket, folder and tmux,
-without touching your configuration) and cost one short call each:
+End-to-end tests against a real Claude Code and a real Codex. They are isolated (their own socket,
+folder and tmux, and for Codex its own `CODEX_HOME` with only your login copied in, without touching
+your configuration) and cost one short call each:
 
 ```sh
 cargo build -p warroom-hook
 cargo test -p awr-infrastructure --test claude_e2e -- --ignored --nocapture
+cargo test -p awr-infrastructure --test codex_e2e -- --ignored --nocapture
 ```
 
 Manual tests against the desktop:
@@ -318,7 +349,9 @@ Issues and pull requests are welcome.
 
 ## Limitations and roadmap
 
-- Claude Code only. The port for other agents exists (skill `add-provider`), but no adapters yet.
+- Claude Code and Codex only. Others (Gemini CLI, opencode…) follow the skill `add-provider`.
+- Codex: approvals are answered in Codex, not from the room; no cost estimate; tested with Codex CLI
+  0.154.
 - Per-window "Go to" only on KDE (KWin). GNOME and generic X11 are not done.
 - Not verified live: notification buttons, the `--next` shortcut, autostart, the installed RPM
   package and Warp picking up the generated tabs.

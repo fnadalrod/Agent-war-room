@@ -1,35 +1,39 @@
+//! Non-destructive install of our bridge into an agent's hook configuration. Claude Code
+//! (`~/.claude/settings.json`) and Codex (`~/.codex/hooks.json`) keep hooks in the same JSON shape
+//! under `"hooks"`; a [`HookSpec`] says which events each one gets.
+
 use crate::locale;
 use awr_application::ports::{IntegrationInstaller, PortError, PortResult};
 use awr_application::view::IntegrationStatus;
+use awr_domain::ProviderKind;
 use serde_json::{Map, Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Claude hooks that feed the state machine.
-pub const HOOKED_EVENTS: &[&str] = &[
-    "SessionStart",
-    "SessionEnd",
-    "UserPromptSubmit",
-    "PreToolUse",
-    "PostToolUse",
-    "PostToolUseFailure",
-    "PermissionRequest",
-    "Notification",
-    "Stop",
-    "SubagentStart",
-    "SubagentStop",
-    "PreCompact",
-];
+/// Which hook events an agent gets, with their timeout in seconds.
+pub struct HookSpec {
+    pub provider: ProviderKind,
+    pub events: &'static [(&'static str, u64)],
+}
+
+impl HookSpec {
+    pub fn event_names(&self) -> impl Iterator<Item = &'static str> {
+        self.events.iter().map(|(name, _)| *name)
+    }
+}
+
+/// Regular hooks: the bridge answers in milliseconds, even with the app closed.
+pub const HOOK_TIMEOUT_SECS: u64 = 5;
+/// `PermissionRequest` waits for the user's decision from the app; the agent shows its own dialog at
+/// the same time and, if answered there, kills the hook. The bridge gives up after 590 s.
+pub const PERMISSION_TIMEOUT_SECS: u64 = 600;
 
 /// Identifies our entries in `settings.json`, without touching anyone else's.
 const MARKER: &str = "warroom-hook";
-const HOOK_TIMEOUT_SECS: u64 = 5;
-/// `PermissionRequest` waits for the user's decision from the app; Claude shows its own dialog at
-/// the same time and, if answered there, kills the hook. The bridge gives up after 590 s.
-const PERMISSION_TIMEOUT_SECS: u64 = 600;
 
-/// Non-destructive merge of our hooks into `~/.claude/settings.json`.
-pub struct ClaudeHookInstaller {
+/// Non-destructive merge of our hooks into an agent's hook file.
+pub struct HookInstaller {
+    spec: &'static HookSpec,
     settings_path: PathBuf,
     /// Freshly built or bundled binary; copied to `bridge_target` on install.
     bridge_source: Option<PathBuf>,
@@ -37,9 +41,14 @@ pub struct ClaudeHookInstaller {
     bridge_target: PathBuf,
 }
 
-impl ClaudeHookInstaller {
-    pub fn new(settings_path: PathBuf, bridge_source: Option<PathBuf>, bridge_target: PathBuf) -> Self {
-        Self { settings_path, bridge_source, bridge_target }
+impl HookInstaller {
+    pub fn new(
+        spec: &'static HookSpec,
+        settings_path: PathBuf,
+        bridge_source: Option<PathBuf>,
+        bridge_target: PathBuf,
+    ) -> Self {
+        Self { spec, settings_path, bridge_source, bridge_target }
     }
 
     fn command(&self) -> String {
@@ -90,13 +99,15 @@ impl ClaudeHookInstaller {
     }
 }
 
-impl IntegrationInstaller for ClaudeHookInstaller {
+impl IntegrationInstaller for HookInstaller {
     fn status(&self) -> PortResult<IntegrationStatus> {
         let settings = self.read_settings()?;
         let hooked_events: Vec<String> =
-            HOOKED_EVENTS.iter().filter(|event| event_has_ours(&settings, event)).map(|e| e.to_string()).collect();
+            self.spec.event_names().filter(|event| event_has_ours(&settings, event)).map(str::to_owned).collect();
         Ok(IntegrationStatus {
-            installed: hooked_events.len() == HOOKED_EVENTS.len(),
+            provider: format!("{:?}", self.spec.provider).to_lowercase(),
+            agent_found: self.settings_path.parent().is_some_and(Path::is_dir),
+            installed: hooked_events.len() == self.spec.events.len(),
             hooked_events,
             settings_path: self.settings_path.display().to_string(),
             bridge_path: self.bridge_target.display().to_string(),
@@ -108,7 +119,7 @@ impl IntegrationInstaller for ClaudeHookInstaller {
         self.copy_bridge()?;
         let mut settings = self.read_settings()?;
         let command = self.command();
-        add_hooks(&mut settings, &command);
+        add_hooks(&mut settings, self.spec, &command);
         self.write_settings(&settings)?;
         self.status()
     }
@@ -122,7 +133,7 @@ impl IntegrationInstaller for ClaudeHookInstaller {
     }
 }
 
-fn add_hooks(settings: &mut Map<String, Value>, command: &str) {
+fn add_hooks(settings: &mut Map<String, Value>, spec: &HookSpec, command: &str) {
     // Reinstalling replaces our entries (e.g. if the bridge path changed).
     remove_hooks(settings);
     let hooks = settings.entry("hooks").or_insert_with(|| Value::Object(Map::new()));
@@ -130,10 +141,9 @@ fn add_hooks(settings: &mut Map<String, Value>, command: &str) {
         *hooks = Value::Object(Map::new());
     }
     let hooks = hooks.as_object_mut().expect("just ensured to be an object");
-    for event in HOOKED_EVENTS {
+    for (event, timeout) in spec.events {
         let groups = hooks.entry(*event).or_insert_with(|| Value::Array(Vec::new()));
         if let Some(groups) = groups.as_array_mut() {
-            let timeout = if *event == "PermissionRequest" { PERMISSION_TIMEOUT_SECS } else { HOOK_TIMEOUT_SECS };
             groups.push(json!({
                 "matcher": "",
                 "hooks": [{ "type": "command", "command": command, "timeout": timeout }]
@@ -184,7 +194,7 @@ fn is_ours(hook: &Value) -> bool {
     hook.get("command").and_then(Value::as_str).is_some_and(|c| c.contains(MARKER))
 }
 
-/// A real ELF: pointing the hooks at an empty or broken file would make every Claude hook fail.
+/// A real ELF: pointing the hooks at an empty or broken file would make every agent hook fail.
 fn is_executable_binary(path: &Path) -> bool {
     use std::io::Read;
     let mut magic = [0u8; 4];
@@ -208,7 +218,16 @@ fn fail(e: impl ToString) -> PortError {
 mod tests {
     use super::*;
 
-    fn setup(initial: Option<Value>) -> (tempfile::TempDir, ClaudeHookInstaller) {
+    const SPEC: HookSpec = HookSpec {
+        provider: ProviderKind::Claude,
+        events: &[
+            ("SessionStart", HOOK_TIMEOUT_SECS),
+            ("Stop", HOOK_TIMEOUT_SECS),
+            ("PermissionRequest", PERMISSION_TIMEOUT_SECS),
+        ],
+    };
+
+    fn setup(initial: Option<Value>) -> (tempfile::TempDir, HookInstaller) {
         let dir = tempfile::tempdir().unwrap();
         let settings = dir.path().join("settings.json");
         if let Some(v) = initial {
@@ -218,11 +237,11 @@ mod tests {
         fs::create_dir_all(source.parent().unwrap()).unwrap();
         fs::write(&source, b"\x7fELF fake").unwrap();
         let target = dir.path().join("bin/warroom-hook");
-        let installer = ClaudeHookInstaller::new(settings, Some(source), target);
+        let installer = HookInstaller::new(&SPEC, settings, Some(source), target);
         (dir, installer)
     }
 
-    fn read(installer: &ClaudeHookInstaller) -> Value {
+    fn read(installer: &HookInstaller) -> Value {
         serde_json::from_str(&fs::read_to_string(&installer.settings_path).unwrap()).unwrap()
     }
 

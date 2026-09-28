@@ -21,7 +21,7 @@ intents about unknown sessions are ignored (and therefore not persisted).
 | `AwaitingYou { reason, tool, detail }` | `NeedsYou` | permission request, question tools, elicitation |
 | `AwaitingInput` + `unseen` | `Finished` | `TurnEnded` (Stop); `IdlePrompt` only if a turn end was missed |
 | `Working { tool }`, `Compacting` | `Working` | prompt, tools, compaction (a `Started` after compaction resumes Working) |
-| `Idle`, `AwaitingInput` seen | `Idle` | start, `Seen` |
+| `Idle`, `AwaitingInput` seen | `Idle` | start, `Seen`, `Interrupted` (you stopped the turn: no notice) |
 | `Ended { reason }` | `Offline` | SessionEnd, or `ProcessLost` from the liveness tick |
 
 `Attention` is ordered by urgency; the tray color is the max over sessions **on watch** (not archived,

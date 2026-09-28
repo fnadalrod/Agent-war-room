@@ -1,4 +1,5 @@
-//! How to summarize in one line what a Claude tool call does or asks for.
+//! How to summarize in one line what an agent's tool call does or asks for (Claude-style tool names
+//! and inputs, which Codex also uses in its hooks).
 
 use serde_json::Value;
 use std::path::Path;

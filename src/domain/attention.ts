@@ -7,6 +7,8 @@ import type { SkillView } from "./generated/SkillView";
 import type { SubagentView } from "./generated/SubagentView";
 import type { WarRoomView } from "./generated/WarRoomView";
 import type { RoomView } from "./generated/RoomView";
+import type { IntegrationStatus } from "./generated/IntegrationStatus";
+import type { UsageView } from "./generated/UsageView";
 
 export type { AttentionView, SessionView, SkillSourceView, SkillView, WarRoomView };
 export type { RoomView };
@@ -46,6 +48,29 @@ export function shortId(s: SessionView): string {
 /** "claude-opus-5-5" → "opus-5-5". */
 export function shortModel(model: string | null | undefined): string | null {
   return model?.replace(/^claude-/, "") ?? null;
+}
+
+/** "claude" → "Claude Code"; unknown providers pass through. */
+export function providerName(provider: string): string {
+  return copy.provider[provider] ?? provider;
+}
+
+/** Hooks in place and the bridge where they point. */
+export function isConnected(status: IntegrationStatus | null | undefined): boolean {
+  return status != null && status.installed && status.bridge_present;
+}
+
+/** Agents you can start from a room: the connected ones, else the installed ones, else Claude. */
+export function launchableAgents(integrations: IntegrationStatus[]): string[] {
+  const connected = integrations.filter(isConnected).map((i) => i.provider);
+  if (connected.length) return connected;
+  const found = integrations.filter((i) => i.agent_found).map((i) => i.provider);
+  return found.length ? found : ["claude"];
+}
+
+/** More than one kind of agent in the room: then cards say which one each is. */
+export function mixesAgents(view: WarRoomView): boolean {
+  return new Set(view.rooms.flatMap((r) => r.sessions.map((s) => s.provider))).size > 1;
 }
 
 export function modelName(s: SessionView): string | null {
@@ -228,6 +253,17 @@ export function tokenCount(n: number): string {
 }
 
 /** "$0.42", "$12". */
+/** Nothing in it has a known price (e.g. Codex's own models): show tokens, not "$0.00". */
+export function unpriced(u: UsageView): boolean {
+  return u.partial_cost && u.cost_usd === 0;
+}
+
+/** "12.6M tok · $3.40", or only the tokens when there is no price at all. */
+export function usageLabel(u: UsageView): string {
+  const tokens = `${tokenCount(u.total_tokens)} tok`;
+  return unpriced(u) ? tokens : `${tokens} · ${money(u.cost_usd)}`;
+}
+
 export function money(usd: number): string {
   if (usd >= 100) return `$${Math.round(usd)}`;
   return `$${usd.toFixed(2)}`;

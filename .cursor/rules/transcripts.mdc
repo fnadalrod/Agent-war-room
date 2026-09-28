@@ -1,10 +1,14 @@
 ---
 description: Reading Claude Code transcripts (JSONL) — titles, replies, timeline, subagents, model/effort, token usage and estimated cost, files touched. Read before touching transcript.rs or pricing.rs.
-globs: crates/infrastructure/src/claude/transcript.rs, crates/infrastructure/src/claude/pricing.rs
+globs: crates/infrastructure/src/claude/transcript.rs, crates/infrastructure/src/claude/pricing.rs, crates/infrastructure/src/jsonl.rs
 alwaysApply: false
 ---
 
 # Transcripts (crates/infrastructure/src/claude/transcript.rs)
+
+Shared by every agent's reader: `jsonl.rs` (`Follow` for incremental reads of complete lines,
+`head_lines`, `tail_lines`, `parse_iso_ms`, `local_day`, `cap`) and `tools.rs` (one-line tool labels).
+Codex's rollouts → `codex.mdc`. The service picks the reader by the session's provider (`AgentPorts`).
 
 Hooks say *what state* a session is in; transcripts say *what it did*. Everything read here is
 derived, recomputed and never persisted (it also works for sessions opened before the app).
