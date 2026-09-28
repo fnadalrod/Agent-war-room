@@ -1,0 +1,30 @@
+---
+description: Desktop integration — "go to" a session's window (KWin, tmux, Warp), app-owned terminals (PTY), launching and resuming agents, typing into sessions, process liveness. Read before touching desktop/, pty.rs, launch.rs or system.rs.
+globs: crates/infrastructure/src/desktop/**, crates/infrastructure/src/pty.rs, crates/infrastructure/src/launch.rs, crates/infrastructure/src/system.rs, crates/infrastructure/src/git.rs
+alwaysApply: false
+---
+
+# Desktop integration
+
+Linux first, KDE Plasma (Wayland and X11). Everything here touches the user's real desktop: tests use
+private tmux sockets and temp dirs; live checks (`kwin_live`) need the user's OK.
+
+## "Go to" (desktop/mod.rs::DesktopNavigator)
+
+Order: **Warp** (`WARP_FOCUS_URL` → exact pane, then KWin raises the window) → **tmux** (select pane,
+find/switch the attached client, raise its terminal via KWin) → **KWin** by PID chain. No KWin → the
+reason is shown instead ("escritorio no soportado").
+
+## Trigger table
+
+| If you… | Read |
+|---|---|
+| touch window activation, the KWin script or caption matching | `desktop-kwin.md` |
+| touch PTYs, xterm output, launching/resuming, typing into sessions, Warp tab configs | `desktop-terminals.md` |
+
+## Other pieces
+
+- `system.rs`: `ProcProbe` (alive = `/proc/<pid>/stat` exists and not zombie), `SystemClock`.
+- `git.rs`: `GitRepoResolver` (room = `git common dir`, so worktrees share the repo's room; branch via
+  `symbolic-ref`, detached → `@<sha>`; works in repos without commits) and `GitCli` (commits in a time
+  window with shortstat; `git show` capped at 400 KB).

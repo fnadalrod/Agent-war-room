@@ -1,0 +1,42 @@
+---
+description: How to work in Agent War Room — trace before changing, minimal change, close the loop, report honestly. Always loaded.
+globs:
+alwaysApply: true
+---
+
+# Engineering discipline (layer 0)
+
+Loaded in every session (Claude Code imports it from `CLAUDE.md`; Cursor via `alwaysApply`). Keep it short:
+every line here is paid on every turn. Detail goes to leaves.
+
+## Before changing
+
+- **Trace first.** Read the code path end to end before editing. The hook → state → UI path crosses
+  five crates and the front; guessing one hop is how bugs get in. Map: `architecture.mdc`.
+- **Check what the agent really emits.** Hook payloads and transcript lines are Claude Code's
+  internals and change between versions. Look at a real one before relying on a field
+  (`hooks-ingest.mdc`, `transcripts.mdc`), don't assume from memory or docs.
+- **Reuse before creating.** Most needs already have a port, a helper or a copy entry.
+
+## While changing
+
+- **Minimal change**, edit before creating, keep the layer direction (never import "up").
+- **Code is English; the UI is Spanish** and its text lives only in the copy/locale modules.
+- **Never touch the user's real environment** in tests or experiments: not `~/.claude/settings.json`,
+  not the real socket, not the real `events.db`. Use temp dirs, a private `XDG_RUNTIME_DIR`,
+  `--settings`, private tmux sockets. Ask before anything that shows up on the user's desktop
+  (focusing windows, notifications, launching Warp).
+
+## Closing the loop
+
+- `scripts/check.sh` after every step; `scripts/check.sh all` before a commit.
+- UI change → `npm run shot -- <dir>` and **look** at the PNGs (skill `verify`).
+- Integration change (bridge, socket, approvals, PTY) → real e2e (skill `e2e`).
+- **Report honestly**: what ran, what passed, and what could not be verified. "Compiles" is not "works".
+- **No AI attribution in git** (`Co-Authored-By`, `Claude-Session`, "Generated with"…). Commit messages
+  are Spanish conventional commits (`feat: …`, `fix(área): …`).
+
+## After changing
+
+Docs that no longer match the code are worse than none: fix them in the same change (anti-rot, see
+`AGENTS.md`). If you had to reconstruct a non-obvious flow, write it down → `doc-seeding.md`.

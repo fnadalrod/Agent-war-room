@@ -1,0 +1,46 @@
+---
+description: The pure domain — sessions, their status machine, attention levels, subagents, skills, and the persisted event log. Read before changing what an event does or adding a field that is stored.
+globs: crates/domain/**
+alwaysApply: false
+---
+
+# Domain model (crates/domain)
+
+Pure: no IO, no clock, no Claude knowledge. Time arrives inside events (`Timestamp`, ms).
+
+## Aggregate
+
+`WarRoom` (room.rs) holds `Session`s by id and is the only entry point: `apply(SessionEvent) ->
+Option<AttentionChange>`. A session is created by the first event that carries a `SessionContext`;
+intents about unknown sessions are ignored (and therefore not persisted).
+
+## Status → attention (session.rs)
+
+| Status | Attention | Set by |
+|---|---|---|
+| `AwaitingYou { reason, tool, detail }` | `NeedsYou` | permission request, question tools, elicitation |
+| `AwaitingInput` + `unseen` | `Finished` | `TurnEnded` (Stop); `IdlePrompt` only if a turn end was missed |
+| `Working { tool }`, `Compacting` | `Working` | prompt, tools, compaction (a `Started` after compaction resumes Working) |
+| `Idle`, `AwaitingInput` seen | `Idle` | start, `Seen` |
+| `Ended { reason }` | `Offline` | SessionEnd, or `ProcessLost` from the liveness tick |
+
+`Attention` is ordered by urgency; the tray color is the max over sessions **on watch** (not archived,
+not muted). `deserves_notice()` = on watch + alerting + actually changed.
+
+## Rules that are easy to break
+
+- A second `AwaitingYou` for the same wait (the Notification after a PermissionRequest) must not wipe
+  the tool/detail already known.
+- `PromptSubmitted` un-archives: writing to a dismissed session brings it back. That is the product
+  definition of "archive" (dismiss without killing).
+- Subagent tool events (`SubagentTool`) never change the main session's tool — but they resolve a
+  pending permission (the agent moved on).
+- Finished subagents are kept (last 6) so their work can be inspected; `Ended` finishes the running ones.
+- "Stuck" is **not** a domain state: it is derived from `last_activity_at` and the clock in
+  `crates/application/src/view.rs::stalled_since` (see `architecture.mdc`).
+
+## Persistence compatibility (hard rule)
+
+`SessionEvent`s are stored as JSON forever (14-day retention, 3-day replay). New fields need
+`#[serde(default)]`; never rename or remove serde tags/fields; add variants, don't reshape old ones.
+`room.rs` has a test that loads an event from before newer fields existed — extend it when you add one.

@@ -1,0 +1,56 @@
+---
+description: Layers, crates and ports of Agent War Room — where each thing goes and which direction dependencies go. Read before adding a module, a port or a dependency.
+globs: Cargo.toml, crates/*/Cargo.toml, crates/application/src/ports.rs, crates/application/src/lib.rs, src-tauri/Cargo.toml, src/main.tsx, src/application/ports.ts
+alwaysApply: false
+---
+
+# Architecture
+
+Hexagonal, with the dependency rule **enforced by crate boundaries** (the compiler rejects an inward
+layer importing an outward one). Decisions and history: `docs/adr/0001-arquitectura.md` (Spanish).
+
+```
+crates/domain          pure model: sessions, attention, events. serde only — no IO, time, tokio, tauri
+crates/application     use cases (WarRoomService), ports (traits), read model (view.rs → TS), locale.rs
+crates/infrastructure  adapters: claude/ (provider, transcripts, installer, pricing, skills), ingress,
+                       sqlite, git, system, desktop/ (KWin, tmux, Warp), pty, launch
+crates/wire            socket contract bridge ↔ app (serde only)
+crates/hook-bridge     `warroom-hook`, the binary Claude runs on every hook
+src-tauri              composition root + driving adapters (commands) + tray/notifications
+src/                   React: domain · application · infrastructure · ui (same rule inside)
+```
+
+`domain ← application ← infrastructure ← src-tauri`. The front mirrors it: `ui → application →
+domain`; `infrastructure/` implements the ports in `application/ports.ts`.
+
+## Where does X go?
+
+| X | Place |
+|---|---|
+| A rule about session state (what an event does) | `crates/domain/src/session.rs` (+ test in `room.rs`) |
+| Something the core needs from the outside world | a port in `crates/application/src/ports.rs`, its adapter in `crates/infrastructure`, wired in `src-tauri/src/lib.rs` **and** the e2e `Room::start` |
+| What the UI receives | `crates/application/src/view.rs` (TS types regenerate from it) |
+| Derived data that must not be persisted (transcript facts, pending approvals, stall notices) | fields of `WarRoomService`, never the domain |
+| Claude-specific knowledge (hook names, transcript shape, prices) | `crates/infrastructure/src/claude/` — the domain must not know Claude |
+| User-visible text | the crate's `locale.rs` / `src/domain/copy.ts` |
+| A Tauri command or event | `src-tauri/src/commands.rs` / `adapters.rs`, mirrored in `src/infrastructure/tauriGateway.ts` |
+
+## Ports (crates/application/src/ports.rs)
+
+AgentProvider · RepoResolver · EventStore · Clock · ProcessProbe · Notifier · ViewPublisher ·
+TranscriptReader · WindowNavigator · AgentLauncher · SessionInput · SkillCatalog · GitHistory ·
+ApprovalResponder · IntegrationInstaller. All bundled in `service::Ports`. A new port means: trait +
+fake in `service.rs` tests + real adapter + wiring in `src-tauri/src/lib.rs` + `claude_e2e.rs`.
+
+## Service rules (crates/application/src/service.rs)
+
+- Every state change is a `SessionEvent` through `commit()`: apply → persist → refresh transcript →
+  publish → notify. User intents (seen, archive, mute) are events too.
+- Lock order: `room` → `summaries` → `approvals` → `stalled`. Don't call slow ports while holding
+  `room` (only pure projections).
+- Transcript reads happen off the startup path (`refresh_all_summaries` in a thread) and on each
+  agent event / tick for working sessions.
+
+## Adding a new agent provider (Codex, Gemini, opencode…)
+
+The domain is provider-agnostic. Skill `add-provider` has the checklist.

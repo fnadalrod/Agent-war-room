@@ -1,0 +1,32 @@
+---
+description: How Agent War Room is tested — unit tests per crate and front, ignored live/e2e tests with a real Claude, screenshots of the demo UI, and the scoped check script. Read before adding tests or claiming something works.
+globs: scripts/check.sh, scripts/shot.mjs, crates/infrastructure/tests/**, src/**/*.test.ts, src/test/**
+alwaysApply: false
+---
+
+# Testing
+
+| Layer | How | Where |
+|---|---|---|
+| Domain | pure unit tests over event sequences | `crates/domain/src/room.rs` |
+| Application | service tests with in-file fakes for every port | bottom of `crates/application/src/service.rs` |
+| Adapters | real temp dirs, private tmux socket, temp git repos, real `/proc`, Node for the KWin script | each file in `crates/infrastructure/src` |
+| Front | Vitest next to the code; fixtures in `src/test/fixtures.ts`; the store tested against the demo gateway | `src/**/*.test.ts` |
+| UI look | screenshots of the demo UI | `npm run shot -- <dir>` |
+| End to end | real `claude` + real bridge + real socket, isolated | `crates/infrastructure/tests/claude_e2e.rs` (ignored) |
+| Live desktop | real KWin, real transcript | `kwin_live`, `transcript_live` (ignored) |
+
+## Commands
+
+- `scripts/check.sh` — scoped to what changed vs HEAD; one line per step, details only on failure
+  (clippy `-D warnings`, cargo tests, tsc, vitest; docs check when docs changed).
+- `scripts/check.sh all|rust|front|docs`.
+- Ignored tests: run only when asked or when touching that integration; tell the user (they cost a
+  Claude call or touch the desktop).
+
+## Trigger table
+
+| If you… | Read |
+|---|---|
+| run or write a real-Claude e2e, or drive a TUI in a PTY | `testing-e2e.md` |
+| need screenshots of a state the demo doesn't have | extend `src/infrastructure/demoGateway.ts`, then `npm run shot` |

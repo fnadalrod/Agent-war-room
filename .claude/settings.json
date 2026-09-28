@@ -57,6 +57,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "Read|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/rules_for_path.py\" --hook",
+            "timeout": 5
+          }
+        ]
       }
     ]
   }

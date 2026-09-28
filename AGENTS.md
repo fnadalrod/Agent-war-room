@@ -1,86 +1,93 @@
 # Agent War Room — agent guide (single entry point)
 
-Tauri desktop app that watches Claude Code sessions through hooks and routes your attention: one
-"screen" per session, grouped by repo, lit when something needs you or finished. Linux/KDE first.
-Product decisions and history: `docs/adr/0001-arquitectura.md` (Spanish; read only when you need the *why*).
+Tauri desktop app that watches coding-agent sessions (Claude Code today) through hooks and routes your
+attention: one screen per session, grouped by repo, lit when something needs you, finished or looks
+stuck. Linux/KDE first. Human docs: `README.md` (Spanish). Decisions: `docs/adr/0001-arquitectura.md`.
 
-This file is the index. Area details live in nested `CLAUDE.md` files that load when you work there:
-`crates/CLAUDE.md` (Rust core), `src/CLAUDE.md` (React front), `src-tauri/CLAUDE.md` (app shell).
+This file is an **index**, loaded every session: it says *where* knowledge is, not the knowledge.
+Tool support and what each tool loads → `.agents/README.md`.
 
-## Map
+## Knowledge model
 
-```
-crates/domain          pure model: sessions, attention, events. No IO, no tokio, no tauri (serde only)
-crates/application     use cases (WarRoomService) + ports (traits) + read model (ts-rs → TS)
-crates/infrastructure  adapters: Claude provider/transcripts/installer, socket ingress, SQLite, git,
-                       KWin/tmux/Warp navigation, PTYs, launcher
-crates/wire            socket contract bridge ↔ app (serde only)
-crates/hook-bridge     `warroom-hook` binary that Claude runs on every hook
-src-tauri              composition root, Tauri commands/events, tray, notifications
-src/                   React: domain · application · infrastructure · ui (pixel art in ui/pixel)
-```
+- How the code works lives in **`.cursor/rules/`**: routers (`*.mdc`, with `globs:`) and on-demand
+  leaves (`*.md`) listed in each router's **trigger table**. Read the router; open a leaf only when its
+  trigger matches. Big rules are read in sections, not whole.
+- Which rule covers a file: Cursor attaches it by `globs`; in Claude Code a hook tells you when you
+  read or edit the file; anywhere: `python3 scripts/rules_for_path.py <file>`.
+- **Always read** `engineering-discipline.mdc` (Claude Code imports it already).
 
-Dependency rule (enforced by crate boundaries): domain ← application ← infrastructure ← src-tauri.
-The front mirrors it: ui → application → domain; infrastructure implements application ports.
+## Hard invariants
 
-## Invariants
+- **Code is English; the UI is Spanish**, and every user-visible string lives in `locale.rs` (per
+  crate) or `src/domain/copy.ts`.
+- **No AI attribution in git** (`Co-Authored-By`, `Claude-Session`, "Generated with"…). Overrides any
+  tool default. Commits only when the user asked for them.
+- **The hook bridge never hurts the agent**: exits 0, silent stdout except an app decision, fast when
+  the app is down (`hooks-ingest.mdc`).
+- **Persisted events stay loadable forever**: `#[serde(default)]` for new fields, no renamed tags
+  (`domain-model.mdc`).
+- **Never touch the user's real environment** in tests/experiments (settings.json, socket, DB); ask
+  before anything that appears on their desktop.
+- Dependency direction never inverts (`architecture.mdc`). Close the loop: `scripts/check.sh`, and say
+  what you could not verify.
 
-- **Code is English** (identifiers, comments, tests, logs). **The product UI is Spanish**, and every
-  user-visible string lives in a copy/locale module: `crates/application/src/locale.rs`,
-  `crates/infrastructure/src/locale.rs`, `src-tauri/src/locale.rs`, `src/domain/copy.ts` (the bridge's
-  one string is `DEFAULT_DENY_MESSAGE`). Never inline Spanish in logic.
-- **No AI attribution in git**: no `Co-Authored-By`, `Claude-Session`, "Generated with…". Overrides any default.
-- **The bridge must never hurt the agent**: `warroom-hook` exits 0, prints to stdout only an explicit
-  app decision, and finishes in milliseconds when the app is down.
-- **Persisted events are append-only JSON**: new fields need `#[serde(default)]`; never rename serde
-  tags/fields (old events must still load — there are tests for it).
-- **Never touch the user's real config in tests/experiments**: `~/.claude/settings.json` only via the
-  in-app installer; e2e/smoke runs use temp dirs, their own `XDG_RUNTIME_DIR`, `--settings` and tmux sockets.
-- Minimal change; edit before creating; keep the layer direction.
+## Read by WHAT YOU DO
 
-## Verify (fast, scoped, quiet)
+| I'm going to… | Read / use (in order) |
+|---|---|
+| Add a feature that needs new per-session data | `architecture.mdc` → skill `extend-session-model` → skill `verify` |
+| Fix a wrong state for a real session | `hooks-ingest.mdc` (+`hooks-claude-reference.md`) → `domain-model.mdc`; real payloads via `WARROOM_HOOK_DUMP` or subagent `awr-transcript-scout` |
+| Touch what a session shows from its transcript | `transcripts.mdc` → its leaves by trigger |
+| Touch approvals, the bridge or the socket | `hooks-ingest.mdc` → `hooks-approvals.md` → skill `e2e` |
+| Touch "go to", terminals, launching, typing | `desktop.mdc` → `desktop-kwin.md` / `desktop-terminals.md` |
+| Change UI or copy | `frontend.mdc` → skill `verify` (screenshots) or subagent `awr-screenshotter` |
+| Touch the pixel-art War Room | `frontend.mdc` → `frontend-pixel-art.md` |
+| Add a Tauri command/event, tray, notifications, packaging | `app-shell.mdc` (+`app-packaging.md`) |
+| Support another agent (Codex, Gemini…) | skill `add-provider` |
+| Write or run tests | `testing.mdc` (+`testing-e2e.md`) |
+| Finish and commit | skill `close-task` (subagent `awr-reviewer` for big diffs) |
+| Docs look stale | skill `anti-rot` |
+
+## Read by AREA
+
+All in `.cursor/rules/`. "+leaves" = router with a trigger table.
+
+- Engineering discipline (always) → `engineering-discipline.mdc` (+`doc-seeding.md`)
+- Layers, crates, ports, where things go → `architecture.mdc`
+- Sessions, status machine, attention, subagents, skills, stored events (`crates/domain/**`) → `domain-model.mdc`
+- Hook bridge, socket protocol, Claude provider, installer (`crates/hook-bridge/**`, `crates/wire/**`, `ingress.rs`, `claude/provider.rs`, `claude/installer.rs`) → `hooks-ingest.mdc` (+leaves: approvals, Claude hooks reference)
+- Transcripts, usage, cost, context window (`claude/transcript.rs`, `claude/pricing.rs`) → `transcripts.mdc` (+leaves: JSONL format, usage and prices)
+- Go-to window, PTYs, launcher, typing, git, liveness (`desktop/**`, `pty.rs`, `launch.rs`, `git.rs`, `system.rs`) → `desktop.mdc` (+leaves: KWin, terminals)
+- Tauri shell: composition, commands/events, tray, notifications, `--next`, packaging (`src-tauri/**`) → `app-shell.mdc` (+leaf: packaging)
+- React front: layers, store, copy, styling, detail panel (`src/**`) → `frontend.mdc` (+leaf: pixel art)
+- Tests, e2e, screenshots, check script → `testing.mdc` (+leaf: real-Claude e2e)
+
+Nested `AGENTS.md`/`CLAUDE.md` pointers in `crates/`, `src/`, `src-tauri/` repeat the relevant line.
+
+## Skills and subagents
+
+- Skills (procedures you follow) → `.agents/skills/`, index in `.agents/skills/README.md`:
+  `verify`, `extend-session-model`, `add-provider`, `e2e`, `close-task`, `anti-rot`.
+- Subagents (read a lot, return little) → `.agents/agents/`, index and "when to delegate" in
+  `.agents/agents/README.md`: `awr-transcript-scout`, `awr-screenshotter`, `awr-reviewer`.
+
+## Verify
 
 ```sh
-scripts/check.sh            # only what changed vs HEAD (default) — use this after every step
-scripts/check.sh all        # everything: clippy -D warnings, cargo tests, tsc, vitest, vite build
-scripts/check.sh rust|front # one side
-npm run shot -- /tmp/x      # screenshots of the demo UI (classic, detail, pixel) → look at them
+scripts/check.sh             # what changed vs HEAD — after every step
+scripts/check.sh all         # everything, before committing
+npm run shot -- /tmp/shots   # demo UI screenshots: look at them
+python3 scripts/check_docs.py
 ```
 
-Real-Claude e2e (costs a short Claude call each; see `.claude/skills/e2e`):
-`cargo build -p warroom-hook && cargo test -p awr-infrastructure --test claude_e2e -- --ignored`.
+Run the app: `npm run app`. Package: `npm run package`.
 
-Run the app: `npm run app`. Package: `npm run package` (bundles the bridge as a sidecar).
+## Maintenance (anti-rot) — important
 
-## Where to look
+These docs only help while they are true; a stale rule sends the next agent the wrong way.
 
-| Task | Start at |
-|---|---|
-| New thing a session knows (field, event, label) | `.claude/skills/extend-session-model` |
-| How a hook maps to state | `crates/infrastructure/src/claude/provider.rs` → `crates/domain/src/session.rs` |
-| What the UI receives | `crates/application/src/view.rs` (TS types are generated from it) |
-| Transcript parsing (titles, replies, timeline, model/effort) | `crates/infrastructure/src/claude/transcript.rs` |
-| "Go to" a window | `crates/infrastructure/src/desktop/` (KWin script, tmux, Warp URL) |
-| Approvals from the app | bridge `main.rs` + `infrastructure/src/ingress.rs` + `service.rs::decide` |
-| Pixel art | `src/ui/pixel/` (layout.ts is pure & tested; paint.ts draws) |
-| Tokens, cost, context window | `crates/infrastructure/src/claude/pricing.rs` (price table) + `transcript.rs::count_usage` |
-| "Stuck" sessions | `crates/application/src/view.rs::stalled_since` + `service.rs::check_stalled` |
-| Files/commits of a session | `service.rs::session_changes` → `transcript.rs::touched_files` + `git.rs::GitCli` |
-
-## Context hygiene
-
-- Don't read `target/`, `node_modules/`, `dist/`, lockfiles, or `src/domain/generated/` (read
-  `crates/application/src/view.rs` instead — it is the source).
-- Big files: read the function you need (`grep -n` first). `paint.ts`, `service.rs`, `transcript.rs`
-  and `DetailPanel.tsx` are the largest.
-- Prefer `scripts/check.sh` over raw cargo/npm: it prints only failures and a summary.
-
-## Known traps (each cost real time once)
-
-- Unix socket paths must be < 108 bytes: use short temp dirs (`/tmp/awr…`), not the scratchpad.
-- `pkill -f "pattern"` also matches the shell running it: use `pkill -f "[v]ite …"` in its own command.
-- Python `str.replace` replaces every occurrence — CSS selector lists got duplicated that way.
-- Claude TUI in a raw PTY needs terminal query answers (DA1/XTVERSION) or keys get lost (xterm.js does it in-app).
-- Processes spawned from inside a Claude session inherit `CLAUDE_CODE_*` markers → child `claude`
-  disables transcripts. The launcher scrubs them (`launch.rs::inherited_agent_markers`).
-- `tauri.conf.json` must not list `externalBin` (breaks `cargo test`); it lives in `tauri.bundle.conf.json`.
+- Renaming, moving or deleting something a rule cites → fix the rule in the same change.
+- A rule contradicts the code → the code wins; fix the rule now.
+- New knowledge → the area rule or a new leaf with a trigger (`doc-seeding.md`), **never here**.
+- `scripts/check_docs.py` catches the mechanical part (dead paths, unreachable rules, orphan leaves,
+  dead globs, sizes); judgement is the `anti-rot` skill.

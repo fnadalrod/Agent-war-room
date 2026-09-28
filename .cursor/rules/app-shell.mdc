@@ -1,0 +1,37 @@
+---
+description: The Tauri app shell — composition root, commands and events contract with the front, tray, desktop notifications, single instance (--next), autostart and packaging. Read before touching src-tauri.
+globs: src-tauri/**, scripts/sidecar.sh
+alwaysApply: false
+---
+
+# App shell (src-tauri)
+
+## Composition (lib.rs)
+
+`compose()` builds every adapter, `WarRoomService::new(Ports{…})`, `restore()` (events), then spawns:
+transcript first read (thread), socket ingress (tokio), the 5 s `tick` (liveness, transcripts of
+working sessions, stall detection) and the notification-actions loop. Closing the window hides it.
+
+## Contract with the front
+
+Commands in `commands.rs` (blocking work through `blocking()` = `spawn_blocking`); events in
+`adapters.rs` / `lib.rs`: `warroom://view`, `warroom://open-detail` (`{id, reply}`), `pty://output`,
+`pty://exit`. **Names and argument names are mirrored in `src/infrastructure/tauriGateway.ts`**: change
+both or neither.
+
+## Tray, notifications, instance
+
+- Tray: lamp colored by aggregate attention (generated RGBA, no assets), tooltip with counters, menu
+  "next / open / quit".
+- Notifications (`adapters.rs::DesktopNotifier`, `notify-rust`): one per session (stable id replaces
+  the previous), NeedsYou = critical + no timeout. Buttons: Ver, Ir a, Aprobar (if approvable),
+  Responder. Freedesktop has **no inline reply** (notify-rust says so): "Responder" opens the preview
+  with the message box focused.
+- Single instance: a second launch forwards argv; `--next` jumps to what has waited longest
+  (`go_next`), used from a KDE global shortcut. `--hidden` comes from autostart.
+
+## Trigger table
+
+| If you… | Read |
+|---|---|
+| package, bundle the bridge, autostart, icons | `app-packaging.md` |

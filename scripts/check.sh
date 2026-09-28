@@ -5,6 +5,7 @@
 #   scripts/check.sh all        everything, including the production front build
 #   scripts/check.sh rust       all Rust crates
 #   scripts/check.sh front      the React front
+#   scripts/check.sh docs       agent docs (links, reachability, globs, sizes)
 #
 # Prints one line per step; on failure, only the relevant lines (errors, panics, failed tests).
 # Exit code is non-zero if any step fails.
@@ -39,11 +40,13 @@ step() {
 rust_crates=()
 front=0
 front_build=0
+docs=0
 add_crate() { [[ " ${rust_crates[*]-} " == *" $1 "* ]] || rust_crates+=("$1"); }
 all_rust() { for c in awr-domain awr-wire awr-application awr-infrastructure warroom-hook agent-war-room; do add_crate "$c"; done; }
 
 case "$mode" in
-  all) all_rust; front=1; front_build=1 ;;
+  all) all_rust; front=1; front_build=1; docs=1 ;;
+  docs) docs=1 ;;
   rust) all_rust ;;
   front) front=1 ;;
   changed)
@@ -57,11 +60,12 @@ case "$mode" in
         crates/infrastructure/*) add_crate awr-infrastructure; add_crate agent-war-room ;;
         crates/hook-bridge/*) add_crate warroom-hook ;;
         src-tauri/*) add_crate agent-war-room ;;
+        AGENTS.md|*/AGENTS.md|CLAUDE.md|*/CLAUDE.md|.cursor/*|.agents/*|.claude/*|scripts/*.py) docs=1 ;;
         src/*|package.json|package-lock.json|tsconfig.json|vite.config.ts|index.html) front=1 ;;
       esac
     done <<< "$files"
     ;;
-  *) echo "usage: scripts/check.sh [changed|all|rust|front]" >&2; exit 2 ;;
+  *) echo "usage: scripts/check.sh [changed|all|rust|front|docs]" >&2; exit 2 ;;
 esac
 
 if [ ${#rust_crates[@]} -gt 0 ]; then
@@ -79,8 +83,9 @@ if [ "$front" = 1 ]; then
   step "vitest" npx vitest run --reporter=dot
 fi
 [ "$front_build" = 1 ] && step "vite build" npm run build --silent
+[ "$docs" = 1 ] && step "agent docs" python3 scripts/check_docs.py
 
-if [ ${#rust_crates[@]} -eq 0 ] && [ "$front" = 0 ]; then
+if [ ${#rust_crates[@]} -eq 0 ] && [ "$front" = 0 ] && [ "$docs" = 0 ]; then
   echo "only docs/config changed: nothing to check"
 fi
 echo "---- $([ $failed = 0 ] && echo PASS || echo FAIL) in $(($(date +%s) - start))s"

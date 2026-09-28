@@ -1,0 +1,40 @@
+---
+description: Reading Claude Code transcripts (JSONL) — titles, replies, timeline, subagents, model/effort, token usage and estimated cost, files touched. Read before touching transcript.rs or pricing.rs.
+globs: crates/infrastructure/src/claude/transcript.rs, crates/infrastructure/src/claude/pricing.rs
+alwaysApply: false
+---
+
+# Transcripts (crates/infrastructure/src/claude/transcript.rs)
+
+Hooks say *what state* a session is in; transcripts say *what it did*. Everything read here is
+derived, recomputed and never persisted (it also works for sessions opened before the app).
+
+## Where they are
+
+`~/.claude/projects/<cwd-slug>/<session>.jsonl` (path comes in every hook as `transcript_path`).
+Subagents: `<session>/subagents/agent-<id>.jsonl` + `agent-<id>.meta.json` (`description`,
+`agentType`). The `<id>` matches the hook's `agent_id`.
+
+## How it is read
+
+- `read()` is **incremental**: a `Tail` per file keeps the byte offset and the facts; only complete
+  lines are consumed (the last one may be half-written). First read covers the whole file up to
+  64 MB (token totals must be complete), later reads cost ~0.1 ms.
+- `recent()` / `subagent()` / `touched_files()` are on-demand full or tail scans (preview panel,
+  changes button). Never call them on the tick.
+- The first prompt comes from the head (cached per file); `ai-title` / `custom-title` /
+  `last-prompt` repeat often, so the tail is enough for them.
+
+## Trigger table
+
+| If you… | Read |
+|---|---|
+| parse a new entry type or field, or a value looks wrong for a real session | `transcripts-format.md` |
+| touch token counting, cost, context window or the price table | `transcripts-usage.md` |
+
+## Invariants
+
+- Entries with `isSidechain` belong to subagents: skip them in the main timeline, read them in the
+  subagent file.
+- Keep replies as Markdown (no whitespace collapsing); cap at 20 000 chars.
+- An agent id ends up in a path: validate it (`[A-Za-z0-9_-]`) before joining.

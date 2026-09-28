@@ -1,0 +1,40 @@
+---
+description: The React front — layers, the framework-free store, ports and adapters (Tauri, demo), the Spanish copy module, generated types, styling tokens and components. Read before touching src/.
+globs: src/**, index.html, vite.config.ts, tsconfig.json
+alwaysApply: false
+---
+
+# Front (src/)
+
+## Layers
+
+- `domain/` — pure presentation rules (`attention.ts`: labels logic, filters, usage formatting),
+  `copy.ts` (**all** Spanish UI text), `generated/` (ts-rs types from `crates/application/src/view.rs`
+  — never edit; regenerate with `cargo test -p awr-application`).
+- `application/` — `WarRoomStore` (framework-free; components subscribe with `useWarRoom(store)`)
+  and `ports.ts` (WarRoomGateway, TerminalGateway, IntegrationGateway, FilterStorage).
+- `infrastructure/` — `tauriGateway.ts` (commands/events), `demoGateway.ts` (a fake room used in a
+  plain browser, for design and screenshots), `localFilterStorage.ts`.
+- `ui/` — components; `pixel/` for the War Room canvas.
+- `main.tsx` is the composition root: Tauri adapters inside the app (`__TAURI_INTERNALS__`), demo ones
+  otherwise.
+
+## Rules
+
+- Components never inline user-visible text: `copy.<area>.<key>` (functions for parametrised text).
+  Status labels arrive already translated from Rust (`crates/application/src/locale.rs`); the demo
+  mirrors them in its `STATUS` constant — keep them identical (`extraActivity` compares text).
+- New data from the core: add it in `view.rs`, regenerate, then fixtures (`src/test/fixtures.ts`) and
+  the demo (`demoGateway.ts`) — the demo is what screenshots show.
+- Styling: one `ui/styles.css` on tokens. `--c` = attention color via `data-attention`; `--k` = skill
+  source color via `data-source`; amber `#f59e0b` = stalled. No CSS framework, no inline colors.
+- Links in agent Markdown never navigate the app window (`Markdown.tsx` → `openExternal`, http(s) only).
+- The detail panel is the one place for a session's depth: preview, usage, changes (on demand), skills,
+  subagents (clickable → subagent view, Esc goes back), timeline, diff overlay.
+
+## Trigger table
+
+| If you… | Read |
+|---|---|
+| touch the pixel-art War Room (layout, drawing, font, drones) | `frontend-pixel-art.md` |
+| need to see the result | skill `verify` (screenshots) or subagent `awr-screenshotter` |

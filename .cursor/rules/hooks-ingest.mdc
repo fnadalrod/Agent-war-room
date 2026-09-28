@@ -1,0 +1,52 @@
+---
+description: How Claude Code hooks reach the app — the warroom-hook bridge, the socket protocol, the Claude provider mapping and the settings.json installer. Read before touching the bridge, ingress, provider or installer.
+globs: crates/hook-bridge/**, crates/wire/**, crates/infrastructure/src/ingress.rs, crates/infrastructure/src/claude/provider.rs, crates/infrastructure/src/claude/installer.rs, crates/infrastructure/src/claude/skills.rs, crates/infrastructure/src/claude/tools.rs
+alwaysApply: false
+---
+
+# Hooks → app
+
+```
+claude ─(hook stdin JSON)→ warroom-hook ─(Unix socket, 1 line)→ ingress.rs → IncomingSignal
+       → WarRoomService::ingest → ClaudeProvider::translate → SessionEvent (+ extra) → commit
+```
+
+## Bridge invariants (crates/hook-bridge/src/main.rs) — never break these
+
+- **Exit 0 always, in milliseconds when the app is down** (connect fails → exit). A slow or failing
+  hook degrades every Claude session on the machine.
+- **stdout only carries an explicit app decision** (PermissionRequest reply). Anything else printed
+  is interpreted by Claude.
+- It walks `/proc` from its parent upward: hooks may run through a shell, so `getppid()` is not the
+  agent. The chain gives the agent PID (liveness) and the terminal/IDE (focus).
+- Env hints captured at hook time: `TMUX`, `TMUX_PANE`, `TERM_PROGRAM`, `WARP_FOCUS_URL`, `AWR_PTY_ID`
+  (set by our own PTYs). Plus `/proc/<agent>/cmdline` for the launch command.
+
+## Socket protocol (crates/wire)
+
+One connection per hook, one JSON line (`HookEnvelope`, `v: 1`). If `expects_reply`, the bridge keeps
+the connection open and waits for a `HookReply` line; the app answering is how approvals work. Old
+bridges sent no newline — ingress reads to newline **or** EOF. Socket:
+`$XDG_RUNTIME_DIR/agent-war-room/ingress.sock` (dir 0700; paths must stay < 108 bytes).
+
+## Mapping (provider.rs)
+
+Each hook → one `SessionEventKind` (+ `extra` events: a `/skill` prompt is also a `SkillInvoked`;
+a `Skill` tool call too). Question tools (`AskUserQuestion`, `ExitPlanMode`) are `AwaitingYou`.
+Tools with `agent_id` belong to a subagent. Unknown hooks → `Ok(None)` (ignored, not an error).
+
+## Trigger table
+
+| If you… | Read |
+|---|---|
+| touch approvals (PermissionRequest, reply, EOF detection) | `hooks-approvals.md` |
+| rely on a hook field, a notification type or add a hook | `hooks-claude-reference.md` |
+| change what the installer writes | below |
+
+## Installer (installer.rs)
+
+Non-destructive merge into `~/.claude/settings.json`: our entries are recognised by the `warroom-hook`
+marker in `command`; foreign hooks are untouched; a `.warroom-bak` copy is written before each change;
+invalid JSON is refused; the bridge is copied (tmp + rename, to avoid ETXTBSY) to
+`~/.local/share/agent-war-room/bin/` only if it is a real ELF. `PermissionRequest` gets a 600 s timeout
+(the bridge gives up at 590 s), every other hook 5 s.
