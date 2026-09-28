@@ -49,6 +49,22 @@ describe("filtros", () => {
     ]);
   });
 
+  it("filtra por modelo y por esfuerzo", () => {
+    const v = aView([
+      aRoom("a", [
+        aSession({ id: "opus", model: "claude-opus-5-5", effort: "high" }),
+        aSession({ id: "sonnet", model: "claude-sonnet-5", effort: "medium" }),
+        aSession({ id: "nada" }),
+      ]),
+    ]);
+    const ids = (f: Partial<typeof NO_FILTER>) => applyFilter(v, { ...NO_FILTER, ...f }).rooms.flatMap((r) => r.sessions.map((s) => s.id));
+    expect(ids({ models: ["claude-sonnet-5"] })).toEqual(["sonnet"]);
+    expect(ids({ efforts: ["high"] })).toEqual(["opus"]);
+    const { models, efforts } = filterOptions(v);
+    expect(efforts.map((e) => e.value)).toEqual(["medium", "high"]);
+    expect(models).toHaveLength(2);
+  });
+
   it("toggle añade y quita", () => {
     expect(toggle(toggle(["a"], "b"), "a")).toEqual(["b"]);
   });

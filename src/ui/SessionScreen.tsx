@@ -6,7 +6,7 @@ import {
   deskName,
   extraActivity,
   isWritable,
-  modelName,
+  modelAndEffort,
   plainText,
   whereItLives,
   type SessionView,
@@ -81,7 +81,9 @@ export function SessionScreen({ session: s, store, now }: Props) {
           {s.is_linked_worktree && <span className="tag">worktree</span>}
         </div>
         <div className="card-meta">
-          {[modelName(s), contextLabel(s) && `${contextLabel(s)} ctx`, whereItLives(s)].filter(Boolean).join(" · ")}
+          {[modelAndEffort(s.model, s.effort), contextLabel(s) && `${contextLabel(s)} ctx`, whereItLives(s)]
+            .filter(Boolean)
+            .join(" · ")}
         </div>
         <div className="card-actions">
           {s.alive ? (
@@ -139,7 +141,9 @@ function AgentStrip({ session: s, store }: { session: SessionView; store: WarRoo
             className="agent-chip"
             data-running={a.running}
             onClick={() => store.openSubagent(s.id, a.id)}
-            title={`${agentName(a)}${a.kind ? ` (${a.kind})` : ""} · ${a.running ? "trabajando" : "terminado"}`}
+            title={`${agentName(a)}${a.kind ? ` (${a.kind})` : ""} · ${a.running ? "trabajando" : "terminado"}${
+              a.model ? ` · ${modelAndEffort(a.model, a.effort)}` : ""
+            }`}
           >
             <RobotIcon size={12} />
             <span className="agent-name">{agentName(a)}</span>

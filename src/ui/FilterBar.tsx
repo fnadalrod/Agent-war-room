@@ -1,13 +1,15 @@
 import type { WarRoomStore } from "../application/warRoomStore";
 import {
+  effortName,
   type Filter,
   filterOptions,
   isFiltering,
   SKILL_SOURCE_LABEL,
   SKILL_SOURCES,
+  shortModel,
   type WarRoomView,
 } from "../domain/attention";
-import { FilterIcon, UserIcon, XIcon, ZapIcon } from "./icons";
+import { FilterIcon, RobotIcon, UserIcon, XIcon, ZapIcon } from "./icons";
 
 type Props = { view: WarRoomView; shown: WarRoomView; filter: Filter; store: WarRoomStore };
 
@@ -15,9 +17,10 @@ const count = (v: WarRoomView) => v.rooms.reduce((n, r) => n + r.sessions.length
 
 /** Filtrar la sala por repositorio, por skill y por procedencia de las skills. */
 export function FilterBar({ view, shown, filter, store }: Props) {
-  const { repos, skills } = filterOptions(view);
+  const { repos, skills, models, efforts } = filterOptions(view);
   const active = isFiltering(filter);
-  if (repos.length < 2 && skills.length === 0 && !active) return null;
+  const modelsWorthIt = models.length > 1 || efforts.length > 1;
+  if (repos.length < 2 && skills.length === 0 && !modelsWorthIt && !active) return null;
 
   return (
     <section className="filters" data-active={active} aria-label="Filtros">
@@ -47,6 +50,36 @@ export function FilterBar({ view, shown, filter, store }: Props) {
           </>
         )}
       </div>
+
+      {(modelsWorthIt || filter.models.length > 0 || filter.efforts.length > 0) && (
+        <div className="filter-row">
+          <span className="filter-label">
+            <RobotIcon size={13} /> Modelo
+          </span>
+          {models.map((m) => (
+            <button
+              key={m.value}
+              className="filter-chip mono"
+              aria-pressed={filter.models.includes(m.value)}
+              onClick={() => store.toggleModelFilter(m.value)}
+            >
+              {shortModel(m.value)} <span className="muted">{m.sessions}</span>
+            </button>
+          ))}
+          {efforts.length > 0 && <span className="filter-sep" />}
+          {efforts.map((e) => (
+            <button
+              key={e.value}
+              className="filter-chip"
+              aria-pressed={filter.efforts.includes(e.value)}
+              onClick={() => store.toggleEffortFilter(e.value)}
+              title={`Esfuerzo ${e.value}`}
+            >
+              esfuerzo {effortName(e.value)} <span className="muted">{e.sessions}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {skills.length > 0 && (
         <div className="filter-row">

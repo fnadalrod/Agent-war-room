@@ -1,5 +1,5 @@
 import type { FilterStorage } from "../application/ports";
-import { type Filter, NO_FILTER } from "../domain/attention";
+import type { Filter } from "../domain/attention";
 
 const KEY = "awr.filter";
 
@@ -11,7 +11,13 @@ export const localFilterStorage: FilterStorage = {
       if (!raw) return null;
       const f = JSON.parse(raw) as Partial<Filter>;
       const list = (x: unknown) => (Array.isArray(x) ? x.filter((i) => typeof i === "string") : []);
-      return { ...NO_FILTER, repos: list(f.repos), skills: list(f.skills), sources: list(f.sources) as Filter["sources"] };
+      return {
+        repos: list(f.repos),
+        skills: list(f.skills),
+        sources: list(f.sources) as Filter["sources"],
+        models: list(f.models),
+        efforts: list(f.efforts),
+      };
     } catch {
       return null;
     }

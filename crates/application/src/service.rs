@@ -526,8 +526,14 @@ mod tests {
         fn recent(&self, path: &str, limit: usize) -> Vec<crate::ports::TimelineItem> {
             use crate::ports::{TimelineItem, TimelineKind};
             let all = vec![
-                TimelineItem { kind: TimelineKind::Prompt, text: format!("prompt de {path}"), at: Some(1) },
-                TimelineItem { kind: TimelineKind::Reply, text: "**hecho**".into(), at: Some(2) },
+                TimelineItem { kind: TimelineKind::Prompt, text: format!("prompt de {path}"), at: Some(1), model: None, effort: None },
+                TimelineItem {
+                    kind: TimelineKind::Reply,
+                    text: "**hecho**".into(),
+                    at: Some(2),
+                    model: Some("claude-opus-5-5".into()),
+                    effort: Some("high".into()),
+                },
             ];
             all.into_iter().rev().take(limit).rev().collect()
         }
@@ -818,6 +824,7 @@ mod tests {
         assert_eq!(detail.session.first_prompt.as_deref(), Some("Migra el login"));
         assert_eq!(detail.timeline.len(), 1);
         assert_eq!(detail.timeline[0].text, "**hecho**");
+        assert_eq!(detail.timeline[0].effort.as_deref(), Some("high"));
         assert!(h.svc.session_detail(id("ghost"), 5).is_err());
     }
 

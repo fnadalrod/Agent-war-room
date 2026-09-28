@@ -516,9 +516,21 @@ button.linkish:hover:not(:disabled) {
   background: color-mix(in srgb, var(--k) 18%, transparent);
 }
 
-.filter-chip.skill {
+.filter-chip.skill,
+.filter-chip.mono {
   font-family: var(--mono);
   font-size: 11.5px;
+}
+
+.tl-setting {
+  display: inline-block;
+  margin-bottom: 4px;
+  padding: 0 7px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 11px;
 }
 
 /* ---------- Cola de atención ---------- */

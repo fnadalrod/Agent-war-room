@@ -19,7 +19,11 @@ first_prompt: string | null,
 /**
  * Cómo se lanzó el agente (`claude --resume …`).
  */
-command: string | null, last_prompt: string | null, last_reply: string | null, last_action: string | null, model: string | null, context_tokens: number | null, worktree_path: string, branch: string | null, is_linked_worktree: boolean, subagents: Array<SubagentView>, 
+command: string | null, last_prompt: string | null, last_reply: string | null, last_action: string | null, model: string | null, 
+/**
+ * Esfuerzo de razonamiento del último turno.
+ */
+effort: string | null, context_tokens: number | null, worktree_path: string, branch: string | null, is_linked_worktree: boolean, subagents: Array<SubagentView>, 
 /**
  * Skills usadas, la más reciente primero.
  */

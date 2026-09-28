@@ -65,6 +65,8 @@ pub struct SessionView {
     pub last_reply: Option<String>,
     pub last_action: Option<String>,
     pub model: Option<String>,
+    /// Esfuerzo de razonamiento del último turno.
+    pub effort: Option<String>,
     #[ts(type = "number | null")]
     pub context_tokens: Option<u64>,
     pub worktree_path: String,
@@ -100,6 +102,8 @@ pub struct SubagentView {
     pub kind: Option<String>,
     pub description: Option<String>,
     pub last_tool: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
     pub running: bool,
     #[ts(type = "number")]
     pub started_at: i64,
@@ -169,6 +173,8 @@ pub struct TimelineEntryView {
     pub text: String,
     #[ts(type = "number | null")]
     pub at: Option<i64>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
@@ -191,6 +197,8 @@ impl From<crate::ports::TimelineItem> for TimelineEntryView {
             },
             text: item.text,
             at: item.at,
+            model: item.model,
+            effort: item.effort,
         }
     }
 }
@@ -260,6 +268,7 @@ pub(crate) fn session_view(s: &Session, summary: Option<&TranscriptSummary>, can
         last_reply: summary.last_reply.clone(),
         last_action: summary.last_action.clone(),
         model: summary.model.clone(),
+        effort: summary.effort.clone(),
         context_tokens: summary.context_tokens,
         worktree_path: s.workspace.worktree_path.clone(),
         branch: s.workspace.branch.clone(),
@@ -275,6 +284,8 @@ pub(crate) fn session_view(s: &Session, summary: Option<&TranscriptSummary>, can
                     description: d.description,
                     // El transcript da más detalle ("Grep · patrón"); el hook, al menos el nombre.
                     last_tool: d.last_tool.or_else(|| a.current_tool.clone()),
+                    model: d.model,
+                    effort: d.effort,
                     running: a.is_running(),
                     started_at: a.started_at.0,
                     finished_at: a.finished_at.map(|t| t.0),

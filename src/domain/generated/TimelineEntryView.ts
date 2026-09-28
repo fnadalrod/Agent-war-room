@@ -5,4 +5,4 @@ export type TimelineEntryView = {
 /**
  * "prompt" (tú), "reply" (el agente, Markdown) o "tool" (resumen de una herramienta).
  */
-kind: TimelineKindView, text: string, at: number | null, };
+kind: TimelineKindView, text: string, at: number | null, model: string | null, effort: string | null, };

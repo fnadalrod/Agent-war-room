@@ -39,15 +39,15 @@ Más contexto en [la guía del banco](https://example.com/banco).`;
 function demoTimeline(s: SessionView): TimelineEntryView[] {
   const at = (m: number) => minutes(m);
   return [
-    { kind: "prompt", text: s.first_prompt ?? "¿Puedes revisar esto?", at: at(40) },
-    { kind: "tool", text: "Read · banco.md", at: at(39) },
-    { kind: "tool", text: "Grep · bloque V", at: at(39) },
-    { kind: "tool", text: "Read · runner.ts", at: at(38) },
-    { kind: "reply", text: "Veo que el runner no espera a la base de datos. Lo compruebo con el log del último pase.", at: at(37) },
-    { kind: "tool", text: "Bash · npm run banco -- --dry-run", at: at(30) },
-    { kind: "prompt", text: "Vale, documenta el relevo y no toques el runner todavía.", at: at(12) },
-    { kind: "tool", text: "Edit · banco.md", at: at(8) },
-    { kind: "reply", text: s.last_reply ?? DEMO_REPLY, at: at(6) },
+    { kind: "prompt", text: s.first_prompt ?? "¿Puedes revisar esto?", at: at(40), model: null, effort: null },
+    { kind: "tool", text: "Read · banco.md", at: at(39), model: "claude-sonnet-5", effort: "medium" },
+    { kind: "tool", text: "Grep · bloque V", at: at(39), model: "claude-sonnet-5", effort: "medium" },
+    { kind: "tool", text: "Read · runner.ts", at: at(38), model: "claude-sonnet-5", effort: "medium" },
+    { kind: "reply", text: "Veo que el runner no espera a la base de datos. Lo compruebo con el log del último pase.", at: at(37), model: "claude-sonnet-5", effort: "medium" },
+    { kind: "tool", text: "Bash · npm run banco -- --dry-run", at: at(30), model: "claude-sonnet-5", effort: "medium" },
+    { kind: "prompt", text: "Vale, documenta el relevo y no toques el runner todavía.", at: at(12), model: null, effort: null },
+    { kind: "tool", text: "Edit · banco.md", at: at(8), model: "claude-opus-5-5", effort: "high" },
+    { kind: "reply", text: s.last_reply ?? DEMO_REPLY, at: at(6), model: "claude-opus-5-5", effort: "high" },
   ];
 }
 
@@ -61,6 +61,7 @@ function session(p: Partial<SessionView> & Pick<SessionView, "id" | "attention" 
     last_reply: null,
     last_action: null,
     model: "claude-opus-5-5",
+    effort: "high",
     context_tokens: 84_000,
     worktree_path: "/home/demo/code/app",
     branch: "main",
@@ -118,9 +119,9 @@ function initialRooms(): RoomView[] {
           is_linked_worktree: true,
           in_warp: true,
           subagents: [
-            { id: "x1", kind: "Explore", description: "Buscar usos del header", last_tool: "Grep · InkyHeader", running: true, started_at: minutes(3), finished_at: null },
-            { id: "x2", kind: "general-purpose", description: "Revisar estilos", last_tool: "Read · header.scss", running: true, started_at: minutes(2), finished_at: null },
-            { id: "x3", kind: "Explore", description: "Mapa de componentes", last_tool: null, running: false, started_at: minutes(9), finished_at: minutes(5) },
+            { id: "x1", kind: "Explore", description: "Buscar usos del header", last_tool: "Grep · InkyHeader", model: "claude-haiku-4-5", effort: null, running: true, started_at: minutes(3), finished_at: null },
+            { id: "x2", kind: "general-purpose", description: "Revisar estilos", last_tool: "Read · header.scss", model: "claude-opus-5-5", effort: "medium", running: true, started_at: minutes(2), finished_at: null },
+            { id: "x3", kind: "Explore", description: "Mapa de componentes", last_tool: null, model: "claude-haiku-4-5", effort: null, running: false, started_at: minutes(9), finished_at: minutes(5) },
           ],
         }),
         session({
@@ -151,6 +152,8 @@ function initialRooms(): RoomView[] {
           status_label: "Bash",
           last_action: "Bash · go test ./...",
           title: "Permisos por rol",
+          model: "claude-sonnet-5",
+          effort: "medium",
           skills: [{ name: "run-epic", source: "project", by_user: true, by_agent: true, count: 2, last_at: minutes(2) }],
           worktree_path: "/code/kainban",
           tmux_pane: "%4",
@@ -269,10 +272,10 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
           first_prompt: `${a.description ?? "Tarea"}: localiza todos los usos y resume dónde tocar.`,
           last_reply: a.running ? null : "He encontrado **12 componentes**:\n\n- `InkyHeader` en 4 páginas\n- `ThemeToggle` en 2",
           timeline: [
-            { kind: "prompt", text: `${a.description ?? "Tarea"}: localiza todos los usos y resume dónde tocar.`, at: minutes(3) },
-            { kind: "tool", text: "Grep · InkyHeader", at: minutes(3) },
-            { kind: "tool", text: "Read · app.component.html", at: minutes(2) },
-            ...(a.running ? [] : [{ kind: "reply" as const, text: "He encontrado **12 componentes**.", at: minutes(1) }]),
+            { kind: "prompt", text: `${a.description ?? "Tarea"}: localiza todos los usos y resume dónde tocar.`, at: minutes(3), model: null, effort: null },
+            { kind: "tool", text: "Grep · InkyHeader", at: minutes(3), model: a.model, effort: a.effort },
+            { kind: "tool", text: "Read · app.component.html", at: minutes(2), model: a.model, effort: a.effort },
+            ...(a.running ? [] : [{ kind: "reply" as const, text: "He encontrado **12 componentes**.", at: minutes(1), model: a.model, effort: a.effort }]),
           ],
         };
       },

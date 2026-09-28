@@ -80,6 +80,14 @@ export class WarRoomStore {
     this.setFilter({ ...this.state.filter, skills: toggle(this.state.filter.skills, name) });
   }
 
+  toggleModelFilter(model: string) {
+    this.setFilter({ ...this.state.filter, models: toggle(this.state.filter.models, model) });
+  }
+
+  toggleEffortFilter(effort: string) {
+    this.setFilter({ ...this.state.filter, efforts: toggle(this.state.filter.efforts, effort) });
+  }
+
   toggleSourceFilter(source: SkillSourceView) {
     this.setFilter({ ...this.state.filter, sources: toggle(this.state.filter.sources, source) });
   }

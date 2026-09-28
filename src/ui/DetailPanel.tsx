@@ -8,7 +8,7 @@ import {
   deskName,
   extraActivity,
   isWritable,
-  modelName,
+  modelAndEffort,
   toolDigest,
   whereItLives,
   type SessionView,
@@ -62,7 +62,7 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
           {s.branch && <span className="branch">{s.branch}</span>}
           {s.is_linked_worktree && <span className="tag">worktree</span>}
           <span className="muted">
-            {[modelName(s), contextLabel(s) && `${contextLabel(s)} ctx`, `${s.turns} turnos`, whereItLives(s)]
+            {[modelAndEffort(s.model, s.effort), contextLabel(s) && `${contextLabel(s)} ctx`, `${s.turns} turnos`, whereItLives(s)]
               .filter(Boolean)
               .join(" · ")}
           </span>
@@ -136,6 +136,7 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
                     <span className="dot" data-attention={a.running ? "working" : "offline"} />
                     <span className="who">{agentName(a)}</span>
                     {a.kind && a.description && <span className="tag">{a.kind}</span>}
+                    {a.model && <span className="tag">{modelAndEffort(a.model, a.effort)}</span>}
                     <span className="muted agent-doing">{a.running ? (a.last_tool ?? "trabajando") : "terminado"}</span>
                   </button>
                 </li>
@@ -197,6 +198,7 @@ function SubagentPanel({ session: s, agent, preview, store, now, onLink }: Subag
             {agent?.running ? "Trabajando" : "Terminado"}
           </span>
           {agent?.kind && <span className="tag">{agent.kind}</span>}
+          {agent?.model && <span className="tag">{modelAndEffort(agent.model, agent.effort)}</span>}
           {agent && (
             <span className="muted">
               {agent.running
@@ -281,20 +283,31 @@ function Actions({ s, store }: { s: SessionView; store: WarRoomStore }) {
   );
 }
 
+/** `setting`: modelo y esfuerzo, solo cuando cambian respecto a lo anterior del agente. */
 type Block =
-  | { kind: "prompt" | "reply"; text: string; at: number | null }
-  | { kind: "tools"; labels: string[]; at: number | null };
+  | { kind: "prompt" | "reply"; text: string; at: number | null; setting: string | null }
+  | { kind: "tools"; labels: string[]; at: number | null; setting: string | null };
 
-/** Agrupa herramientas seguidas para que la conversación se lea de un vistazo. */
-function blocks(items: TimelineEntryView[]): Block[] {
+/**
+ * Agrupa herramientas seguidas para que la conversación se lea de un vistazo, y anota el modelo y
+ * el esfuerzo donde cambian (p. ej. tras un /model o un /effort).
+ */
+export function blocks(items: TimelineEntryView[]): Block[] {
   const out: Block[] = [];
+  let current: string | null = null;
   for (const item of items) {
+    let setting: string | null = null;
+    if (item.kind !== "prompt" && (item.model || item.effort)) {
+      const now = modelAndEffort(item.model, item.effort);
+      if (now !== current) setting = now;
+      current = now;
+    }
     const last = out[out.length - 1];
     if (item.kind === "tool") {
-      if (last?.kind === "tools") last.labels.push(item.text);
-      else out.push({ kind: "tools", labels: [item.text], at: item.at });
+      if (last?.kind === "tools" && !setting) last.labels.push(item.text);
+      else out.push({ kind: "tools", labels: [item.text], at: item.at, setting });
     } else {
-      out.push({ kind: item.kind, text: item.text, at: item.at });
+      out.push({ kind: item.kind, text: item.text, at: item.at, setting });
     }
   }
   return out;
@@ -315,6 +328,7 @@ function Timeline({
     <ol className="timeline">
       {blocks(items).map((b, i) => (
         <li key={i} className={`tl-${b.kind}`}>
+          {b.setting && <span className="tl-setting">{b.setting}</span>}
           {b.kind === "prompt" && (
             <>
               <span className="tl-who">

@@ -86,6 +86,8 @@ pub struct TranscriptSummary {
     /// Última herramienta usada con su argumento principal: "Bash · cargo test".
     pub last_action: Option<String>,
     pub model: Option<String>,
+    /// Esfuerzo de razonamiento del último turno ("low", "medium", "high"…).
+    pub effort: Option<String>,
     /// Tokens de contexto del último turno (entrada + caché).
     pub context_tokens: Option<u64>,
     pub subagents: Vec<SubagentDetail>,
@@ -96,6 +98,8 @@ pub struct SubagentDetail {
     pub id: String,
     pub description: Option<String>,
     pub last_tool: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,6 +118,9 @@ pub struct TimelineItem {
     pub text: String,
     /// Milisegundos desde epoch, si el transcript lo dice.
     pub at: Option<i64>,
+    /// Con qué modelo y esfuerzo se produjo (solo lo que hace el agente).
+    pub model: Option<String>,
+    pub effort: Option<String>,
 }
 
 /// Lo que dice el transcript de un subagente.

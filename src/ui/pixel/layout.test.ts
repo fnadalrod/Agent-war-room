@@ -53,6 +53,8 @@ describe("layoutScene", () => {
       kind: null,
       description: null,
       last_tool: null,
+      model: null,
+      effort: null,
       running: true,
       started_at: i,
       finished_at: null,

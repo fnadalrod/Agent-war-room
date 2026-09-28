@@ -47,8 +47,31 @@ export function shortId(s: SessionView): string {
 }
 
 /** "claude-opus-5-5" → "opus-5-5". */
+export function shortModel(model: string | null | undefined): string | null {
+  return model?.replace(/^claude-/, "") ?? null;
+}
+
 export function modelName(s: SessionView): string | null {
-  return s.model?.replace(/^claude-/, "") ?? null;
+  return shortModel(s.model);
+}
+
+const EFFORT_LABEL: Record<string, string> = {
+  low: "bajo",
+  medium: "medio",
+  high: "alto",
+  xhigh: "muy alto",
+  max: "máximo",
+};
+
+/** Esfuerzo legible: "high" → "alto"; los que no conocemos, tal cual. */
+export function effortName(effort: string | null | undefined): string | null {
+  return effort ? (EFFORT_LABEL[effort] ?? effort) : null;
+}
+
+/** "opus-5-5 · alto". */
+export function modelAndEffort(model: string | null | undefined, effort: string | null | undefined): string | null {
+  const parts = [shortModel(model), effortName(effort) && `esfuerzo ${effortName(effort)}`].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
 }
 
 /** 152340 → "152k". */
@@ -129,15 +152,23 @@ export const SKILL_SOURCE_LABEL: Record<SkillSourceView, string> = {
 export const SKILL_SOURCES: SkillSourceView[] = ["project", "personal", "plugin", "builtin"];
 
 /** Qué se quiere ver. Listas vacías: sin filtrar por ese criterio. */
-export type Filter = { repos: string[]; skills: string[]; sources: SkillSourceView[] };
+export type Filter = {
+  repos: string[];
+  skills: string[];
+  sources: SkillSourceView[];
+  models: string[];
+  efforts: string[];
+};
 
-export const NO_FILTER: Filter = { repos: [], skills: [], sources: [] };
+export const NO_FILTER: Filter = { repos: [], skills: [], sources: [], models: [], efforts: [] };
 
 export function isFiltering(f: Filter): boolean {
-  return f.repos.length > 0 || f.skills.length > 0 || f.sources.length > 0;
+  return [f.repos, f.skills, f.sources, f.models, f.efforts].some((l) => l.length > 0);
 }
 
 function matches(s: SessionView, f: Filter): boolean {
+  if (f.models.length > 0 && !(s.model && f.models.includes(s.model))) return false;
+  if (f.efforts.length > 0 && !(s.effort && f.efforts.includes(s.effort))) return false;
   if (f.skills.length > 0 && !s.skills.some((k) => f.skills.includes(k.name))) return false;
   if (f.sources.length > 0 && !s.skills.some((k) => f.sources.includes(k.source))) return false;
   return true;
@@ -156,8 +187,28 @@ export function applyFilter(view: WarRoomView, f: Filter): WarRoomView {
 export type RepoOption = { id: string; name: string; sessions: number };
 export type SkillOption = { name: string; source: SkillSourceView; sessions: number; byUser: boolean; byAgent: boolean };
 
+export type ValueOption = { value: string; sessions: number };
+
+const EFFORT_ORDER = ["low", "medium", "high", "xhigh", "max"];
+
+function countValues(values: (string | null)[]): ValueOption[] {
+  const counts = new Map<string, number>();
+  for (const v of values) if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+  return [...counts].map(([value, sessions]) => ({ value, sessions }));
+}
+
 /** Opciones para la barra de filtros, sacadas de lo que hay en la sala. */
-export function filterOptions(view: WarRoomView): { repos: RepoOption[]; skills: SkillOption[] } {
+export function filterOptions(view: WarRoomView): {
+  repos: RepoOption[];
+  skills: SkillOption[];
+  models: ValueOption[];
+  efforts: ValueOption[];
+} {
+  const sessions = view.rooms.flatMap((r) => r.sessions);
+  const models = countValues(sessions.map((s) => s.model)).sort((a, b) => b.sessions - a.sessions);
+  const efforts = countValues(sessions.map((s) => s.effort)).sort(
+    (a, b) => (EFFORT_ORDER.indexOf(a.value) + 1 || 99) - (EFFORT_ORDER.indexOf(b.value) + 1 || 99),
+  );
   const repos = view.rooms
     .map((r) => ({ id: r.repo_id, name: r.repo_name, sessions: r.sessions.length }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -171,7 +222,12 @@ export function filterOptions(view: WarRoomView): { repos: RepoOption[]; skills:
       skills.set(k.name, known);
     }
   }
-  return { repos, skills: [...skills.values()].sort((a, b) => b.sessions - a.sessions || a.name.localeCompare(b.name)) };
+  return {
+    repos,
+    skills: [...skills.values()].sort((a, b) => b.sessions - a.sessions || a.name.localeCompare(b.name)),
+    models,
+    efforts,
+  };
 }
 
 export function toggle<T>(list: T[], item: T): T[] {

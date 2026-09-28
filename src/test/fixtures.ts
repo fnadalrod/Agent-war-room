@@ -14,6 +14,7 @@ export function aSession(p: Partial<SessionView> = {}): SessionView {
     last_reply: null,
     last_action: null,
     model: null,
+    effort: null,
     context_tokens: null,
     worktree_path: "/code/app",
     branch: "main",

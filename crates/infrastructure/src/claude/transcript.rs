@@ -45,6 +45,7 @@ struct Facts {
     last_reply: Option<String>,
     last_action: Option<String>,
     model: Option<String>,
+    effort: Option<String>,
     context_tokens: Option<u64>,
 }
 
@@ -99,12 +100,15 @@ impl TranscriptReader for ClaudeTranscriptReader {
         let subagent_dir = main.with_extension("").join("subagents");
         let subagents = subagent_ids
             .iter()
-            .map(|id| SubagentDetail {
-                id: id.clone(),
-                description: self.description(&subagent_dir.join(format!("agent-{id}.meta.json"))),
-                last_tool: self
-                    .facts(&subagent_dir.join(format!("agent-{id}.jsonl")))
-                    .and_then(|f| f.last_action),
+            .map(|id| {
+                let facts = self.facts(&subagent_dir.join(format!("agent-{id}.jsonl"))).unwrap_or_default();
+                SubagentDetail {
+                    id: id.clone(),
+                    description: self.description(&subagent_dir.join(format!("agent-{id}.meta.json"))),
+                    last_tool: facts.last_action,
+                    model: facts.model,
+                    effort: facts.effort,
+                }
             })
             .collect();
 
@@ -115,6 +119,7 @@ impl TranscriptReader for ClaudeTranscriptReader {
             last_reply: facts.last_reply,
             last_action: facts.last_action,
             model: facts.model,
+            effort: facts.effort,
             context_tokens: facts.context_tokens,
             subagents,
         })
@@ -186,7 +191,8 @@ fn timeline_items(entry: &Value, sidechain: bool) -> Vec<TimelineItem> {
         return Vec::new();
     }
     let at = entry.get("timestamp").and_then(Value::as_str).and_then(parse_iso_ms);
-    let item = |kind, text: String| TimelineItem { kind, text, at };
+    let item = |kind, text: String| TimelineItem { kind, text, at, model: None, effort: None };
+    let by_agent = |kind, text: String| TimelineItem { kind, text, at, model: model_of(entry), effort: effort_of(entry) };
     match entry.get("type").and_then(Value::as_str) {
         Some("user") => match entry.pointer("/message/content") {
             Some(Value::String(prompt)) if !prompt.starts_with('<') && !prompt.trim().is_empty() => {
@@ -212,11 +218,11 @@ fn timeline_items(entry: &Value, sidechain: bool) -> Vec<TimelineItem> {
                     .and_then(Value::as_str)
                     .map(str::trim)
                     .filter(|t| !t.is_empty())
-                    .map(|t| item(TimelineKind::Reply, cap(t, REPLY_MAX_CHARS))),
+                    .map(|t| by_agent(TimelineKind::Reply, cap(t, REPLY_MAX_CHARS))),
                 Some("tool_use") => block
                     .get("name")
                     .and_then(Value::as_str)
-                    .map(|name| item(TimelineKind::Tool, tool_label(name, block.get("input")))),
+                    .map(|name| by_agent(TimelineKind::Tool, tool_label(name, block.get("input")))),
                 _ => None,
             })
             .collect(),
@@ -311,12 +317,22 @@ fn absorb(facts: &mut Facts, entry: &Value) {
     }
 }
 
+/// Modelo real del mensaje (los sintéticos vienen como `<synthetic>`).
+fn model_of(entry: &Value) -> Option<String> {
+    entry.pointer("/message/model").and_then(Value::as_str).filter(|m| !m.starts_with('<')).map(str::to_owned)
+}
+
+fn effort_of(entry: &Value) -> Option<String> {
+    entry.get("effort").and_then(Value::as_str).filter(|e| !e.is_empty()).map(str::to_owned)
+}
+
 fn absorb_assistant(facts: &mut Facts, entry: &Value) {
     let Some(message) = entry.get("message") else { return };
-    if let Some(model) = message.get("model").and_then(Value::as_str)
-        && !model.starts_with('<')
-    {
-        facts.model = Some(model.to_owned());
+    if let Some(model) = model_of(entry) {
+        facts.model = Some(model);
+    }
+    if let Some(effort) = effort_of(entry) {
+        facts.effort = Some(effort);
     }
     if let Some(usage) = message.get("usage") {
         let n = |k: &str| usage.get(k).and_then(Value::as_u64).unwrap_or(0);
@@ -358,6 +374,7 @@ mod tests {
     fn assistant(content: Value) -> String {
         line(json!({
             "type": "assistant",
+            "effort": "high",
             "message": {
                 "model": "claude-opus-5-5",
                 "content": content,
@@ -385,6 +402,7 @@ mod tests {
         assert_eq!(s.last_reply.as_deref(), Some("Voy a mirar.\n\nPrimero"), "conserva el Markdown");
         assert_eq!(s.last_action.as_deref(), Some("Read · login.rs"));
         assert_eq!(s.model.as_deref(), Some("claude-opus-5-5"));
+        assert_eq!(s.effort.as_deref(), Some("high"));
         assert_eq!(s.context_tokens, Some(1502));
     }
 
@@ -429,6 +447,7 @@ mod tests {
         let s = ClaudeTranscriptReader::new().read(path.to_str().unwrap(), &["a1".into(), "a2".into()]).unwrap();
         assert_eq!(s.subagents[0].description.as_deref(), Some("Buscar usos de login"));
         assert_eq!(s.subagents[0].last_tool.as_deref(), Some("Grep · fn login"));
+        assert_eq!(s.subagents[0].model.as_deref(), Some("claude-opus-5-5"));
         assert_eq!(s.subagents[1], SubagentDetail { id: "a2".into(), ..Default::default() });
     }
 
@@ -467,6 +486,8 @@ mod tests {
             ]
         );
         assert_eq!(items[0].at, Some(1_790_549_079_232));
+        assert_eq!((items[0].model.as_deref(), items[2].model.as_deref()), (None, Some("claude-opus-5-5")), "solo lo del agente");
+        assert_eq!(items[2].effort.as_deref(), Some("high"));
 
         let last = ClaudeTranscriptReader::new().recent(path.to_str().unwrap(), 1);
         assert_eq!(last.len(), 1);
