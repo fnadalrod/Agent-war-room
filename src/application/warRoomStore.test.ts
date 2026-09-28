@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDemo } from "../infrastructure/demoGateway";
 import { aSession } from "../test/fixtures";
+import { NO_FILTER, type Filter } from "../domain/attention";
 import { WarRoomStore } from "./warRoomStore";
 
 function storeWith(overrides: Partial<ReturnType<typeof createDemo>["rooms"]> = {}) {
@@ -38,6 +39,20 @@ describe("WarRoomStore", () => {
     store.backToSession();
     expect(store.snapshot().detail?.agent).toBeNull();
     expect(store.snapshot().detail?.id).toBe("b2c3d4e5-tintero-inky");
+  });
+
+  it("recuerda el filtro entre arranques", () => {
+    let saved: Filter | null = { ...NO_FILTER, repos: ["/code/kainban/.git"] };
+    const storage = { load: () => saved, save: (f: Filter) => void (saved = f) };
+    const demo = createDemo();
+    const store = new WarRoomStore(demo.rooms, demo.integration, demo.terminals, storage);
+    expect(store.snapshot().filter.repos).toEqual(["/code/kainban/.git"]);
+
+    store.toggleSkillFilter("close-task");
+    store.toggleRepoFilter("/code/kainban/.git");
+    expect(saved).toEqual({ ...NO_FILTER, skills: ["close-task"] });
+    store.clearFilter();
+    expect(saved).toEqual(NO_FILTER);
   });
 
   it("avisa sin romper cuando no se puede escribir en una sesión", async () => {

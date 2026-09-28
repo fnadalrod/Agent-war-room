@@ -10,7 +10,7 @@ use awr_application::ports::*;
 use awr_application::view::{AttentionView, SessionView, WarRoomView};
 use awr_application::{Ports, WarRoomService};
 use awr_domain::SessionId;
-use awr_infrastructure::claude::{ClaudeProvider, ClaudeTranscriptReader};
+use awr_infrastructure::claude::{ClaudeProvider, ClaudeTranscriptReader, FsSkillCatalog};
 use awr_infrastructure::git::GitRepoResolver;
 use awr_infrastructure::ingress;
 use awr_infrastructure::launch::{DesktopLauncher, TerminalInput, inherited_agent_markers};
@@ -92,6 +92,7 @@ impl Room {
             navigator: Arc::new(NoWindows),
             launcher: Arc::new(DesktopLauncher::new(pty.clone(), dir.join("warp"))),
             input: Arc::new(TerminalInput::new(pty.clone())),
+            skills: Arc::new(FsSkillCatalog::new(dir.join("home/.claude"))),
         }));
         let listener = rt.block_on(ingress::bind(&runtime.join("agent-war-room/ingress.sock"))).unwrap();
         let ingest = service.clone();

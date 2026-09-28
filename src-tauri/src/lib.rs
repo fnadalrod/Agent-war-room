@@ -6,7 +6,7 @@ mod tray;
 
 use awr_application::{Ports, WarRoomService};
 use awr_application::ports::IntegrationInstaller;
-use awr_infrastructure::claude::{ClaudeHookInstaller, ClaudeProvider, ClaudeTranscriptReader};
+use awr_infrastructure::claude::{ClaudeHookInstaller, ClaudeProvider, ClaudeTranscriptReader, FsSkillCatalog};
 use awr_infrastructure::desktop::DesktopNavigator;
 use awr_infrastructure::git::GitRepoResolver;
 use awr_infrastructure::sqlite::SqliteEventStore;
@@ -100,6 +100,7 @@ fn compose(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         navigator: Arc::new(DesktopNavigator::detect()),
         launcher: Arc::new(DesktopLauncher::new(pty.clone(), warp_tab_configs)),
         input: Arc::new(TerminalInput::new(pty)),
+        skills: Arc::new(FsSkillCatalog::new(dirs::home_dir().ok_or("sin HOME")?.join(".claude"))),
     }));
     service.restore()?;
     app.manage(service.clone());

@@ -9,8 +9,10 @@ mod session;
 mod workspace;
 
 pub use attention::Attention;
-pub use event::{EndReason, SessionContext, SessionEvent, SessionEventKind, WaitReason};
+pub use event::{
+    EndReason, SessionContext, SessionEvent, SessionEventKind, SkillInvoker, SkillSource, WaitReason,
+};
 pub use ids::{ProviderKind, RepoId, SessionId, Timestamp};
 pub use room::{AttentionChange, WarRoom};
-pub use session::{Session, SessionStatus, Subagent};
+pub use session::{Session, SessionStatus, SkillUse, Subagent};
 pub use workspace::{ProcessInfo, TerminalHost, Workspace};

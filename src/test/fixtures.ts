@@ -19,6 +19,7 @@ export function aSession(p: Partial<SessionView> = {}): SessionView {
     branch: "main",
     is_linked_worktree: false,
     subagents: [],
+    skills: [],
     turns: 0,
     started_at: 0,
     last_activity_at: 0,

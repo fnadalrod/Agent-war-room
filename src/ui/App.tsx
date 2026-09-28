@@ -1,8 +1,9 @@
 import { lazy, Suspense, useState } from "react";
 import type { WarRoomStore } from "../application/warRoomStore";
-import { ATTENTION_LABEL, archivedCount, countBy } from "../domain/attention";
+import { applyFilter, ATTENTION_LABEL, archivedCount, countBy } from "../domain/attention";
 import { AttentionQueue } from "./AttentionQueue";
 import { DetailPanel } from "./DetailPanel";
+import { FilterBar } from "./FilterBar";
 import { IntegrationBadge, IntegrationBar } from "./IntegrationBar";
 import { WarRoomScene } from "./pixel/WarRoomScene";
 import { RoomPanel } from "./RoomPanel";
@@ -18,10 +19,12 @@ export function App({ store }: { store: WarRoomStore }) {
   const now = useNow();
   const [showArchived, setShowArchived] = useState(false);
   const [mode, setMode] = usePreference("awr.view", "classic", VIEWS);
-  const view = state.view;
+  const fullView = state.view;
+  // Lo que se ve pasa por el filtro; la cabecera y la bandeja cuentan siempre la sala entera.
+  const view = fullView ? applyFilter(fullView, state.filter) : null;
   const detailFallback =
     state.detail && view ? (view.rooms.flatMap((r) => r.sessions).find((x) => x.id === state.detail!.id) ?? null) : null;
-  const aggregate = view?.aggregate ?? "offline";
+  const aggregate = fullView?.aggregate ?? "offline";
 
   return (
     <div className="app" data-terminal={state.terminal != null} data-detail={state.detail != null}>
@@ -31,11 +34,11 @@ export function App({ store }: { store: WarRoomStore }) {
           <h1>Agent War Room</h1>
         </div>
 
-        {view && (
+        {fullView && (
           <div className="counters" aria-label="Resumen">
             {(["needs_you", "finished", "working"] as const).map((a) => (
-              <span key={a} className="counter" data-attention={a} data-zero={countBy(view, a) === 0}>
-                <b>{countBy(view, a)}</b> {ATTENTION_LABEL[a]}
+              <span key={a} className="counter" data-attention={a} data-zero={countBy(fullView, a) === 0}>
+                <b>{countBy(fullView, a)}</b> {ATTENTION_LABEL[a]}
               </span>
             ))}
           </div>
@@ -77,6 +80,8 @@ export function App({ store }: { store: WarRoomStore }) {
 
         <IntegrationBar status={state.integration} busy={state.busy} store={store} />
 
+        {fullView && view && <FilterBar view={fullView} shown={view} filter={state.filter} store={store} />}
+
         {view && mode === "classic" && <AttentionQueue view={view} store={store} now={now} />}
 
         {view && mode === "pixel" && (
@@ -95,7 +100,15 @@ export function App({ store }: { store: WarRoomStore }) {
             .map((room) => (
               <RoomPanel key={room.repo_id} room={room} store={store} now={now} showArchived={showArchived} />
             ))}
-          {view && view.rooms.length === 0 && (
+          {view && fullView && view.rooms.length === 0 && fullView.rooms.length > 0 && (
+            <div className="empty">
+              <p>Nada coincide con el filtro.</p>
+              <button className="ghost" onClick={() => store.clearFilter()}>
+                Quitar filtros
+              </button>
+            </div>
+          )}
+          {fullView && fullView.rooms.length === 0 && (
             <div className="empty">
               <p>Sala vacía.</p>
               <p className="muted">Cuando un agente arranque o haga algo, aparecerá aquí su tarjeta.</p>

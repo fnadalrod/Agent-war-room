@@ -24,6 +24,7 @@ import {
   TerminalIcon,
 } from "./icons";
 import { QuickInput } from "./QuickInput";
+import { SkillTags } from "./SkillTag";
 import { since } from "./useStore";
 
 type Props = { session: SessionView; store: WarRoomStore; now: number };
@@ -54,6 +55,7 @@ export function SessionScreen({ session: s, store, now }: Props) {
           )}
         </div>
         <h3 className="card-title">{label}</h3>
+        <SkillTags skills={s.skills} store={store} />
         {extraActivity(s) && <p className="card-activity">{extraActivity(s)}</p>}
         {excerpt && <p className="card-excerpt">{excerpt}</p>}
       </button>

@@ -4,6 +4,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { WarRoomStore } from "./application/warRoomStore";
 import { createDemo } from "./infrastructure/demoGateway";
+import { localFilterStorage } from "./infrastructure/localFilterStorage";
 import { tauriIntegrationGateway, tauriTerminalGateway, tauriWarRoomGateway } from "./infrastructure/tauriGateway";
 import { App } from "./ui/App";
 import "@fontsource-variable/inter";
@@ -14,8 +15,8 @@ import "./ui/styles.css";
 const insideTauri = "__TAURI_INTERNALS__" in window;
 const demo = insideTauri ? null : createDemo();
 const store = demo
-  ? new WarRoomStore(demo.rooms, demo.integration, demo.terminals)
-  : new WarRoomStore(tauriWarRoomGateway, tauriIntegrationGateway, tauriTerminalGateway);
+  ? new WarRoomStore(demo.rooms, demo.integration, demo.terminals, localFilterStorage)
+  : new WarRoomStore(tauriWarRoomGateway, tauriIntegrationGateway, tauriTerminalGateway, localFilterStorage);
 void store.start();
 
 createRoot(document.getElementById("root")!).render(

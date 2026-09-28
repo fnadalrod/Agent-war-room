@@ -1,4 +1,4 @@
-import type { IntegrationStatus, SessionDetail, SubagentPreview, WarRoomView } from "../domain/attention";
+import type { Filter, IntegrationStatus, SessionDetail, SubagentPreview, WarRoomView } from "../domain/attention";
 
 export type Unsubscribe = () => void;
 
@@ -54,4 +54,10 @@ export interface IntegrationGateway {
   /** Arrancar la app (oculta, en la bandeja) al iniciar sesión. */
   autostart(): Promise<boolean>;
   setAutostart(enabled: boolean): Promise<boolean>;
+}
+
+/** Dónde se recuerda el filtro entre arranques (en este equipo). */
+export interface FilterStorage {
+  load(): Filter | null;
+  save(filter: Filter): void;
 }

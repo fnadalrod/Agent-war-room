@@ -16,6 +16,14 @@ pub struct Translated {
     pub cwd: String,
     pub transcript_path: Option<String>,
     pub kind: SessionEventKind,
+    /// Eventos que el mismo hook implica además del principal (p. ej. un `/skill` en el prompt).
+    /// Las `SkillInvoked` llegan con una procedencia provisional; la fija [`SkillCatalog`].
+    pub extra: Vec<SessionEventKind>,
+}
+
+/// Averigua de dónde sale una skill (repo, personal, plugin o integrada).
+pub trait SkillCatalog: Send + Sync {
+    fn classify(&self, name: &str, cwd: &str, worktree: &str) -> awr_domain::SkillSource;
 }
 
 /// Traduce los hooks de un agente concreto (Claude, …) a eventos de dominio.

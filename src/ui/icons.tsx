@@ -118,3 +118,22 @@ export const RobotIcon = (p: IconProps) => (
     <path d="M12 4v4M9 13v2M15 13v2" />
   </Svg>
 );
+
+export const ZapIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z" />
+  </Svg>
+);
+
+export const UserIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="8" r="4" />
+    <path d="M4 21a8 8 0 0 1 16 0" />
+  </Svg>
+);
+
+export const FilterIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 5h18l-7 9v6l-4-2v-4L3 5Z" />
+  </Svg>
+);

@@ -31,6 +31,30 @@ pub enum WaitReason {
     Question,
 }
 
+/// Quién lanzó una skill.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillInvoker {
+    /// Tú, con `/skill` en el prompt.
+    User,
+    /// El agente (o un subagente), por su cuenta.
+    Agent,
+}
+
+/// De dónde sale una skill.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillSource {
+    /// Definida en el repositorio (`.claude/skills`, `.claude/commands`).
+    Project,
+    /// Tuya, para todos los proyectos (`~/.claude/skills`, `~/.claude/commands`).
+    Personal,
+    /// De un plugin (`plugin:skill`).
+    Plugin,
+    /// Integrada en el agente.
+    Builtin,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EndReason {
@@ -62,6 +86,7 @@ pub enum SessionEventKind {
     SubagentTool { id: String, tool: String },
     CompactionStarted,
     Ended { reason: EndReason },
+    SkillInvoked { name: String, by: SkillInvoker, source: SkillSource },
 
     // Intenciones del usuario.
     Seen,

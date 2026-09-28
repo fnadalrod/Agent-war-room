@@ -1,5 +1,22 @@
-import type { IntegrationStatus, SessionDetail, SessionView, SubagentPreview, WarRoomView } from "../domain/attention";
-import type { IntegrationGateway, Launched, LaunchTarget, TerminalGateway, WarRoomGateway } from "./ports";
+import {
+  type Filter,
+  type IntegrationStatus,
+  NO_FILTER,
+  type SessionDetail,
+  type SessionView,
+  type SkillSourceView,
+  type SubagentPreview,
+  toggle,
+  type WarRoomView,
+} from "../domain/attention";
+import type {
+  FilterStorage,
+  IntegrationGateway,
+  Launched,
+  LaunchTarget,
+  TerminalGateway,
+  WarRoomGateway,
+} from "./ports";
 
 export type Toast = { text: string; tone: "ok" | "warn" };
 
@@ -15,6 +32,7 @@ export type OpenTerminal = { id: string; label: string };
 
 export type WarRoomState = {
   view: WarRoomView | null;
+  filter: Filter;
   detail: OpenDetail | null;
   terminal: OpenTerminal | null;
   integration: IntegrationStatus | null;
@@ -28,17 +46,46 @@ const TOAST_MS = 3500;
 
 /** Store sin framework: la UI se suscribe con `useSyncExternalStore`. */
 export class WarRoomStore {
-  private state: WarRoomState = { view: null, detail: null, terminal: null, integration: null, autostart: null, error: null, toast: null, busy: false };
+  private state: WarRoomState = { view: null, filter: NO_FILTER, detail: null, terminal: null, integration: null, autostart: null, error: null, toast: null, busy: false };
   private readonly listeners = new Set<() => void>();
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly rooms: WarRoomGateway;
   private readonly integration: IntegrationGateway;
   readonly terminals: TerminalGateway;
+  private readonly filters: FilterStorage | null;
 
-  constructor(rooms: WarRoomGateway, integration: IntegrationGateway, terminals: TerminalGateway) {
+  constructor(
+    rooms: WarRoomGateway,
+    integration: IntegrationGateway,
+    terminals: TerminalGateway,
+    filters: FilterStorage | null = null,
+  ) {
     this.rooms = rooms;
     this.integration = integration;
     this.terminals = terminals;
+    this.filters = filters;
+    this.state = { ...this.state, filter: filters?.load() ?? NO_FILTER };
+  }
+
+  setFilter(filter: Filter) {
+    this.set({ filter });
+    this.filters?.save(filter);
+  }
+
+  toggleRepoFilter(repoId: string) {
+    this.setFilter({ ...this.state.filter, repos: toggle(this.state.filter.repos, repoId) });
+  }
+
+  toggleSkillFilter(name: string) {
+    this.setFilter({ ...this.state.filter, skills: toggle(this.state.filter.skills, name) });
+  }
+
+  toggleSourceFilter(source: SkillSourceView) {
+    this.setFilter({ ...this.state.filter, sources: toggle(this.state.filter.sources, source) });
+  }
+
+  clearFilter() {
+    this.setFilter(NO_FILTER);
   }
 
   async start(): Promise<() => void> {

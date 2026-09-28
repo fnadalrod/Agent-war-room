@@ -1,8 +1,8 @@
 use crate::ports::{
     AgentLauncher, AgentProvider, ApprovalDecision, ApprovalResponder, Clock, LaunchOutcome,
     LaunchRequest, LaunchTarget, SessionInput, EventStore, FocusOutcome, FocusTarget, Notice, Notifier, PortError,
-    PortResult, ProcessProbe, RepoResolver, TranscriptReader, TranscriptSummary, ViewPublisher,
-    WindowNavigator,
+    PortResult, ProcessProbe, RepoResolver, SkillCatalog, TranscriptReader, TranscriptSummary,
+    ViewPublisher, WindowNavigator,
 };
 use crate::view::{self, SessionDetail, SubagentPreview, WarRoomView};
 use awr_domain::{
@@ -40,6 +40,7 @@ pub struct Ports {
     pub navigator: Arc<dyn WindowNavigator>,
     pub launcher: Arc<dyn AgentLauncher>,
     pub input: Arc<dyn SessionInput>,
+    pub skills: Arc<dyn SkillCatalog>,
 }
 
 pub struct WarRoomService {
@@ -95,9 +96,11 @@ impl WarRoomService {
         }
 
         let workspace = self.ports.resolver.resolve(&translated.cwd);
+        let at = signal.received_at.unwrap_or_else(|| self.ports.clock.now());
+        let worktree = workspace.worktree_path.clone();
         self.commit(SessionEvent {
-            session: translated.session,
-            at: signal.received_at.unwrap_or_else(|| self.ports.clock.now()),
+            session: translated.session.clone(),
+            at,
             context: Some(SessionContext {
                 provider: provider.kind(),
                 workspace,
@@ -106,7 +109,19 @@ impl WarRoomService {
                 cwd: Some(translated.cwd.clone()).filter(|c| !c.is_empty()),
             }),
             kind: translated.kind,
-        })
+        })?;
+
+        for kind in translated.extra {
+            let kind = match kind {
+                SessionEventKind::SkillInvoked { name, by, .. } => {
+                    let source = self.ports.skills.classify(&name, &translated.cwd, &worktree);
+                    SessionEventKind::SkillInvoked { name, by, source }
+                }
+                other => other,
+            };
+            self.commit(SessionEvent { session: translated.session.clone(), at, context: None, kind })?;
+        }
+        Ok(())
     }
 
     pub fn mark_seen(&self, id: SessionId) -> PortResult<()> {
@@ -436,13 +451,24 @@ mod tests {
                 "prompt" => SessionEventKind::PromptSubmitted,
                 "stop" => SessionEventKind::TurnEnded,
                 "ask" => SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: None, detail: None },
+                "slash" => SessionEventKind::PromptSubmitted,
                 _ => return Ok(None),
+            };
+            let extra = if payload["e"] == "slash" {
+                vec![SessionEventKind::SkillInvoked {
+                    name: "close-task".into(),
+                    by: awr_domain::SkillInvoker::User,
+                    source: awr_domain::SkillSource::Builtin,
+                }]
+            } else {
+                vec![]
             };
             Ok(Some(Translated {
                 session: SessionId(payload["s"].as_str().unwrap().into()),
                 cwd: "/code/app".into(),
                 transcript_path: Some("/t.jsonl".into()),
                 kind,
+                extra,
             }))
         }
     }
@@ -552,6 +578,14 @@ mod tests {
         }
     }
 
+    /// Todas las skills son "del repo" en los tests.
+    struct RepoSkills;
+    impl SkillCatalog for RepoSkills {
+        fn classify(&self, _: &str, _: &str, _: &str) -> awr_domain::SkillSource {
+            awr_domain::SkillSource::Project
+        }
+    }
+
     struct Harness {
         svc: WarRoomService,
         store: Arc<MemoryStore>,
@@ -574,6 +608,7 @@ mod tests {
             navigator: rec.clone(),
             launcher: rec.clone(),
             input: rec.clone(),
+            skills: Arc::new(RepoSkills),
         });
         Harness { svc, store, rec, transcript }
     }
@@ -827,6 +862,19 @@ mod tests {
         assert_eq!(preview.first_prompt.as_deref(), Some("encargo de x1"));
         assert!(preview.agent.running);
         assert!(h.svc.subagent_detail(id("a"), "otro", 10).is_err());
+    }
+
+    #[test]
+    fn a_slash_skill_counts_as_prompt_and_skill_with_its_real_source() {
+        let h = harness();
+        h.svc.ingest(signal("a", "slash")).unwrap();
+        let view = h.svc.view();
+        let s = &view.rooms[0].sessions[0];
+        assert_eq!(s.turns, 1);
+        assert_eq!(s.skills.len(), 1);
+        assert_eq!(s.skills[0].name, "close-task");
+        assert_eq!(s.skills[0].source, crate::view::SkillSourceView::Project, "la procedencia la fija el catálogo");
+        assert!(s.skills[0].by_user && !s.skills[0].by_agent);
     }
 
     #[test]

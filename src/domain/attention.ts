@@ -1,10 +1,12 @@
 // Reglas de presentación puras sobre el read model. Sin React ni Tauri.
 import type { AttentionView } from "./generated/AttentionView";
 import type { SessionView } from "./generated/SessionView";
+import type { SkillSourceView } from "./generated/SkillSourceView";
+import type { SkillView } from "./generated/SkillView";
 import type { SubagentView } from "./generated/SubagentView";
 import type { WarRoomView } from "./generated/WarRoomView";
 
-export type { AttentionView, SessionView, WarRoomView };
+export type { AttentionView, SessionView, SkillSourceView, SkillView, WarRoomView };
 export type { RoomView } from "./generated/RoomView";
 export type { SubagentView } from "./generated/SubagentView";
 export type { IntegrationStatus } from "./generated/IntegrationStatus";
@@ -113,4 +115,65 @@ export function toolDigest(labels: string[]): string {
 /** Nombre de un subagente para mostrar: su descripción, su tipo o, en último caso, "subagente". */
 export function agentName(a: SubagentView): string {
   return a.description ?? a.kind ?? "subagente";
+}
+
+// ---------- Skills y filtros ----------
+
+export const SKILL_SOURCE_LABEL: Record<SkillSourceView, string> = {
+  project: "Del repo",
+  personal: "Tuyas",
+  plugin: "De plugins",
+  builtin: "Integradas",
+};
+
+export const SKILL_SOURCES: SkillSourceView[] = ["project", "personal", "plugin", "builtin"];
+
+/** Qué se quiere ver. Listas vacías: sin filtrar por ese criterio. */
+export type Filter = { repos: string[]; skills: string[]; sources: SkillSourceView[] };
+
+export const NO_FILTER: Filter = { repos: [], skills: [], sources: [] };
+
+export function isFiltering(f: Filter): boolean {
+  return f.repos.length > 0 || f.skills.length > 0 || f.sources.length > 0;
+}
+
+function matches(s: SessionView, f: Filter): boolean {
+  if (f.skills.length > 0 && !s.skills.some((k) => f.skills.includes(k.name))) return false;
+  if (f.sources.length > 0 && !s.skills.some((k) => f.sources.includes(k.source))) return false;
+  return true;
+}
+
+/** La sala con solo lo que pasa el filtro; las salas que se quedan vacías desaparecen. */
+export function applyFilter(view: WarRoomView, f: Filter): WarRoomView {
+  if (!isFiltering(f)) return view;
+  const rooms = view.rooms
+    .filter((r) => f.repos.length === 0 || f.repos.includes(r.repo_id))
+    .map((r) => ({ ...r, sessions: r.sessions.filter((s) => matches(s, f)) }))
+    .filter((r) => r.sessions.length > 0);
+  return { ...view, rooms };
+}
+
+export type RepoOption = { id: string; name: string; sessions: number };
+export type SkillOption = { name: string; source: SkillSourceView; sessions: number; byUser: boolean; byAgent: boolean };
+
+/** Opciones para la barra de filtros, sacadas de lo que hay en la sala. */
+export function filterOptions(view: WarRoomView): { repos: RepoOption[]; skills: SkillOption[] } {
+  const repos = view.rooms
+    .map((r) => ({ id: r.repo_id, name: r.repo_name, sessions: r.sessions.length }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const skills = new Map<string, SkillOption>();
+  for (const s of view.rooms.flatMap((r) => r.sessions)) {
+    for (const k of s.skills) {
+      const known = skills.get(k.name) ?? { name: k.name, source: k.source, sessions: 0, byUser: false, byAgent: false };
+      known.sessions += 1;
+      known.byUser ||= k.by_user;
+      known.byAgent ||= k.by_agent;
+      skills.set(k.name, known);
+    }
+  }
+  return { repos, skills: [...skills.values()].sort((a, b) => b.sessions - a.sessions || a.name.localeCompare(b.name)) };
+}
+
+export function toggle<T>(list: T[], item: T): T[] {
+  return list.includes(item) ? list.filter((x) => x !== item) : [...list, item];
 }

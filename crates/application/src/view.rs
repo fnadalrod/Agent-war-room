@@ -71,6 +71,8 @@ pub struct SessionView {
     pub branch: Option<String>,
     pub is_linked_worktree: bool,
     pub subagents: Vec<SubagentView>,
+    /// Skills usadas, la más reciente primero.
+    pub skills: Vec<SkillView>,
     pub turns: u32,
     #[ts(type = "number")]
     pub started_at: i64,
@@ -103,6 +105,41 @@ pub struct SubagentView {
     pub started_at: i64,
     #[ts(type = "number | null")]
     pub finished_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum SkillSourceView {
+    Project,
+    Personal,
+    Plugin,
+    Builtin,
+}
+
+impl From<awr_domain::SkillSource> for SkillSourceView {
+    fn from(s: awr_domain::SkillSource) -> Self {
+        use awr_domain::SkillSource;
+        match s {
+            SkillSource::Project => Self::Project,
+            SkillSource::Personal => Self::Personal,
+            SkillSource::Plugin => Self::Plugin,
+            SkillSource::Builtin => Self::Builtin,
+        }
+    }
+}
+
+/// Una skill usada en la sesión: quién la lanzó y de dónde sale.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct SkillView {
+    pub name: String,
+    pub source: SkillSourceView,
+    pub by_user: bool,
+    pub by_agent: bool,
+    pub count: u32,
+    #[ts(type = "number")]
+    pub last_at: i64,
 }
 
 /// Vista previa de un subagente: qué le encargaron, qué contestó y qué fue haciendo.
@@ -244,6 +281,22 @@ pub(crate) fn session_view(s: &Session, summary: Option<&TranscriptSummary>, can
                 }
             })
             .collect(),
+        skills: {
+            let mut skills: Vec<SkillView> = s
+                .skills
+                .values()
+                .map(|k| SkillView {
+                    name: k.name.clone(),
+                    source: k.source.into(),
+                    by_user: k.by_user,
+                    by_agent: k.by_agent,
+                    count: k.count,
+                    last_at: k.last_at.0,
+                })
+                .collect();
+            skills.sort_by_key(|k| std::cmp::Reverse(k.last_at));
+            skills
+        },
         turns: s.turns,
         started_at: s.started_at.0,
         last_activity_at: s.last_activity_at.0,

@@ -284,6 +284,20 @@ mod tests {
     }
 
     #[test]
+    fn skills_are_counted_with_who_launched_them() {
+        let mut room = WarRoom::new();
+        let skill = |by| SessionEventKind::SkillInvoked { name: "close-task".into(), by, source: SkillSource::Project };
+        room.apply(signal("s", 1, SessionEventKind::PromptSubmitted));
+        room.apply(signal("s", 2, skill(SkillInvoker::Agent)));
+        room.apply(signal("s", 3, skill(SkillInvoker::User)));
+        let s = room.get(&SessionId("s".into())).unwrap();
+        let used = &s.skills["close-task"];
+        assert_eq!((used.count, used.by_user, used.by_agent), (2, true, true));
+        assert_eq!(used.last_at, Timestamp(3));
+        assert_eq!(attention(&room, "s"), Attention::Working, "una skill no cambia el estado");
+    }
+
+    #[test]
     fn events_roundtrip_through_json() {
         let e = signal("s", 1, SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: None, detail: None });
         let json = serde_json::to_string(&e).unwrap();

@@ -1,6 +1,6 @@
 use crate::{
-    Attention, EndReason, ProviderKind, SessionContext, SessionEventKind, SessionId, TerminalHost,
-    Timestamp, WaitReason, Workspace,
+    Attention, EndReason, ProviderKind, SessionContext, SessionEventKind, SessionId, SkillInvoker,
+    SkillSource, TerminalHost, Timestamp, WaitReason, Workspace,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -36,6 +36,17 @@ impl Subagent {
     }
 }
 
+/// Una skill usada en la sesión.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillUse {
+    pub name: String,
+    pub source: SkillSource,
+    pub by_user: bool,
+    pub by_agent: bool,
+    pub count: u32,
+    pub last_at: Timestamp,
+}
+
 /// Subagentes terminados que se conservan por sesión (los más recientes).
 const KEPT_FINISHED_SUBAGENTS: usize = 6;
 
@@ -50,6 +61,8 @@ pub struct Session {
     pub cwd: Option<String>,
     pub status: SessionStatus,
     pub subagents: BTreeMap<String, Subagent>,
+    #[serde(default)]
+    pub skills: BTreeMap<String, SkillUse>,
     pub started_at: Timestamp,
     pub last_activity_at: Timestamp,
     pub status_since: Timestamp,
@@ -71,6 +84,7 @@ impl Session {
             cwd: context.cwd,
             status: SessionStatus::Idle,
             subagents: BTreeMap::new(),
+            skills: BTreeMap::new(),
             started_at: at,
             last_activity_at: at,
             status_since: at,
@@ -197,6 +211,22 @@ impl Session {
                     }
                     self.forget_old_subagents();
                     self.set_status(SessionStatus::Ended { reason: reason.clone() }, at);
+                }
+            }
+            SessionEventKind::SkillInvoked { name, by, source } => {
+                let skill = self.skills.entry(name.clone()).or_insert_with(|| SkillUse {
+                    name: name.clone(),
+                    source: *source,
+                    by_user: false,
+                    by_agent: false,
+                    count: 0,
+                    last_at: at,
+                });
+                skill.count += 1;
+                skill.last_at = at;
+                match by {
+                    SkillInvoker::User => skill.by_user = true,
+                    SkillInvoker::Agent => skill.by_agent = true,
                 }
             }
             SessionEventKind::Seen => self.unseen = false,

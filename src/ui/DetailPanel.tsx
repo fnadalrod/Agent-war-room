@@ -4,6 +4,7 @@ import {
   agentName,
   ATTENTION_LABEL,
   contextLabel,
+  SKILL_SOURCE_LABEL,
   deskName,
   extraActivity,
   isWritable,
@@ -17,6 +18,7 @@ import {
 import { CheckIcon, CopyIcon, GoIcon, PlayIcon, RobotIcon, TerminalIcon, XIcon } from "./icons";
 import { Markdown } from "./Markdown";
 import { QuickInput } from "./QuickInput";
+import { SkillTag } from "./SkillTag";
 import { since } from "./useStore";
 
 type Props = { detail: OpenDetail; fallback: SessionView | null; store: WarRoomStore; now: number };
@@ -104,6 +106,23 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
           <section>
             <h3>Última respuesta</h3>
             <Markdown text={s.last_reply} onLink={onLink} />
+          </section>
+        )}
+
+        {s.skills.length > 0 && (
+          <section>
+            <h3>Skills</h3>
+            <ul className="skill-list">
+              {s.skills.map((k) => (
+                <li key={k.name}>
+                  <SkillTag skill={k} store={store} />
+                  <span className="muted">
+                    {SKILL_SOURCE_LABEL[k.source]} · {[k.by_user && "la lanzaste tú", k.by_agent && "la lanzó el agente"].filter(Boolean).join(" y ")}
+                    {k.count > 1 && ` · ${k.count} veces`} · {since(k.last_at, now)}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </section>
         )}
 
