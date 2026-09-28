@@ -1382,6 +1382,11 @@ button.icon.help {
   margin-bottom: 8px;
 }
 
+/* Scaled down (side panel open): smooth, or pixelated drops rows of pixels. */
+.pixel-stage canvas[data-shrunk="true"] {
+  image-rendering: auto;
+}
+
 .pixel-rooms .muted {
   font-variant-numeric: tabular-nums;
 }

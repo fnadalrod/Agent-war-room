@@ -13,7 +13,11 @@ console and the lobby next door. Classic and pixel views show the same state; th
   `doorwayAtPoint`, switches): the canvas is the band's height and the transform shifts it up, so the
   sim and hit tests keep working in office coordinates. Idle agents walk down through the doorway.
 
-- **Logical pixels.** The art is drawn in low-resolution logical pixels (office width = CSS width /
+- **Width.** The layout follows the room's width with no side panel open (`roomWidth`: window minus
+  the page margins), so opening the preview never reflows the room or re-seats anyone: the canvas
+  just shrinks keeping its aspect ratio (smoothed while shrunk, `data-shrunk`). Only a window resize
+  relays it out.
+- **Logical pixels.** The art is drawn in low-resolution logical pixels (office width = that width /
   scale, scale 2–4 from `pixelScale`); the canvas has one pixel per CSS pixel and `setTransform(scale)`
   blows the art up. Integer rects only; no smoothing. Names under the chairs use a finer font pixel
   (`nameDot`: two CSS pixels, so half the art's size at scale 4) to fit twice the letters.

@@ -68,7 +68,10 @@ function hitTest(office: Office, actors: Map<string, Actor>, p: Point): Hit | nu
 export function WarRoomScene({ view, store, showArchived, selectedId, selectedAgent, onShowRepo }: Props) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  // The layout follows the room's width with no side panel open; the panel only scales the view
+  // down (see `roomWidth`), so opening it neither reflows the room nor moves anyone.
   const [cssWidth, setCssWidth] = useState(1200);
+  const [stageWidth, setStageWidth] = useState(1200);
   const [hoveredAt, setHovered] = useState<SceneHit | null>(null);
   const hovered = hoveredAt?.kind === "session" ? hoveredAt.hit : null;
   const hoveredZone = hoveredAt?.kind === "cabinet" ? hoveredAt.zone : null;
@@ -121,9 +124,18 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    const observer = new ResizeObserver(([entry]) => setCssWidth(Math.max(320, entry.contentRect.width)));
+    const measure = () => {
+      setStageWidth(el.clientWidth);
+      setCssWidth(Math.max(320, roomWidth(el)));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(el);
-    return () => observer.disconnect();
+    window.addEventListener("resize", measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
   }, []);
 
   useEffect(() => {
@@ -200,7 +212,14 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
         </div>
         <canvas
           ref={canvas}
-          style={{ width: office.width * scale, height: band.h * TILE * scale, cursor: hoveredAt ? "pointer" : "default" }}
+          // Full size when it fits; narrower (the side panel is open) it shrinks keeping its shape.
+          style={{
+            width: "100%",
+            maxWidth: office.width * scale,
+            aspectRatio: `${office.width} / ${band.h * TILE}`,
+            cursor: hoveredAt ? "pointer" : "default",
+          }}
+          data-shrunk={stageWidth < office.width * scale}
           onMouseMove={(e) => setHovered(menu ? null : at(e))}
           onMouseLeave={() => setHovered(null)}
           onContextMenu={(e) => {
@@ -260,4 +279,17 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
       </div>
     </div>
   );
+}
+
+/**
+ * The stage's width with no side panel taking room: the window's width minus the page's own
+ * margins around the stage (the panel only adds a margin to `.content`, which this leaves out).
+ */
+function roomWidth(stage: HTMLElement): number {
+  const content = stage.closest<HTMLElement>(".content");
+  if (!content) return stage.clientWidth;
+  const css = getComputedStyle(content);
+  const padding = parseFloat(css.paddingLeft) + parseFloat(css.paddingRight);
+  const stageLeft = stage.getBoundingClientRect().left - content.getBoundingClientRect().left - parseFloat(css.paddingLeft);
+  return document.documentElement.clientWidth - padding - Math.max(0, stageLeft) * 2;
 }
