@@ -35,6 +35,8 @@ not muted). `deserves_notice()` = on watch + alerting + actually changed.
   definition of "archive" (dismiss without killing).
 - Subagent tool events (`SubagentTool`) never change the main session's tool — but they resolve a
   pending permission (the agent moved on).
+- Idle/awaiting-input sessions with running subagents stay `Working`; `Seen` only acknowledges a
+  finished session, so reviewing ongoing work cannot swallow its eventual completion.
 - Finished subagents are kept (last 6) so their work can be inspected; `Ended` finishes the running ones.
 - "Stuck" is **not** a domain state: it is derived from `last_activity_at` and the clock in
   `crates/application/src/view.rs::stalled_since` (see `architecture.mdc`).

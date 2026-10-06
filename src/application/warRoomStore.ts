@@ -194,7 +194,7 @@ export class WarRoomStore {
         changes: same ? this.state.detail!.changes : null,
       },
     });
-    void this.loadDetail(id);
+    void this.loadDetail(id, true);
   }
 
   /** Jumps to what has waited longest (same as the global shortcut). */
@@ -277,6 +277,8 @@ export class WarRoomStore {
   /** Opens a final answer at reading size (a subagent's result when `agent` is given). */
   readAnswer(id: string, agent: string | null = null) {
     this.set({ reading: { id, agent } });
+    const session = this.state.view?.rooms.flatMap((r) => r.sessions).find((s) => s.id === id);
+    if (!agent && session?.attention === "finished") this.acknowledge(session);
   }
 
   closeReader() {
@@ -287,12 +289,15 @@ export class WarRoomStore {
     void this.rooms.openExternal(url).catch((e) => this.notify({ text: String(e), tone: "warn" }));
   }
 
-  private async loadDetail(id: string) {
+  private async loadDetail(id: string, review = false) {
     try {
       const data = await this.rooms.detail(id);
       // It may have been closed or switched while loading.
       const open = this.state.detail;
-      if (open?.id === id) this.set({ detail: { ...open, data } });
+      if (open?.id === id) {
+        this.set({ detail: { ...open, data } });
+        if (review && data.session.attention === "finished") this.acknowledge(data.session);
+      }
     } catch (e) {
       if (this.state.detail?.id === id) this.set({ detail: null });
       this.notify({ text: String(e), tone: "warn" });

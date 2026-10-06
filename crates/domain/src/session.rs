@@ -106,6 +106,7 @@ impl Session {
     pub fn attention(&self) -> Attention {
         match &self.status {
             SessionStatus::AwaitingYou { .. } => Attention::NeedsYou,
+            SessionStatus::Idle | SessionStatus::AwaitingInput if self.running_subagents() > 0 => Attention::Working,
             SessionStatus::AwaitingInput if self.unseen => Attention::Finished,
             SessionStatus::Working { .. } | SessionStatus::Compacting => Attention::Working,
             SessionStatus::Idle | SessionStatus::AwaitingInput => Attention::Idle,
@@ -247,7 +248,11 @@ impl Session {
                     SkillInvoker::Agent => skill.by_agent = true,
                 }
             }
-            SessionEventKind::Seen => self.unseen = false,
+            SessionEventKind::Seen => {
+                if self.attention() == Attention::Finished {
+                    self.unseen = false;
+                }
+            }
             SessionEventKind::Archived => self.archived = true,
             SessionEventKind::Unarchived => self.archived = false,
             SessionEventKind::Muted => self.muted = true,

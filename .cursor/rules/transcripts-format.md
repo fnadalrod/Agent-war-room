@@ -35,3 +35,12 @@
   starting with `<` are not shown as prompts.
 - `message.model` can be `<synthetic>` for internal messages: ignore it.
 - `timestamp` is ISO UTC with millis (`2026-09-27T22:44:39.232Z`), parsed by `parse_iso_ms`.
+
+## Background shell commands (observed in Claude 2.1.282–2.1.289)
+
+`user.toolUseResult.backgroundTaskId` confirms a running command. A user content string can contain
+`<task-notification>` with one or more `<task-id>` tags and a terminal `<status>` (`completed`,
+`failed`, `killed`, `stopped`). Remove every matching pending ID. Successful `TaskStop` tool results
+carry `toolUseResult.task_id`; correlate with the assistant's tool-use ID and reject error results.
+Some UI/Monitor/teardown stops have no marker until a resumed session reports orphan tasks; keep
+them pending until observed rather than inventing completion. This is derived state, not a new hook.

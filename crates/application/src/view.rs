@@ -335,7 +335,25 @@ pub fn project(
     for summary in summaries.values() {
         today.add(&summary.usage_today);
     }
-    WarRoomView { aggregate: room.aggregate_attention().into(), rooms, today: (&today).into() }
+    let aggregate = rooms.iter().map(|r| r.attention).max().unwrap_or(AttentionView::Offline);
+    WarRoomView { aggregate, rooms, today: (&today).into() }
+}
+
+/// A completed main turn still owns any commands running in the background.
+pub(crate) fn effective_attention(s: &Session, summary: Option<&TranscriptSummary>) -> Attention {
+    let attention = s.attention();
+    if matches!(s.status, SessionStatus::AwaitingYou { reason: WaitReason::Permission, .. })
+        && summary.is_some_and(|s| s.automatic_permission_review)
+    {
+        return Attention::Working;
+    }
+    if matches!(attention, Attention::Idle | Attention::Finished)
+        && summary.is_some_and(|summary| summary.running_commands > 0)
+    {
+        Attention::Working
+    } else {
+        attention
+    }
 }
 
 /// When a working session went silent, if it has been silent long enough to look stuck.
@@ -355,8 +373,16 @@ pub(crate) fn session_view(
     let mut view = SessionView {
         id: s.id.0.clone(),
         provider: format!("{:?}", s.provider).to_lowercase(),
-        attention: s.attention().into(),
-        status_label: status_label(s),
+        attention: effective_attention(s, Some(&summary)).into(),
+        status_label: if effective_attention(s, Some(&summary)) == Attention::Working
+            && matches!(
+                s.status,
+                SessionStatus::Idle | SessionStatus::AwaitingInput | SessionStatus::AwaitingYou { .. }
+            ) {
+            locale::status_thinking().into()
+        } else {
+            status_label(s)
+        },
         title: summary.title.clone(),
         first_prompt: summary.first_prompt.clone(),
         command: s.host.agent_command.as_deref().map(readable_command),
@@ -427,6 +453,9 @@ pub(crate) fn session_view(
 
 fn status_label(s: &Session) -> String {
     match &s.status {
+        SessionStatus::Idle | SessionStatus::AwaitingInput if s.running_subagents() > 0 => {
+            locale::status_thinking().into()
+        }
         SessionStatus::Idle => locale::status_idle().into(),
         SessionStatus::Working { tool: Some(tool) } => tool.clone(),
         SessionStatus::Working { tool: None } => locale::status_thinking().into(),

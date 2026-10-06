@@ -40,6 +40,7 @@ type Titles = HashMap<String, String>;
 
 #[derive(Default, Clone)]
 struct Facts {
+    automatic_permission_review: bool,
     last_prompt: Option<String>,
     last_reply: Option<String>,
     last_action: Option<String>,
@@ -150,6 +151,8 @@ impl TranscriptReader for CodexTranscriptReader {
         }
 
         Some(TranscriptSummary {
+            automatic_permission_review: facts.automatic_permission_review,
+            running_commands: 0,
             title: self.title(main),
             first_prompt: self.first_prompt(main),
             last_prompt: facts.last_prompt,
@@ -334,6 +337,8 @@ fn absorb(facts: &mut Facts, entry: &Value) {
     let number = |pointer: &str| payload.and_then(|p| p.pointer(pointer)).and_then(Value::as_u64);
     match entry.get("type").and_then(Value::as_str) {
         Some("turn_context") => {
+            facts.automatic_permission_review =
+                payload.and_then(|p| p.get("approvals_reviewer")).and_then(Value::as_str) == Some("auto_review");
             let mut turn = Turn { model: facts.model.take(), effort: facts.effort.take() };
             turn.absorb(entry);
             (facts.model, facts.effort) = (turn.model, turn.effort);
@@ -428,6 +433,21 @@ mod tests {
         )
         .unwrap();
         (home, path)
+    }
+
+    #[test]
+    fn automatic_reviewer_is_scoped_to_the_latest_turn_context() {
+        let mut facts = Facts::default();
+        for (reviewer, expected) in
+            [(Some("auto_review"), true), (Some("user"), false), (Some("auto_review"), true), (None, false)]
+        {
+            let mut payload = json!({"approval_policy":"on-request"});
+            if let Some(reviewer) = reviewer {
+                payload["approvals_reviewer"] = json!(reviewer);
+            }
+            absorb(&mut facts, &json!({"type":"turn_context", "payload":payload}));
+            assert_eq!(facts.automatic_permission_review, expected);
+        }
     }
 
     #[test]

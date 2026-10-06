@@ -7,8 +7,8 @@ use crate::ports::{
 };
 use crate::view::{self, CommitView, SessionChanges, SessionDetail, SubagentPreview, TouchedFileView, WarRoomView};
 use awr_domain::{
-    Attention, AttentionChange, ProviderKind, SessionContext, SessionEvent, SessionEventKind, SessionId, SessionStatus,
-    TerminalHost, Timestamp, WarRoom,
+    Attention, AttentionChange, ProviderKind, SessionContext, SessionEvent, SessionEventKind, SessionId, TerminalHost,
+    Timestamp, WarRoom,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -139,9 +139,10 @@ impl WarRoomService {
     /// finished turns. Muted and archived sessions don't count.
     pub fn next_waiting(&self) -> Option<SessionId> {
         let room = self.room();
+        let summaries = self.summaries();
         room.sessions()
-            .filter(|s| s.is_on_watch() && s.attention().is_alerting())
-            .min_by_key(|s| (std::cmp::Reverse(s.attention()), s.status_since))
+            .filter(|s| s.is_on_watch() && view::effective_attention(s, summaries.get(&s.id)).is_alerting())
+            .min_by_key(|s| (std::cmp::Reverse(view::effective_attention(s, summaries.get(&s.id))), s.status_since))
             .map(|s| s.id.clone())
     }
 
@@ -267,13 +268,21 @@ impl WarRoomService {
     }
 
     pub fn mark_seen(&self, id: SessionId) -> PortResult<()> {
-        self.intent(id, SessionEventKind::Seen)
+        let finished = self
+            .room()
+            .get(&id)
+            .is_some_and(|s| view::effective_attention(s, self.summaries().get(&id)) == Attention::Finished);
+        if finished { self.intent(id, SessionEventKind::Seen) } else { Ok(()) }
     }
 
     /// Marks every finished session as reviewed.
     pub fn mark_all_seen(&self) -> PortResult<()> {
-        let finished: Vec<SessionId> =
-            self.room().sessions().filter(|s| s.attention() == Attention::Finished).map(|s| s.id.clone()).collect();
+        let finished: Vec<SessionId> = self
+            .room()
+            .sessions()
+            .filter(|s| view::effective_attention(s, self.summaries().get(&s.id)) == Attention::Finished)
+            .map(|s| s.id.clone())
+            .collect();
         for id in finished {
             self.mark_seen(id)?;
         }
@@ -424,7 +433,7 @@ impl WarRoomService {
             hints.push(folder_name(&session.workspace.worktree_path));
             hints.push(session.workspace.repo_name.clone());
             let target = FocusTarget { host: session.host.clone(), caption_hints: hints };
-            (target, session.attention() == Attention::Finished)
+            (target, view::effective_attention(session, self.summaries().get(&id)) == Attention::Finished)
         };
 
         let outcome = self.ports.navigator.focus(&target)?;
@@ -441,11 +450,7 @@ impl WarRoomService {
         let (lost, active) = {
             let room = self.room();
             let lost = room.detect_lost(|pid| self.ports.probe.is_alive(pid), now);
-            let active: Vec<SessionId> = room
-                .sessions()
-                .filter(|s| matches!(s.status, SessionStatus::Working { .. } | SessionStatus::Compacting))
-                .map(|s| s.id.clone())
-                .collect();
+            let active: Vec<SessionId> = room.sessions().filter(|s| s.is_alive()).map(|s| s.id.clone()).collect();
             (lost, active)
         };
         for event in lost {
@@ -459,7 +464,19 @@ impl WarRoomService {
             approvals.len() != before
         };
         for id in &active {
+            let from = self.room().get(id).map(|s| view::effective_attention(s, self.summaries().get(id)));
             changed |= self.refresh_summary(id);
+            let change = self.room().get(id).map(|s| AttentionChange {
+                session: id.clone(),
+                from,
+                to: view::effective_attention(s, self.summaries().get(id)),
+                on_watch: s.is_on_watch(),
+            });
+            if let Some(change) = change.filter(|c| c.deserves_notice())
+                && let Some(notice) = self.notice_for(&change)
+            {
+                self.ports.notifier.notify(&notice);
+            }
         }
         changed |= self.check_stalled(now);
         if changed {
@@ -526,11 +543,13 @@ impl WarRoomService {
         if from_agent && !matches!(event.kind, SessionEventKind::AwaitingYou { .. }) {
             self.approvals().remove(&id);
         }
-        let change = {
+        let mut change = {
             let mut room = self.room();
-            let Some(change) = room.apply(event) else {
+            let from = room.get(&id).map(|s| view::effective_attention(s, self.summaries().get(&id)));
+            let Some(mut change) = room.apply(event) else {
                 return Ok(());
             };
+            change.from = from;
             change
         };
 
@@ -538,6 +557,9 @@ impl WarRoomService {
         let stored = self.ports.store.append(&persisted);
         if from_agent {
             self.refresh_summary(&id);
+        }
+        if let Some(session) = self.room().get(&id) {
+            change.to = view::effective_attention(session, self.summaries().get(&id));
         }
         self.publish();
         if change.deserves_notice()
@@ -938,6 +960,59 @@ mod tests {
         let view = h.rec.views.lock().unwrap().last().unwrap().clone();
         assert_eq!(view.aggregate, AttentionView::Finished);
         assert_eq!(view.rooms[0].sessions[0].title.as_deref(), Some("Fix the login"));
+    }
+
+    #[test]
+    fn background_commands_delay_completion_and_cannot_be_acknowledged_early() {
+        let h = harness();
+        h.transcript.0.lock().unwrap().running_commands = 2;
+        h.svc.ingest(signal("a", "prompt")).unwrap();
+        h.svc.ingest(signal("a", "stop")).unwrap();
+        assert_eq!(h.svc.view().aggregate, AttentionView::Working);
+        assert!(h.rec.notices.lock().unwrap().is_empty());
+        assert_eq!(h.svc.next_waiting(), None);
+        h.svc.mark_all_seen().unwrap();
+        h.svc.mark_seen(id("a")).unwrap();
+        h.transcript.0.lock().unwrap().running_commands = 1;
+        h.svc.tick().unwrap();
+        assert_eq!(h.svc.view().aggregate, AttentionView::Working);
+        h.transcript.0.lock().unwrap().running_commands = 0;
+        h.svc.tick().unwrap();
+        assert_eq!(h.svc.view().aggregate, AttentionView::Finished);
+        assert_eq!(h.rec.notices.lock().unwrap().len(), 1);
+        h.svc.tick().unwrap();
+        assert_eq!(h.rec.notices.lock().unwrap().len(), 1);
+        h.svc.mark_seen(id("a")).unwrap();
+        assert_eq!(h.svc.view().aggregate, AttentionView::Idle);
+    }
+
+    #[test]
+    fn automatic_permission_review_is_working_but_questions_still_need_you() {
+        let h = harness();
+        h.transcript.0.lock().unwrap().automatic_permission_review = true;
+        h.svc.ingest(signal("a", "prompt")).unwrap();
+        h.svc.ingest(signal("a", "ask")).unwrap();
+        assert_eq!(h.svc.view().aggregate, AttentionView::Working);
+        assert_eq!(h.svc.view().rooms[0].sessions[0].status_label, locale::status_thinking());
+        assert_eq!(h.svc.next_waiting(), None);
+        assert!(h.rec.notices.lock().unwrap().is_empty());
+        h.svc
+            .intent(
+                id("a"),
+                SessionEventKind::AwaitingYou { reason: awr_domain::WaitReason::Question, tool: None, detail: None },
+            )
+            .unwrap();
+        assert_eq!(h.svc.view().aggregate, AttentionView::NeedsYou);
+        assert_eq!(h.rec.notices.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn manual_permission_review_remains_visible() {
+        let h = harness();
+        h.svc.ingest(signal("a", "prompt")).unwrap();
+        h.svc.ingest(signal("a", "ask")).unwrap();
+        assert_eq!(h.svc.view().aggregate, AttentionView::NeedsYou);
+        assert_eq!(h.svc.next_waiting(), Some(id("a")));
     }
 
     #[test]

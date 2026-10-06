@@ -134,6 +134,26 @@ mod tests {
     }
 
     #[test]
+    fn turn_end_waits_for_all_subagents_before_notifying() {
+        let mut room = WarRoom::new();
+        room.apply(signal("s", 1, SessionEventKind::PromptSubmitted));
+        for id in ["a", "b"] {
+            room.apply(signal("s", 2, SessionEventKind::SubagentStarted { id: id.into(), kind: None }));
+        }
+        let change = room.apply(signal("s", 3, SessionEventKind::TurnEnded)).unwrap();
+        assert_eq!(change.to, Attention::Working);
+        assert!(!change.deserves_notice());
+        room.apply(intent("s", 4, SessionEventKind::Seen));
+        room.apply(signal("s", 5, SessionEventKind::SubagentStopped { id: "a".into() }));
+        assert_eq!(attention(&room, "s"), Attention::Working);
+        let change = room.apply(signal("s", 6, SessionEventKind::SubagentStopped { id: "b".into() })).unwrap();
+        assert_eq!(change.to, Attention::Finished);
+        assert!(change.deserves_notice());
+        room.apply(intent("s", 7, SessionEventKind::Seen));
+        assert_eq!(attention(&room, "s"), Attention::Idle);
+    }
+
+    #[test]
     fn interrupting_a_turn_yourself_gives_you_the_turn_without_a_notice() {
         let mut room = WarRoom::new();
         room.apply(signal("s", 1, SessionEventKind::PromptSubmitted));

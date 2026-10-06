@@ -43,6 +43,28 @@ describe("WarRoomStore", () => {
     expect(store.snapshot().detail?.id).toBe("b2c3d4e5-harbor-pixie");
   });
 
+  it("moves a reviewed finished session to idle while keeping its detail", async () => {
+    const store = storeWith();
+    await store.start();
+    const id = "c3d4e5f6-harbor-docs";
+    store.openDetail(id);
+    await vi.waitFor(() => expect(store.snapshot().detail?.data?.session.attention).toBe("idle"));
+    expect(store.snapshot().detail?.id).toBe(id);
+    expect(store.snapshot().view?.rooms.flatMap((r) => r.sessions).find((s) => s.id === id)?.attention).toBe("idle");
+  });
+
+  it("does not acknowledge working sessions or a subagent result", async () => {
+    const markSeen = vi.fn().mockResolvedValue(undefined);
+    const store = storeWith({ markSeen });
+    await store.start();
+    store.openDetail("a1b2c3d4-harbor-sync");
+    await vi.waitFor(() => expect(store.snapshot().detail?.data).not.toBeNull());
+    store.readAnswer("c3d4e5f6-harbor-docs", "child");
+    expect(markSeen).not.toHaveBeenCalled();
+    store.readAnswer("c3d4e5f6-harbor-docs");
+    expect(markSeen).toHaveBeenCalledWith("c3d4e5f6-harbor-docs");
+  });
+
   it("remembers the filter across launches", () => {
     let saved: Filter | null = { ...NO_FILTER, repos: ["/code/trellis/.git"] };
     const storage = { load: () => saved, save: (f: Filter) => void (saved = f) };

@@ -49,6 +49,8 @@ struct State {
 
 #[derive(Default, Clone)]
 struct Facts {
+    running_commands: HashSet<String>,
+    stop_calls: HashSet<String>,
     ai_title: Option<String>,
     custom_title: Option<String>,
     last_prompt: Option<String>,
@@ -137,6 +139,8 @@ impl TranscriptReader for ClaudeTranscriptReader {
         }
 
         Some(TranscriptSummary {
+            automatic_permission_review: false,
+            running_commands: facts.running_commands.len(),
             context_window: facts.model.as_deref().and_then(pricing::context_window),
             usage,
             usage_today,
@@ -335,6 +339,41 @@ fn absorb(facts: &mut Facts, seen: &mut HashSet<String>, entry: &Value) {
         Some("custom-title") => facts.custom_title = text("customTitle").or(facts.custom_title.take()),
         Some("last-prompt") => facts.last_prompt = text("lastPrompt").or(facts.last_prompt.take()),
         Some("user") => {
+            if let Some(id) = entry.pointer("/toolUseResult/backgroundTaskId").and_then(Value::as_str) {
+                facts.running_commands.insert(id.to_owned());
+            }
+            if let Some(blocks) = entry.pointer("/message/content").and_then(Value::as_array) {
+                for block in blocks {
+                    if block.get("tool_use_id").and_then(Value::as_str).is_some_and(|id| facts.stop_calls.remove(id))
+                        && block.get("is_error").and_then(Value::as_bool) != Some(true)
+                        && let Some(id) = entry.pointer("/toolUseResult/task_id").and_then(Value::as_str)
+                    {
+                        facts.running_commands.remove(id);
+                    }
+                }
+            }
+            if let Some(content) = entry.pointer("/message/content").and_then(Value::as_str) {
+                for notification in content.split("<task-notification>").skip(1) {
+                    let Some(notification) = notification.split_once("</task-notification>").map(|(body, _)| body)
+                    else {
+                        continue;
+                    };
+                    let tag = |name: &str| -> Option<&str> {
+                        notification
+                            .split_once(&format!("<{name}>"))?
+                            .1
+                            .split_once(&format!("</{name}>"))
+                            .map(|(value, _)| value)
+                    };
+                    if matches!(tag("status"), Some("completed" | "failed" | "killed" | "stopped")) {
+                        for rest in notification.split("<task-id>").skip(1) {
+                            if let Some((id, _)) = rest.split_once("</task-id>") {
+                                facts.running_commands.remove(id);
+                            }
+                        }
+                    }
+                }
+            }
             // Fallback when there is no `last-prompt`: the last message typed by a person.
             if let Some(prompt) = entry.pointer("/message/content").and_then(Value::as_str)
                 && !prompt.starts_with('<')
@@ -343,6 +382,15 @@ fn absorb(facts: &mut Facts, seen: &mut HashSet<String>, entry: &Value) {
             }
         }
         Some("assistant") => {
+            if let Some(blocks) = entry.pointer("/message/content").and_then(Value::as_array) {
+                for block in blocks {
+                    if block.get("name").and_then(Value::as_str) == Some("TaskStop")
+                        && let Some(id) = block.get("id").and_then(Value::as_str)
+                    {
+                        facts.stop_calls.insert(id.to_owned());
+                    }
+                }
+            }
             absorb_assistant(facts, entry);
             count_usage(facts, seen, entry);
         }
@@ -417,6 +465,33 @@ mod tests {
 
     fn append(path: &Path, text: &str) {
         std::fs::OpenOptions::new().create(true).append(true).open(path).unwrap().write_all(text.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn background_commands_follow_results_notifications_and_successful_stops() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.jsonl");
+        let reader = ClaudeTranscriptReader::new();
+        for id in ["a", "b", "c"] {
+            append(&path, &line(json!({"type":"user", "toolUseResult":{"backgroundTaskId":id}})));
+        }
+        assert_eq!(reader.read(path.to_str().unwrap(), &[]).unwrap().running_commands, 3);
+        append(
+            &path,
+            &line(json!({"type":"user", "message":{"content":
+                "<task-notification><task-id>a</task-id><task-id>b</task-id><task-id>__orphan_summary__:shell</task-id><status>stopped</status></task-notification>"
+            }})),
+        );
+        assert_eq!(reader.read(path.to_str().unwrap(), &[]).unwrap().running_commands, 1);
+        for (call, failed) in [("stop1", true), ("stop2", false)] {
+            append(&path, &assistant(json!([{"type":"tool_use","name":"TaskStop","id":call}])));
+            append(
+                &path,
+                &line(json!({"type":"user", "toolUseResult":{"task_id":"c","task_type":"local_bash"},
+                "message":{"content":[{"type":"tool_result","tool_use_id":call,"is_error":failed}]}})),
+            );
+            assert_eq!(reader.read(path.to_str().unwrap(), &[]).unwrap().running_commands, usize::from(failed));
+        }
     }
 
     #[test]

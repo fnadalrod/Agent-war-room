@@ -42,6 +42,9 @@ alwaysApply: false
 - A final answer at reading size: `store.readAnswer(id, agent?)` → `state.reading`, rendered once by
   `App` (`AnswerReader`, a portal over the whole window, with copy; its Esc is caught first). Opened
   from the preview, cards and queue rows (not while working), the desk menu and the `r` key.
+- Opening a finished session preview (after successful load) or its main answer marks it seen.
+  It moves to the lobby with its detail/history intact. Background refreshes and subagent results
+  do not acknowledge the main session.
 - Keys (`useShortcuts`, help in `ShortcutHelp`, "?" in the header): j/k next/previous session in the
   room's order (`neighbourSession`), Enter goes to the open one, r reads its answer, ? help. They stay
   quiet while typing (inputs, the terminal) and while the reader is open.

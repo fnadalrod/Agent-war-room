@@ -128,6 +128,10 @@ impl Usage {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TranscriptSummary {
+    /// The current turn delegates permission decisions to an automatic reviewer.
+    pub automatic_permission_review: bool,
+    /// Commands confirmed as running in the transcript. Derived, never persisted.
+    pub running_commands: usize,
     /// Title the agent itself generates for the session.
     pub title: Option<String>,
     /// The task the session started with.

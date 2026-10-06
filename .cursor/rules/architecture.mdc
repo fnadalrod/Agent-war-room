@@ -54,7 +54,11 @@ service picks it by the session's `ProviderKind`. A new port means: trait + fake
 - Lock order: `room` → `summaries` → `approvals` → `stalled`. Don't call slow ports while holding
   `room` (only pure projections).
 - Transcript reads happen off the startup path (`refresh_all_summaries` in a thread) and on each
-  agent event / tick for working sessions.
+  agent event / tick for live sessions (background completion may arrive after the main turn ends).
+- `view::effective_attention` overlays transcript-confirmed background commands and automatic permission
+  review on domain attention.
+  Views, tray aggregates, completion notices and acknowledgements share this rule; a tick notifies
+  when the final pending command completes. Transcript-derived command counts are never persisted.
 
 ## Adding a new agent provider (Codex, Gemini, opencode…)
 

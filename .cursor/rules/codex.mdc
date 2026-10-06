@@ -21,7 +21,10 @@ only what is Codex's own. Real captured samples: `crates/infrastructure/src/code
   (`[hooks.state."<file>:<event>:<i>:<j>"] trusted_hash`). `codex exec` never asks and just skips
   them. Never write that trust ourselves: it is the user's security decision.
 - **Approvals**: Codex shows its own dialog only after the `PermissionRequest` hook returns, so the
-  bridge does not hold it (see `hooks-ingest.mdc`): the room shows "needs you" without Approve/Deny.
+  bridge does not hold it (see `hooks-ingest.mdc`). Manual/unknown review shows "needs you" without
+  Approve/Deny. Desktop rollouts (0.154.0-alpha.6.2) with current
+  `turn_context.payload.approvals_reviewer: "auto_review"` stay Working during permission review;
+  questions still need the user. A new turn context without that field resets this derived policy to manual.
 - Unverified: whether `request_user_input` (the question tool in the dialect) reaches `PreToolUse`,
   and that the hook's `agent_id` is the subagent's thread id (the reader assumes so).
 
