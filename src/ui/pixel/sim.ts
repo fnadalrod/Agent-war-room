@@ -1,7 +1,6 @@
 // Who is where in the office and where they are heading. Pure and deterministic given the time:
-// each session's agent, and each running subagent, is an actor that walks (4-way, over walkable
+// each session's agent and its teammates are actors that walk (4-way, over walkable
 // tiles) to its goal.
-import type { SessionView } from "../../domain/attention";
 import { type Office, type Point, feetOf, findPath, tileOf } from "./office";
 
 export type Dir = "down" | "up" | "left" | "right";
@@ -57,23 +56,23 @@ function orbitTurn(id: string, now: number): number {
   return Math.floor((now + (hash(id) % period)) / period);
 }
 
-/** Facing the chair from each slot of the ring (left, aisle left, aisle right, right). */
-const SLOT_FACE: Dir[] = ["right", "up", "up", "left"];
-
 /**
  * Where every visible agent wants to be now. Closed sessions have no agent. Running subagents stand
- * spread round their agent's chair and walk the ring; finished ones have no goal, so they leave.
+ * spread round their agent's chair and walk the ring; finished ones join their teammates in the lobby.
  */
 export function goals(office: Office, now: number): Map<string, Goal> {
   const out = new Map<string, Goal>();
-  const idle: SessionView[] = [];
+  const idle: { id: string; owner?: string; from?: Point }[] = [];
   for (const zone of office.zones) {
     for (const d of zone.desks) {
       const s = d.session;
       if (s.attention === "offline" || s.archived) continue;
       if (s.attention === "idle") idle.push(s);
       else out.set(s.id, { key: `desk:${d.seat.x},${d.seat.y}`, tile: d.seat, pose: "desk", face: "up" });
-      const running = s.subagents.filter((a) => a.running).slice(0, d.slots.length);
+      for (const a of s.subagents.filter((a) => !a.running)) {
+        idle.push({ id: subagentKey(a.id), owner: s.id, from: d.seat });
+      }
+      const running = s.subagents.filter((a) => a.running);
       const turn = orbitTurn(s.id, now);
       running.forEach((a, i) => {
         const slot = (turn + Math.round((i * d.slots.length) / running.length)) % d.slots.length;
@@ -82,26 +81,36 @@ export function goals(office: Office, now: number): Map<string, Goal> {
           key: `slot:${tile.x},${tile.y}`,
           tile,
           pose: "stand",
-          face: SLOT_FACE[slot] ?? "down",
+          face: tile.y > d.seat.y ? "up" : tile.x < d.seat.x ? "right" : "left",
           owner: s.id,
           from: d.seat,
         });
       });
     }
   }
-  const taken = new Set<number>();
-  for (const s of idle.sort((a, b) => a.id.localeCompare(b.id))) {
-    if (office.spots.length === 0) break;
-    let i = (hash(s.id) + wanderTurn(s.id, now)) % office.spots.length;
-    for (let tries = 0; taken.has(i) && tries < office.spots.length; tries++) i = (i + 1) % office.spots.length;
-    taken.add(i);
-    const spot = office.spots[i];
-    out.set(s.id, {
-      key: `spot:${spot.tile.x},${spot.tile.y}`,
-      tile: spot.tile,
-      pose: spot.pose === "sit" ? "sofa" : "stand",
-      face: spot.face,
-    });
+  for (const [role, lounge] of Object.entries(office.lounges)) {
+    const social = Math.floor(now / 18_000) % 2 === 0;
+    const spots = social ? [...lounge.conversations, ...lounge.spots.filter((s) => !lounge.conversations.includes(s))] : lounge.spots;
+    const taken = new Set<number>();
+    const people = idle.filter((s) => role === "team" ? s.owner != null : s.owner == null).sort((a, b) => a.id.localeCompare(b.id));
+    // Rotate partners each social round; adjacent goals face one another.
+    const shift = people.length ? Math.floor(now / 36_000) % people.length : 0;
+    const ordered = [...people.slice(shift), ...people.slice(0, shift)];
+    for (const [index, s] of ordered.entries()) {
+      if (lounge.spots.length === 0) break;
+      let i = social ? index : (hash(s.id) + wanderTurn(s.id, now)) % spots.length;
+      for (let tries = 0; taken.has(i) && tries < spots.length; tries++) i = (i + 1) % spots.length;
+      taken.add(i);
+      const spot = spots[i];
+      out.set(s.id, {
+        key: `spot:${spot.tile.x},${spot.tile.y}`,
+        tile: spot.tile,
+        pose: spot.pose === "sit" ? "sofa" : "stand",
+        face: spot.face,
+        owner: s.owner,
+        from: s.from,
+      });
+    }
   }
   return out;
 }

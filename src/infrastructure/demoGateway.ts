@@ -173,6 +173,10 @@ function initialRooms(): RoomView[] {
             agent("x1", "Explore", "Find usages of the header", "Grep · PixieHeader"),
             agent("x2", "general-purpose", "Review styles", "Read · header.scss", "claude-opus-5-5"),
             agent("x3", "Explore", "Component map", null, "claude-haiku-4-5", false),
+            agent("x4", "general-purpose", "Check accessibility", "Read · Header.tsx"),
+            agent("x5", "Explore", "Inspect navigation", "Grep · routes"),
+            agent("x6", "general-purpose", "Run the tests", "Bash · npm test"),
+            agent("x7", "Explore", "Review completed", null, "claude-haiku-4-5", false),
           ],
         }),
         session({

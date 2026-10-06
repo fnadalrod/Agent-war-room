@@ -324,6 +324,8 @@
       "empty": "Sala vacía: los puestos aparecerán cuando un agente arranque.",
       "today": "HOY",
       "cabinet_tip": "{n} sesiones cerradas · clic para verlas",
+      "team_lounge": "SALA DE AGENTES",
+      "principal_lounge": "CLUB PRINCIPALES",
       "lobby_sign": "LOBBY",
       "war_sign": "SALA DE GUERRA",
       "rooms": "Salas",

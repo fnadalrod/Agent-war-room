@@ -5,13 +5,15 @@ import type { AttentionView, RoomView, SessionView, SubagentView, WarRoomView } 
 export const TILE = 16;
 /** Wall rows at the top (windows, board, door). */
 export const WALL_ROWS = 3;
+/** The command wall is taller than the lobby wall, with room for the tactical display. */
+export const WAR_WALL_ROWS = 5;
 /** A desk cell: desk row, seat row, aisle row; three tiles wide. */
 const CELL_W = 3;
 const CELL_H = 3;
 /** Label row on top of each zone. */
 const ZONE_LABEL_ROWS = 1;
-/** Furniture, the spots in front of it, one row to mingle, and a margin. */
-const LOUNGE_ROWS = 4;
+/** Two rows of seating nooks, circulation and a margin. */
+const LOUNGE_ROWS = 12;
 /** From this many sessions in a repo, the closed ones go into a cabinet instead of keeping a desk. */
 export const FOLD_AFTER = 4;
 
@@ -39,13 +41,15 @@ export type Zone = {
   cabinet: Point | null;
 };
 
-export type Prop = { kind: "plant" | "sofa" | "coffee" | "cooler" | "shelf" | "table"; x: number; y: number };
+export type Prop = { premium?: boolean; kind: "plant" | "sofa" | "coffee" | "cooler" | "shelf" | "table" | "lamp" | "arcade"; x: number; y: number };
 /** A lounge spot, what the agent does there and where it looks. */
 export type Spot = { tile: Point; pose: "stand" | "sit"; face: "down" | "up" | "left" | "right" };
 
 /** Rows of the office one view shows (tiles). */
 export type RoomBand = { y: number; h: number };
 export type RoomName = "war" | "lobby";
+
+export type LoungeRoom = { rect: Rect; spots: Spot[]; conversations: Spot[]; premium: boolean };
 
 export type Office = {
   width: number;
@@ -62,6 +66,9 @@ export type Office = {
   props: Prop[];
   spots: Spot[];
   door: Point;
+  /** Facing pairs reserved for conversations in the lobby. */
+  conversations: Spot[];
+  lounges: { team: LoungeRoom; principals: LoungeRoom };
   /** `walkable[row][col]`. */
   walkable: boolean[][];
 };
@@ -77,22 +84,24 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
   const zones: Zone[] = [];
   const shelves: Zone[][] = [[]];
   let x = 1;
-  let y = WALL_ROWS + 1;
+  let y = WAR_WALL_ROWS + 1;
   let shelfH = 0;
 
   let idle = 0;
   for (const room of view.rooms) {
     const visible = room.sessions.filter((s) => showArchived || !s.archived);
-    if (visible.length === 0) continue;
+    if (!visible.some((s) => !s.archived && s.attention !== "offline")) continue;
     // A busy repo keeps desks for what is alive; the closed ones go into a cabinet.
     const crowded = visible.length > FOLD_AFTER;
     const folded = crowded ? visible.filter((s) => s.attention === "offline" || s.archived) : [];
     const sessions = crowded ? visible.filter((s) => !folded.includes(s)) : visible;
-    idle += sessions.filter((s) => s.attention === "idle" && !s.archived).length;
+    idle += sessions.filter((s) => !s.archived && s.attention !== "offline")
+      .reduce((n, s) => n + Number(s.attention === "idle") + s.subagents.filter((a) => !a.running).length, 0);
+    const cellH = Math.max(CELL_H, 1 + Math.ceil(Math.max(0, ...sessions.map((s) => s.subagents.length)) / 2));
     const perRow = Math.max(1, Math.min(sessions.length, maxCells));
     const rowsOfCells = Math.ceil(sessions.length / perRow);
     const w = Math.max(perRow * CELL_W + 1, 5);
-    const h = ZONE_LABEL_ROWS + Math.max(1, rowsOfCells * CELL_H);
+    const h = ZONE_LABEL_ROWS + Math.max(1, rowsOfCells * cellH);
     if (x > 1 && x + w > cols - 1) {
       x = 1;
       y += shelfH + 1;
@@ -101,8 +110,8 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
     }
     const desks = sessions.map((session, i) => {
       const cx = x + 1 + (i % perRow) * CELL_W;
-      const cy = y + ZONE_LABEL_ROWS + Math.floor(i / perRow) * CELL_H;
-      return deskAt(session, cx, cy);
+      const cy = y + ZONE_LABEL_ROWS + Math.floor(i / perRow) * cellH;
+      return deskAt(session, cx, cy, cellH);
     });
     const zone = { room, rect: { x, y, w, h }, desks, folded, cabinet: folded.length ? { x: x + w - 2, y } : null };
     zones.push(zone);
@@ -119,12 +128,13 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
     for (const zone of shelf) moveZone(zone, shift, 0);
   }
 
-  const contentRows = (zones.length ? y + shelfH : WALL_ROWS + 1 + CELL_H) + 1;
+  const contentRows = (zones.length ? y + shelfH : WAR_WALL_ROWS + 1 + CELL_H) + 1;
   // The lounge grows a mingling row at a time until every idle agent has a place.
-  const furnitureSpots = loungeCapacity(cols);
-  const perMingleRow = Math.floor((cols - 4) / 3) * 2;
-  const mingleRows = Math.max(1, Math.ceil(Math.max(0, idle - furnitureSpots) / Math.max(1, perMingleRow)));
-  const loungeRows = LOUNGE_ROWS + mingleRows - 1;
+  const sideBySide = cols >= 18;
+  const roomWidth = sideBySide ? Math.floor((cols - 3) / 2) : cols - 2;
+  const perMingleRow = Math.max(2, Math.floor((roomWidth - 2) / 3) * 2);
+  const mingleRows = Math.max(1, Math.ceil(idle / Math.max(1, perMingleRow)));
+  const loungeRows = (LOUNGE_ROWS + mingleRows + 2) * (sideBySide ? 1 : 2) + 1;
   const minRows = Math.floor(minHeight / TILE);
   // The war room ends in a wall row; the lobby starts under it with its own wall.
   const war = { y: 0, h: Math.max(contentRows + 1, minRows) };
@@ -135,7 +145,7 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
   const lounge = { x: 1, y: loungeTop, w: cols - 2, h: rows - 1 - loungeTop };
   const lobbyDoor = { x: Math.floor(cols / 2), y: war.h - 1 };
 
-  const floorOf = (band: RoomBand, r: number) => r >= band.y + WALL_ROWS && r < band.y + band.h - 1;
+  const floorOf = (band: RoomBand, r: number) => r >= band.y + (band === war ? WAR_WALL_ROWS : WALL_ROWS) && r < band.y + band.h - 1;
   const walkable = Array.from({ length: rows }, (_, r) =>
     Array.from({ length: cols }, (_, c) => {
       // The doorway: through the war room's bottom wall and the lobby's wall.
@@ -155,9 +165,31 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
     }
     if (zone.cabinet) block(zone.cabinet.x, zone.cabinet.y);
   }
-  const { props, spots } = furnishLounge(lounge, block);
-  spots.push(...mingleSpots(lounge, mingleRows));
-  const door = { x: 1, y: WALL_ROWS };
+  const split = sideBySide ? lounge.x + Math.floor(lounge.w / 2) : lounge.y + Math.floor(lounge.h / 2);
+  const teamRect = sideBySide
+    ? { ...lounge, w: split - lounge.x }
+    : { ...lounge, h: split - lounge.y };
+  const principalRect = sideBySide
+    ? { ...lounge, x: split + 1, w: lounge.x + lounge.w - split - 1 }
+    : { ...lounge, y: split + 1, h: lounge.y + lounge.h - split - 1 };
+  // A shared entrance hall leads to two rooms; the partition has a doorway.
+  if (sideBySide) {
+    for (let row = lounge.y + 2; row < lounge.y + lounge.h; row++) block(split, row);
+  } else {
+    for (let col = lounge.x + 2; col < lounge.x + lounge.w; col++) block(col, split);
+  }
+  const props: Prop[] = [];
+  const makeRoom = (rect: Rect, premium: boolean): LoungeRoom => {
+    const interior = { ...rect, y: rect.y + 3, h: rect.h - 3 };
+    const furnished = furnishLounge({ ...interior, h: interior.h - mingleRows - 1 }, block);
+    props.push(...furnished.props.map((p): Prop => ({ ...p, premium, kind: p.kind === "arcade" ? (premium ? "coffee" : "cooler") : p.kind === "lamp" && !premium ? "plant" : p.kind })));
+    const conversations = mingleSpots(interior, mingleRows);
+    return { rect, premium, conversations, spots: [...furnished.spots, ...conversations] };
+  };
+  const lounges = { team: makeRoom(teamRect, false), principals: makeRoom(principalRect, true) };
+  const spots = [...lounges.team.spots, ...lounges.principals.spots];
+  const conversations = [...lounges.team.conversations, ...lounges.principals.conversations];
+  const door = { x: 1, y: WAR_WALL_ROWS };
 
   return {
     width: cols * TILE,
@@ -173,10 +205,12 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
     spots,
     door,
     walkable,
+    conversations,
+    lounges,
   };
 }
 
-function deskAt(session: SessionView, cx: number, cy: number): Desk {
+function deskAt(session: SessionView, cx: number, cy: number, cellH: number): Desk {
   const seat = { x: cx + 1, y: cy + 1 };
   return {
     session,
@@ -184,12 +218,10 @@ function deskAt(session: SessionView, cx: number, cy: number): Desk {
     seat,
     // A ring around the chair: left of it, the aisle corners (the name sits in between), right.
     slots: [
-      { x: cx, y: cy + 1 },
-      { x: cx, y: cy + 2 },
-      { x: cx + 2, y: cy + 2 },
-      { x: cx + 2, y: cy + 1 },
+      ...Array.from({ length: cellH - 1 }, (_, i) => ({ x: cx, y: cy + 1 + i })),
+      ...Array.from({ length: cellH - 1 }, (_, i) => ({ x: cx + 2, y: cy + cellH - 1 - i })),
     ],
-    cell: { x: cx * TILE, y: cy * TILE - 6, w: CELL_W * TILE, h: CELL_H * TILE + 6 },
+    cell: { x: cx * TILE, y: cy * TILE - 6, w: CELL_W * TILE, h: cellH * TILE + 6 },
   };
 }
 
@@ -206,43 +238,46 @@ function moveZone(zone: Zone, dc: number, dr: number) {
   }
 }
 
-/** Sofas, plants, coffee and water along the lounge's top row; the tiles in front are the spots. */
+/** Seating nooks on either side of a central aisle, with a table and a refreshment/book corner. */
 function furnishLounge(lounge: Rect, block: (c: number, r: number) => void): { props: Prop[]; spots: Spot[] } {
   const props: Prop[] = [];
   const spots: Spot[] = [];
-  const back = lounge.y;
-  const pattern: Array<Prop["kind"]> = ["plant", "sofa", "table", "sofa", "coffee", "cooler", "shelf", "plant"];
-  let c = lounge.x + 1;
-  let i = 0;
-  while (c < lounge.x + lounge.w - 1) {
-    const kind = pattern[i % pattern.length];
-    const w = kind === "sofa" ? 2 : 1;
-    if (c + w > lounge.x + lounge.w - 1) break;
-    props.push({ kind, x: c, y: back });
-    for (let k = 0; k < w; k++) {
-      if (kind === "sofa") spots.push({ tile: { x: c + k, y: back }, pose: "sit", face: "down" });
-      else block(c + k, back);
+  const mid = lounge.x + Math.floor(lounge.w / 2);
+  const sections = lounge.w >= 12
+    ? [[lounge.x + 1, mid - 1], [mid + 2, lounge.x + lounge.w - 1]]
+    : [[lounge.x + 1, lounge.x + lounge.w - 1]];
+  let nook = 0;
+  const add = (kind: Prop["kind"], x: number, y: number) => {
+    props.push({ kind, x, y });
+    block(x, y);
+    if (kind === "sofa") {
+      block(x + 1, y);
+      for (let k = 0; k < 2; k++) spots.push({ tile: { x: x + k, y }, pose: "sit", face: "down" });
     }
-    if (kind === "coffee" || kind === "cooler" || kind === "shelf") {
-      spots.push({ tile: { x: c, y: back + 1 }, pose: "stand", face: "up" });
+  };
+  for (let y = lounge.y; y + 4 <= lounge.y + lounge.h; y += 5) {
+    for (const [start, end] of sections) {
+      const count = Math.floor((end - start + 2) / 6);
+      const first = start + Math.floor((end - start - (count * 6 - 2)) / 2);
+      for (let i = 0; i < count; i++) {
+        const x = first + i * 6;
+        add("sofa", x, y);
+        add(nook % 2 ? "lamp" : "plant", x + 3, y);
+        add("table", x, y + 2);
+        add((["coffee", "shelf", "cooler", "arcade", "shelf", "arcade", "shelf", "shelf"] as const)[nook % 8], x + 3, y + 2);
+        spots.push({ tile: { x: x + 3, y: y + 3 }, pose: "stand", face: "up" });
+        nook++;
+      }
     }
-    c += w + (kind === "plant" ? 2 : 1);
-    i++;
   }
   return { props, spots };
-}
-
-/** Spots the furniture row offers for `cols` columns (same walk as `furnishLounge`). */
-function loungeCapacity(cols: number): number {
-  const probe = { x: 1, y: 0, w: cols - 2, h: 1 };
-  return furnishLounge(probe, () => {}).spots.length;
 }
 
 /** Pairs of agents chatting face to face, in the rows below the furniture. */
 function mingleSpots(lounge: Rect, rows: number): Spot[] {
   const spots: Spot[] = [];
   for (let r = 0; r < rows; r++) {
-    const y = lounge.y + 2 + r;
+    const y = lounge.y + lounge.h - rows - 1 + r;
     for (let c = lounge.x + 1; c + 1 < lounge.x + lounge.w - 1; c += 3) {
       spots.push({ tile: { x: c, y }, pose: "stand", face: "right" }, { tile: { x: c + 1, y }, pose: "stand", face: "left" });
     }
@@ -314,4 +349,11 @@ export function pixelScale(cssWidth: number): number {
   if (cssWidth >= 1700) return 4;
   if (cssWidth >= 820) return 3;
   return 2;
+}
+
+/** Fit the complete canvas in the available space, including its one-pixel border on each side. */
+export function fitViewport(width: number, height: number, availableWidth: number, availableHeight: number) {
+  const border = Math.max(0, Math.min(2, availableWidth, availableHeight));
+  const factor = Math.max(0, Math.min(1, (availableWidth - border) / width, (availableHeight - border) / height));
+  return { width: width * factor + border, height: height * factor + border, shrunk: factor < 1 };
 }

@@ -67,20 +67,22 @@ export function normalize(text: string): string {
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toUpperCase()
-    .split("")
+    .split(/(?:)/u)
     .map((c) => (c in GLYPHS ? c : "?"))
     .join("");
 }
 
 /** Width in logical pixels; `px` is the size of a font pixel (1, or smaller for fine text). */
 export function textWidth(text: string, px = 1): number {
-  return text.length === 0 ? 0 : (text.length * ADVANCE - 1) * px;
+  const length = normalize(text).length;
+  return length === 0 ? 0 : (length * ADVANCE - 1) * px;
 }
 
 /** Truncates to `maxWidth` pixels with a trailing "." if it does not fit. */
 export function fit(text: string, maxWidth: number, px = 1): string {
   const t = normalize(text);
-  const max = Math.floor((maxWidth / px + 1) / ADVANCE);
+  const max = Math.max(0, Math.floor((maxWidth / px + 1) / ADVANCE));
+  if (max === 0) return "";
   return t.length <= max ? t : `${t.slice(0, Math.max(0, max - 1))}.`;
 }
 

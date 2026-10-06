@@ -14,7 +14,7 @@ describe("sprites", () => {
     ];
     for (const sprite of poses) {
       expect(new Set(sprite.map((r) => r.length)).size).toBe(1);
-      expect(sprite.join("")).toMatch(/^[.kKshHeScCpPbrml]+$/);
+      expect(sprite.join("")).toMatch(/^[.kKshHaeScCpPbrml]+$/);
     }
     expect(body("down", false, 0)).toHaveLength(17);
     expect(waving(0)[0]).toHaveLength(13);

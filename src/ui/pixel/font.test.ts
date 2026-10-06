@@ -11,6 +11,18 @@ describe("3×5 font", () => {
     expect(textWidth("")).toBe(0);
   });
 
+  it("measures the glyphs actually painted after Unicode normalization", () => {
+    expect(textWidth("Cafe\u0301")).toBe(textWidth("CAFE"));
+    expect(textWidth("Straße")).toBe(textWidth("STRASSE"));
+    expect(normalize("🚀")).toBe("?");
+    expect(textWidth("🚀")).toBe(3);
+  });
+
+  it("does not draw a truncation dot when even one glyph cannot fit", () => {
+    for (const width of [-1, 0, 1, 2]) expect(fit("ABC", width)).toBe("");
+    expect(fit("ABC", 3)).toBe(".");
+  });
+
   it("truncates what does not fit with a trailing dot", () => {
     expect(fit("Fix the login", 23)).toBe("FIX T.");
     expect(textWidth(fit("Fix the login", 23))).toBeLessThanOrEqual(23);

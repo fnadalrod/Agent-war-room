@@ -14,6 +14,7 @@ import {
   cabinetAtPoint,
   deskAtPoint,
   doorwayAtPoint,
+  fitViewport,
   layoutOffice,
   pixelScale,
 } from "./office";
@@ -48,7 +49,7 @@ function sceneHit(office: Office, room: RoomName, actors: Map<string, Actor>, p:
 function hitTest(office: Office, actors: Map<string, Actor>, p: Point): Hit | null {
   const sessionOf = (id: string) => office.zones.flatMap((z) => z.desks).find((d) => d.session.id === id)?.session;
   for (const actor of actors.values()) {
-    if (actor.owner == null || !(p.x >= actor.x - 4 && p.x <= actor.x + 4 && p.y >= actor.y - 11 && p.y <= actor.y + 1)) continue;
+    if (actor.owner == null || !(p.x >= actor.x - 7 && p.x <= actor.x + 6 && p.y >= actor.y - 19 && p.y <= actor.y + 1)) continue;
     const session = sessionOf(actor.owner);
     const agent = session && subagentOf(session, actor);
     if (session && agent) return { session, agent };
@@ -67,11 +68,12 @@ function hitTest(office: Office, actors: Map<string, Actor>, p: Point): Hit | nu
 /** The office in pixel art. Click: preview; double click: go to the session. */
 export function WarRoomScene({ view, store, showArchived, selectedId, selectedAgent, onShowRepo }: Props) {
   const box = useRef<HTMLDivElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   // The layout follows the room's width with no side panel open; the panel only scales the view
   // down (see `roomWidth`), so opening it neither reflows the room nor moves anyone.
   const [cssWidth, setCssWidth] = useState(1200);
-  const [stageWidth, setStageWidth] = useState(1200);
+  const [available, setAvailable] = useState({ width: 0, height: 0 });
   const [hoveredAt, setHovered] = useState<SceneHit | null>(null);
   const hovered = hoveredAt?.kind === "session" ? hoveredAt.hit : null;
   const hoveredZone = hoveredAt?.kind === "cabinet" ? hoveredAt.zone : null;
@@ -107,6 +109,7 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
     : null;
   // Live state for the paint loop, so it is not restarted on every render.
   const band = office.bands[room];
+  const fitted = fitViewport(office.width * scale, band.h * TILE * scale, available.width, available.height);
   const live = useRef({ office, scale, band, selectedId, selectedAgent, alerts, today, hovered: null as Hit | null, cabinet: null as string | null, door: false });
   live.current = {
     office,
@@ -123,14 +126,15 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
 
   useEffect(() => {
     const el = box.current;
-    if (!el) return;
+    const area = viewport.current;
+    if (!el || !area) return;
     const measure = () => {
-      setStageWidth(el.clientWidth);
+      setAvailable({ width: area.clientWidth, height: area.clientHeight });
       setCssWidth(Math.max(320, roomWidth(el)));
     };
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(el);
+    observer.observe(area);
     window.addEventListener("resize", measure);
     return () => {
       observer.disconnect();
@@ -189,7 +193,7 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
 
   const at = (e: React.MouseEvent) => {
     const r = e.currentTarget.getBoundingClientRect();
-    const p = { x: ((e.clientX - r.left) / r.width) * office.width, y: band.y * TILE + ((e.clientY - r.top) / r.height) * band.h * TILE };
+    const p = { x: ((e.clientX - r.left - 1) / (r.width - 2)) * office.width, y: band.y * TILE + ((e.clientY - r.top - 1) / (r.height - 2)) * band.h * TILE };
     return sceneHit(office, room, actors.current, p);
   };
   const switchRoom = (to: RoomName) => {
@@ -210,46 +214,47 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
             {copy.pixel.lobby} <span className="muted">{resting}</span>
           </button>
         </div>
-        <canvas
-          ref={canvas}
-          // Full size when it fits; narrower (the side panel is open) it shrinks keeping its shape.
-          style={{
-            width: "100%",
-            maxWidth: office.width * scale,
-            aspectRatio: `${office.width} / ${band.h * TILE}`,
-            cursor: hoveredAt ? "pointer" : "default",
-          }}
-          data-shrunk={stageWidth < office.width * scale}
-          onMouseMove={(e) => setHovered(menu ? null : at(e))}
-          onMouseLeave={() => setHovered(null)}
-          onContextMenu={(e) => {
-            const found = at(e);
-            if (found?.kind !== "session") return setMenu(null);
-            e.preventDefault();
-            setHovered(null);
-            const r = e.currentTarget.getBoundingClientRect();
-            // Inside the stage, clear of its right and bottom edges.
-            const x = Math.max(0, Math.min(e.clientX - r.left, r.width - 250));
-            const y = Math.max(0, Math.min(e.clientY - r.top, r.height - 270)) + e.currentTarget.offsetTop;
-            setMenu({ x, y, hit: found.hit });
-          }}
-          onClick={(e) => {
-            const found = at(e);
-            if (found?.kind === "door") return switchRoom(room === "war" ? "lobby" : "war");
-            if (found?.kind === "cabinet") return onShowRepo(found.zone.room.repo_id);
-            const hit = found?.hit ?? null;
-            if (!hit) store.closeDetail();
-            else if (hit.agent) store.openSubagent(hit.session.id, hit.agent.id);
-            else store.openDetail(hit.session.id);
-          }}
-          onDoubleClick={(e) => {
-            const found = at(e);
-            const hit = found?.kind === "session" ? found.hit : null;
-            if (hit?.session.alive && !hit.agent) store.goTo(hit.session);
-          }}
-          role="img"
-          aria-label={copy.pixel.canvasLabel}
-        />
+        <div className="pixel-viewport" ref={viewport}>
+          <canvas
+            ref={canvas}
+            // Fit both axes without changing the office layout or cropping any of the room.
+            style={{
+              width: fitted.width,
+              height: fitted.height,
+              cursor: hoveredAt ? "pointer" : "default",
+            }}
+            data-shrunk={fitted.shrunk}
+            onMouseMove={(e) => setHovered(menu ? null : at(e))}
+            onMouseLeave={() => setHovered(null)}
+            onContextMenu={(e) => {
+              const found = at(e);
+              if (found?.kind !== "session") return setMenu(null);
+              e.preventDefault();
+              setHovered(null);
+              const r = e.currentTarget.getBoundingClientRect();
+              // Inside the stage, clear of its right and bottom edges.
+              const x = Math.max(0, Math.min(e.clientX - r.left, r.width - 250)) + e.currentTarget.offsetLeft;
+              const y = Math.max(0, Math.min(e.clientY - r.top, r.height - 270)) + e.currentTarget.offsetTop;
+              setMenu({ x, y, hit: found.hit });
+            }}
+            onClick={(e) => {
+              const found = at(e);
+              if (found?.kind === "door") return switchRoom(room === "war" ? "lobby" : "war");
+              if (found?.kind === "cabinet") return onShowRepo(found.zone.room.repo_id);
+              const hit = found?.hit ?? null;
+              if (!hit) store.closeDetail();
+              else if (hit.agent) store.openSubagent(hit.session.id, hit.agent.id);
+              else store.openDetail(hit.session.id);
+            }}
+            onDoubleClick={(e) => {
+              const found = at(e);
+              const hit = found?.kind === "session" ? found.hit : null;
+              if (hit?.session.alive && !hit.agent) store.goTo(hit.session);
+            }}
+            role="img"
+            aria-label={copy.pixel.canvasLabel}
+          />
+        </div>
         {hoveredZone && <div className="pixel-tip">{copy.pixel.cabinetTip(hoveredZone.folded.length)}</div>}
         {hoveredAt?.kind === "door" && <div className="pixel-tip">{room === "war" ? copy.pixel.toLobbyTip : copy.pixel.toWarTip}</div>}
         {menu && <DeskMenu at={menu} hit={menu.hit} store={store} onClose={closeMenu} />}

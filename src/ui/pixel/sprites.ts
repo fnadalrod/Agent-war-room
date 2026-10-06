@@ -2,30 +2,30 @@
 // 12×17 chibi agents seen from the front, back and side (arms hang along the torso, hands at its
 // bottom corners), seated from behind with a headset, and a 7×9 mini for subagents.
 
-/** Palette keys: k outline, s skin, h/H hair, e eyes, r cheeks, c/C shirt, p trousers, b shoes,
+/** Palette keys: k outline, s skin, h/H hair, a hair highlight, e eyes, r cheeks, c/C shirt, p trousers, b shoes,
  *  m headset, l its light. */
 export type Palette = Record<string, string>;
 export type Sprite = string[];
 
 const HEAD_FRONT = [
   "...kkkkkk...",
-  "..khhhhhhk..",
-  ".khhhhhhhhk.",
-  ".khhhhhhhHk.",
+  "..khaahhhk..",
+  ".khaaahhhhk.",
+  ".khhhhhhHHk.",
   ".khsshhsshk.",
   ".kssssssssk.",
-  ".ksseSsesSk.",
+  ".ksesSesSsk.",
   ".ksrssssrsk.",
-  "..kssssssk..",
+  "..kSSssSSk..",
   "...kkkkkk...",
 ];
 const HEAD_BACK = [
   "...kkkkkk...",
-  "..khhhhhhk..",
-  ".khhhhhhhhk.",
-  ".khhhhhhhHk.",
-  ".khhhhhhhHk.",
-  ".khhhhhhhHk.",
+  "..khaahhhk..",
+  ".khaaahhhhk.",
+  ".khhhhhhHHk.",
+  ".khhhhhhHHk.",
+  ".khhhhhhHHk.",
   ".kHhhhhhhHk.",
   ".kHhhhhhHHk.",
   "..kHhhhhHk..",
@@ -33,9 +33,9 @@ const HEAD_BACK = [
 ];
 const HEAD_SIDE = [
   "...kkkkk....",
-  "..khhhhhk...",
-  ".khhhhhhhk..",
-  ".khhhhhhhk..",
+  "..khaahhk...",
+  ".khaaahhHk..",
+  ".khaaahhHk..",
   ".khhhhhssk..",
   ".khhhhsssk..",
   ".khhhhsesk..",
@@ -43,12 +43,12 @@ const HEAD_SIDE = [
   "..kHssssk...",
   "...kkkkk....",
 ];
-const TORSO = ["..kcccccck..", ".kCccccccCk.", ".kCccccccCk.", ".ksccccccsk.", "..kppppppk.."];
-const TORSO_SIDE = ["...kcccck...", "...kcCcck...", "...kcCcck...", "...kcscck...", "...kppppk..."];
+const TORSO = ["..kccSScck..", ".kCccCcccCk.", ".kCccCclcCk.", ".ksccCcccsk.", "..kPPppPPk.."];
+const TORSO_SIDE = ["...kcccck...", "...kcCcck...", "...kcClck...", "...kcScck...", "...kppppk..."];
 const LEGS = {
-  stand: ["..kpp..ppk..", "..kbb..bbk.."],
-  a: ["..kpp..ppk..", "..kbb...kk.."],
-  b: ["..kpp..ppk..", "...kk..bbk.."],
+  stand: ["..kPp..pPk..", "..kbb..bbk.."],
+  a: ["..kPp..pPk..", "..kbb...kk.."],
+  b: ["..kPp..pPk..", "...kk..bbk.."],
 };
 const LEGS_SIDE = {
   stand: ["...kppk.....", "...kbbk....."],
@@ -58,20 +58,20 @@ const LEGS_SIDE = {
 const SEATED = [
   "...kkkkkk...",
   "..kmmmmmmk..",
-  ".khhhhhhhhk.",
-  ".khhhhhhhHk.",
-  ".mhhhhhhhHm.",
-  ".mhhhhhhhHl.",
+  ".khaaahhhhk.",
+  ".khhhhhhHHk.",
+  ".mhhhhhhHHm.",
+  ".lhhhhhHHHl.",
   ".kHhhhhhhHk.",
   ".kHhhhhhHHk.",
   "..kHhhhhHk..",
   "..kkkkkkkk..",
-  ".kcccccccck.",
   ".kCccccccCk.",
-  ".kCccccccCk.",
+  ".kCccCCccCk.",
+  ".kCCccccCCk.",
 ];
 /** Typing: the shoulders shift as the hands move (out of sight, on the console). */
-const SEATED_TYPING = [...SEATED.slice(0, 10), ".kcccccccck.", ".kCcccccccCk", ".kcCccccCck."];
+const SEATED_TYPING = [...SEATED.slice(0, 10), ".kCccccccCk.", ".kcCccCCcCk.", ".kCccccCCck."];
 
 export type Facing = "down" | "up" | "left" | "right";
 
@@ -103,7 +103,7 @@ export function waving(frame: number): Sprite {
 /** Seated on a sofa, facing us (the sofa hides the legs). */
 export const lounging: Sprite = [...HEAD_FRONT, ...TORSO];
 
-export const MINI: Sprite = ["..kkk..", ".khhhk.", "khhhhhk", "ksesesk", ".ksssk.", "kcccccK", "kCcccCk", ".kpkpk.", ".kk.kk."];
+export const MINI: Sprite = ["..kkk..", ".khhhk.", "khhhhhk", "ksesesk", ".ksssk.", "kccCcck", "kCclcCk", ".kpkpk.", ".kk.kk."];
 
 export const SKIN = [
   ["#f6d2b3", "#e2b18f"],
@@ -146,6 +146,7 @@ export function palette(provider: string, seed: number): Palette {
     S,
     h,
     H,
+    a: hairHighlight(h),
     e: "#140f1c",
     r: "#e79a8f",
     c,
@@ -156,6 +157,12 @@ export function palette(provider: string, seed: number): Palette {
     m: "#0b0f19",
     l: "#22d3ee",
   };
+}
+
+/** A small lit patch keeps dark hair readable against the room. */
+function hairHighlight(color: string): string {
+  const channels = color.slice(1).match(/../g)!;
+  return `#${channels.map((c) => Math.round(parseInt(c, 16) * 0.72 + 255 * 0.28).toString(16).padStart(2, "0")).join("")}`;
 }
 
 /** Draws a sprite with its top-left at (x, y); `flip` mirrors it (left-facing). */

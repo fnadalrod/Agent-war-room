@@ -39,7 +39,7 @@ export function App({ store }: { store: WarRoomStore }) {
   const reader = fullView ? readerContent(state, fullView) : null;
 
   return (
-    <div className="app" data-terminal={state.terminal != null} data-detail={state.detail != null}>
+    <div className="app" data-view={mode} data-terminal={state.terminal != null} data-detail={state.detail != null}>
       <header className="topbar">
         <div className="brand">
           <span className="lamp" data-attention={aggregate} />

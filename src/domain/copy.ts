@@ -321,6 +321,8 @@ export const copy = {
     today: t("pixel.today"),
     cabinetTip: (n: number) => t("pixel.cabinet_tip", { n }),
     lobbySign: t("pixel.lobby_sign"),
+    teamLounge: t("pixel.team_lounge"),
+    principalLounge: t("pixel.principal_lounge"),
     rooms: t("pixel.rooms"),
     warRoom: t("pixel.war_room"),
     lobby: t("pixel.lobby"),
