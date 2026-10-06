@@ -43,6 +43,12 @@ pub struct WarRoomView {
 /// A working session with no activity for this long is flagged as possibly stuck.
 pub const STALL_AFTER_MS: i64 = 6 * 60 * 1000;
 
+/// While a shell command runs, silence is expected (builds, test suites), so it waits longer.
+pub const COMMAND_STALL_AFTER_MS: i64 = 30 * 60 * 1000;
+
+/// Shell tool names as each provider reports them in its hooks.
+const SHELL_TOOLS: &[&str] = &["Bash", "Shell", "PowerShell", "run_command"];
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, TS)]
 #[ts(export)]
 pub struct UsageView {
@@ -144,7 +150,8 @@ pub struct SessionView {
     #[ts(type = "number | null")]
     pub context_window: Option<u64>,
     pub usage: UsageView,
-    /// Working but silent since this moment (ms) for longer than [`STALL_AFTER_MS`]: maybe stuck.
+    /// Working but silent since this moment (ms) for longer than [`STALL_AFTER_MS`] (or
+    /// [`COMMAND_STALL_AFTER_MS`] while a shell command runs): maybe stuck.
     #[ts(type = "number | null")]
     pub stalled_since: Option<i64>,
     pub worktree_path: String,
@@ -358,8 +365,12 @@ pub(crate) fn effective_attention(s: &Session, summary: Option<&TranscriptSummar
 
 /// When a working session went silent, if it has been silent long enough to look stuck.
 pub fn stalled_since(s: &Session, now: Timestamp) -> Option<i64> {
-    let working = matches!(s.status, SessionStatus::Working { .. } | SessionStatus::Compacting);
-    (working && now.0 - s.last_activity_at.0 >= STALL_AFTER_MS).then_some(s.last_activity_at.0)
+    let after = match &s.status {
+        SessionStatus::Working { tool: Some(tool) } if SHELL_TOOLS.contains(&tool.as_str()) => COMMAND_STALL_AFTER_MS,
+        SessionStatus::Working { .. } | SessionStatus::Compacting => STALL_AFTER_MS,
+        _ => return None,
+    };
+    (now.0 - s.last_activity_at.0 >= after).then_some(s.last_activity_at.0)
 }
 
 pub(crate) fn session_view(
@@ -506,5 +517,35 @@ mod tests {
             "codex --sandbox read-only"
         );
         assert_eq!(readable_command("claude"), "claude");
+    }
+
+    #[test]
+    fn a_running_shell_command_gets_longer_before_it_looks_stuck() {
+        use awr_domain::{ProviderKind, RepoId, SessionContext, SessionEventKind, TerminalHost, Workspace};
+        let context = SessionContext {
+            provider: ProviderKind::Claude,
+            workspace: Workspace {
+                repo: RepoId("/repo/.git".into()),
+                repo_name: "repo".into(),
+                worktree_path: "/repo".into(),
+                branch: None,
+                is_linked_worktree: false,
+            },
+            host: TerminalHost::default(),
+            transcript_path: None,
+            cwd: None,
+        };
+        let mut s = Session::open(SessionId("s".into()), context, Timestamp(0));
+        let after = |s: &Session, ms: i64| stalled_since(s, Timestamp(ms)).is_some();
+
+        s.apply(None, &SessionEventKind::ToolStarted { tool: "Read".into() }, Timestamp(0));
+        assert!(after(&s, STALL_AFTER_MS));
+
+        s.apply(None, &SessionEventKind::ToolStarted { tool: "Bash".into() }, Timestamp(0));
+        assert!(!after(&s, STALL_AFTER_MS), "a build or a test suite can be silent for a while");
+        assert!(after(&s, COMMAND_STALL_AFTER_MS));
+
+        s.apply(None, &SessionEventKind::ToolFinished { tool: "Bash".into(), failed: false }, Timestamp(0));
+        assert!(after(&s, STALL_AFTER_MS), "thinking after the command uses the normal threshold");
     }
 }

@@ -44,7 +44,7 @@ urgent one in the whole room.
 |---|---|---|
 | 🔴 **Needs you** | Asks for a permission, asks you a question or waits for you to approve a plan | Yes |
 | 🔵 **Finished** | Finished its turn and you have not looked at it yet | Yes |
-| 🟠 **Stuck** | Has been "working" for 6 minutes without any sign of life | Once |
+| 🟠 **Stuck** | Has been "working" for 6 minutes without any sign of life (30 while a shell command runs) | Once |
 | 🟢 **Working** | Running tools or thinking | No |
 | ⚪ **Idle** / **Closed** | No turn in progress / process ended | No |
 

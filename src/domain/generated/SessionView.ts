@@ -30,7 +30,8 @@ effort: string | null, context_tokens: number | null,
  */
 context_window: number | null, usage: UsageView, 
 /**
- * Working but silent since this moment (ms) for longer than [`STALL_AFTER_MS`]: maybe stuck.
+ * Working but silent since this moment (ms) for longer than [`STALL_AFTER_MS`] (or
+ * [`COMMAND_STALL_AFTER_MS`] while a shell command runs): maybe stuck.
  */
 stalled_since: number | null, worktree_path: string, branch: string | null, is_linked_worktree: boolean, subagents: Array<SubagentView>, 
 /**

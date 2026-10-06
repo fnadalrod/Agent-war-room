@@ -38,7 +38,8 @@ not muted). `deserves_notice()` = on watch + alerting + actually changed.
 - Idle/awaiting-input sessions with running subagents stay `Working`; `Seen` only acknowledges a
   finished session, so reviewing ongoing work cannot swallow its eventual completion.
 - Finished subagents are kept (last 6) so their work can be inspected; `Ended` finishes the running ones.
-- "Stuck" is **not** a domain state: it is derived from `last_activity_at` and the clock in
+- "Stuck" is **not** a domain state: it is derived from `last_activity_at`, the clock and the running
+  tool (a shell command gets 30 min instead of 6) in
   `crates/application/src/view.rs::stalled_since` (see `architecture.mdc`).
 
 ## Persistence compatibility (hard rule)
