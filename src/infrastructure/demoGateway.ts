@@ -47,6 +47,31 @@ I updated \`docs/tasks/bench.md\` with the handover for **block V**:
 
 > Next step: launch block V once the CI machine is free.
 
+### What changed
+
+1. \`docs/tasks/bench.md\`: a **Handover** section with the state of each block.
+2. \`docs/tasks/bench-runbook.md\`: how to tell a real red from a missing fixture:
+   - the log says \`ECONNREFUSED 127.0.0.1:5433\` in the first 20 lines;
+   - every test in the block fails in under 50 ms.
+3. Nothing in \`runner.ts\`, as agreed.
+
+### How to rerun
+
+\`\`\`sh
+docker compose -f bench/compose.yml up -d fixtures-db && make bench BLOCK=V REPORT=reports/block-v-$(date +%F).json
+\`\`\`
+
+| Block | Tests | Duration | Last run | Notes |
+| --- | --- | --- | --- | --- |
+| IV | 412 | 18 min | yesterday 21:40 | green, no flaky tests |
+| V | 377 | 22 min | today 08:15 | invalid: database missing from the start |
+| VI | 128 | 6 min | never | waits for block V |
+
+### Risks
+
+- If the CI machine is shared again tonight, the run can take **twice as long**.
+- Block VI depends on the reports of V; don't start it until V is green.
+
 More context in [the bench guide](https://example.com/bench).`;
 
 function demoTimeline(s: SessionView): TimelineEntryView[] {

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { copy } from "../domain/copy";
 import { XIcon } from "./icons";
@@ -16,6 +16,10 @@ type Props = {
 
 /** An agent's answer at reading size, over the whole window. Esc or a click outside closes it. */
 export function AnswerReader({ heading, title, text, onLink, onClose }: Props) {
+  // Focused on open, so arrows, PageDown and Space scroll the answer right away.
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(() => body.current?.focus(), []);
+
   useEffect(() => {
     // Capture: closes the reader before the panel's own Esc (which would close the panel).
     const onKey = (e: KeyboardEvent) => {
@@ -41,7 +45,7 @@ export function AnswerReader({ heading, title, text, onLink, onClose }: Props) {
             <XIcon />
           </button>
         </header>
-        <div className="reader-body">
+        <div className="reader-body" ref={body} tabIndex={-1}>
           <Markdown text={text} onLink={onLink} />
         </div>
       </article>
