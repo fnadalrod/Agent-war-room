@@ -136,6 +136,7 @@ function session(p: Partial<SessionView> & Pick<SessionView, "id" | "attention" 
     in_warp: false,
     pty_id: null,
     can_approve: false,
+    shared_files: [],
     ...p,
   };
 }
@@ -173,6 +174,7 @@ function initialRooms(): RoomView[] {
           command: "claude --permission-mode default",
           worktree_path: "/code/harbor",
           can_approve: true,
+          shared_files: [{ path: "docs/tasks/bench.md", sessions: ["c3d4e5f6-harbor-docs"] }],
           status_since: minutes(2),
           context_tokens: 312_000,
           usage: usage(28_400_000, 14.2),
@@ -218,6 +220,7 @@ function initialRooms(): RoomView[] {
           provider: "cursor",
           last_reply: DEMO_REPLY,
           worktree_path: "/code/harbor",
+          shared_files: [{ path: "docs/tasks/bench.md", sessions: ["a1b2c3d4-harbor-sync"] }],
           status_since: minutes(6),
           model: "composer-2",
           effort: null,

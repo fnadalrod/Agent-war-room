@@ -41,6 +41,7 @@ type Titles = HashMap<String, String>;
 #[derive(Default, Clone)]
 struct Facts {
     automatic_permission_review: bool,
+    edited_files: BTreeSet<String>,
     last_prompt: Option<String>,
     last_reply: Option<String>,
     last_action: Option<String>,
@@ -125,6 +126,7 @@ impl TranscriptReader for CodexTranscriptReader {
         let today = Local::now().date_naive();
         let mut usage = facts.usage;
         let mut usage_today = facts.daily.get(&today).copied().unwrap_or_default();
+        let mut edited_files = facts.edited_files.clone();
 
         let mut threads: BTreeSet<&str> = facts.subagents.keys().map(String::as_str).collect();
         threads.extend(subagent_ids.iter().map(String::as_str));
@@ -134,6 +136,7 @@ impl TranscriptReader for CodexTranscriptReader {
             let Some(sub) = self.facts(&path) else { continue };
             usage.add(&sub.usage);
             usage_today.add(&sub.daily.get(&today).copied().unwrap_or_default());
+            edited_files.extend(sub.edited_files.iter().cloned());
             if subagent_ids.iter().any(|id| id == thread) {
                 subagents.push(SubagentDetail {
                     id: thread.to_owned(),
@@ -153,6 +156,7 @@ impl TranscriptReader for CodexTranscriptReader {
         Some(TranscriptSummary {
             automatic_permission_review: facts.automatic_permission_review,
             running_commands: 0,
+            edited_files,
             title: self.title(main),
             first_prompt: self.first_prompt(main),
             last_prompt: facts.last_prompt,
@@ -362,6 +366,12 @@ fn absorb_item(facts: &mut Facts, entry: &Value) {
     match item.get("type").and_then(Value::as_str) {
         Some("UserMessage") => facts.last_prompt = message_text(&item).or(facts.last_prompt.take()),
         Some("AgentMessage") => facts.last_reply = message_text(&item).or(facts.last_reply.take()),
+        Some("FileChange") => {
+            facts.edited_files.extend(item.get("changes").and_then(Value::as_object).into_iter().flatten().map(|(p, _)| p.clone()));
+            if let Some(label) = action_label(&item) {
+                facts.last_action = Some(label);
+            }
+        }
         Some("SubAgentActivity") => {
             if let Some(thread) = item.get("agent_thread_id").and_then(Value::as_str) {
                 let name = item
@@ -523,6 +533,8 @@ mod tests {
         assert_eq!(s.subagents.len(), 1);
         assert_eq!(s.subagents[0].description.as_deref(), Some("trace quote flow"));
         assert_eq!(s.subagents[0].last_tool.as_deref(), Some("Edit · new.rs"));
+        let edited: Vec<_> = s.edited_files.iter().map(String::as_str).collect();
+        assert_eq!(edited, vec!["/code/app/a.rs", "/code/app/new.rs"]);
 
         let sub = reader.subagent(path.to_str().unwrap(), child, 10).unwrap();
         assert_eq!(sub.first_prompt.as_deref(), Some("Trace the quote flow"));

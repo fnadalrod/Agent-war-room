@@ -12,7 +12,7 @@ use awr_application::ports::{
 };
 use chrono::{Local, NaiveDate};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -51,6 +51,7 @@ struct State {
 struct Facts {
     running_commands: HashSet<String>,
     stop_calls: HashSet<String>,
+    edited_files: BTreeSet<String>,
     ai_title: Option<String>,
     custom_title: Option<String>,
     last_prompt: Option<String>,
@@ -130,17 +131,20 @@ impl TranscriptReader for ClaudeTranscriptReader {
         let today = Local::now().date_naive();
         let mut usage = facts.usage;
         let mut usage_today = facts.daily.get(&today).copied().unwrap_or_default();
-        // Every subagent file, not only the ones still listed: finished ones also cost.
+        let mut edited_files = facts.edited_files;
+        // Every subagent file, not only the ones still listed: finished ones also cost and edit.
         for sub in subagent_transcripts(&subagent_dir) {
             if let Some(f) = self.facts(&sub) {
                 usage.add(&f.usage);
                 usage_today.add(&f.daily.get(&today).copied().unwrap_or_default());
+                edited_files.extend(f.edited_files);
             }
         }
 
         Some(TranscriptSummary {
             automatic_permission_review: false,
             running_commands: facts.running_commands.len(),
+            edited_files,
             context_window: facts.model.as_deref().and_then(pricing::context_window),
             usage,
             usage_today,
@@ -175,22 +179,14 @@ impl TranscriptReader for ClaudeTranscriptReader {
             let Ok(lines) = head_lines(&file, u64::MAX) else { continue };
             for entry in lines.iter().filter(|e| e.get("type").and_then(Value::as_str) == Some("assistant")) {
                 for block in entry.pointer("/message/content").and_then(Value::as_array).into_iter().flatten() {
-                    let Some(name) = block.get("name").and_then(Value::as_str) else { continue };
-                    if !matches!(name, "Edit" | "MultiEdit" | "Write" | "NotebookEdit") {
-                        continue;
-                    }
-                    let input = block.get("input");
-                    let path = ["file_path", "notebook_path"]
-                        .iter()
-                        .find_map(|k| input.and_then(|i| i.get(*k)).and_then(Value::as_str));
-                    let Some(path) = path else { continue };
+                    let Some((path, whole)) = edit_target(block) else { continue };
                     let entry = touched.entry(path.to_owned()).or_insert_with(|| TouchedFile {
                         path: path.to_owned(),
                         edits: 0,
                         written: false,
                     });
                     entry.edits += 1;
-                    entry.written |= name == "Write";
+                    entry.written |= whole;
                 }
             }
         }
@@ -407,6 +403,17 @@ fn effort_of(entry: &Value) -> Option<String> {
     entry.get("effort").and_then(Value::as_str).filter(|e| !e.is_empty()).map(str::to_owned)
 }
 
+/// The file a tool call edits, and whether it writes it whole (`Write`, usually a new file).
+fn edit_target(block: &Value) -> Option<(&str, bool)> {
+    let name = block.get("name").and_then(Value::as_str)?;
+    if !matches!(name, "Edit" | "MultiEdit" | "Write" | "NotebookEdit") {
+        return None;
+    }
+    let input = block.get("input")?;
+    let path = ["file_path", "notebook_path"].iter().find_map(|k| input.get(*k)?.as_str())?;
+    Some((path, name == "Write"))
+}
+
 fn absorb_assistant(facts: &mut Facts, entry: &Value) {
     let Some(message) = entry.get("message") else { return };
     if let Some(model) = model_of(entry) {
@@ -434,6 +441,9 @@ fn absorb_assistant(facts: &mut Facts, entry: &Value) {
             Some("tool_use") => {
                 if let Some(name) = block.get("name").and_then(Value::as_str) {
                     facts.last_action = Some(tool_label(name, block.get("input")));
+                }
+                if let Some((path, _)) = edit_target(block) {
+                    facts.edited_files.insert(path.to_owned());
                 }
             }
             _ => {}
@@ -748,6 +758,10 @@ mod tests {
         let files = ClaudeTranscriptReader::new().touched_files(path.to_str().unwrap());
         let got: Vec<_> = files.iter().map(|f| (f.path.as_str(), f.edits, f.written)).collect();
         assert_eq!(got, vec![("/r/a.rs", 2, false), ("/r/new.md", 1, true)]);
+
+        let summary = ClaudeTranscriptReader::new().read(path.to_str().unwrap(), &[]).unwrap();
+        let edited: Vec<_> = summary.edited_files.iter().map(String::as_str).collect();
+        assert_eq!(edited, vec!["/r/a.rs", "/r/new.md"], "the summary keeps them incrementally");
     }
 
     #[test]

@@ -25,6 +25,7 @@ import {
   RestoreIcon,
   RobotIcon,
   TerminalIcon,
+  WarnIcon,
 } from "./icons";
 import { ContextBar } from "./ContextBar";
 import { QuickInput } from "./QuickInput";
@@ -62,6 +63,11 @@ export function SessionScreen({ session: s, store, now, showProvider = false }: 
           {stalled != null && (
             <span className="badge stalled" title={copy.stalled.title}>
               {copy.stalled.label(stalled)}
+            </span>
+          )}
+          {s.shared_files.length > 0 && (
+            <span className="badge shared" title={copy.shared.title}>
+              <WarnIcon size={13} /> {copy.shared.badge(s.shared_files.length)}
             </span>
           )}
           {s.subagents.some((a) => a.running) && (

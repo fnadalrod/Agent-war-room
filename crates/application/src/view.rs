@@ -178,6 +178,18 @@ pub struct SessionView {
     pub pty_id: Option<String>,
     /// There is a pending permission that can be approved or denied from the app.
     pub can_approve: bool,
+    /// Files this session edited that another live session in the same worktree edited too.
+    pub shared_files: Vec<SharedFileView>,
+}
+
+/// A file two live sessions of the same worktree both edited: one may overwrite the other's work.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct SharedFileView {
+    /// Relative to the worktree when it is inside it.
+    pub path: String,
+    /// The other sessions that edited it.
+    pub sessions: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
@@ -321,6 +333,10 @@ pub fn project(
         });
         entry.sessions.push(session_view(session, summaries.get(&session.id), approvable.contains(&session.id), now));
     }
+    let mut shared = shared_files(room, summaries);
+    for view in by_repo.values_mut().flat_map(|r| r.sessions.iter_mut()) {
+        view.shared_files = shared.remove(&SessionId(view.id.clone())).unwrap_or_default();
+    }
 
     let mut rooms: Vec<RoomView> = by_repo
         .into_values()
@@ -344,6 +360,32 @@ pub fn project(
     }
     let aggregate = rooms.iter().map(|r| r.attention).max().unwrap_or(AttentionView::Offline);
     WarRoomView { aggregate, rooms, today: (&today).into() }
+}
+
+/// Files edited by more than one live, not archived session of the same worktree, per session.
+/// Separate worktrees never clash: that is the way out this nudges towards.
+pub(crate) fn shared_files(
+    room: &WarRoom,
+    summaries: &HashMap<SessionId, TranscriptSummary>,
+) -> HashMap<SessionId, Vec<SharedFileView>> {
+    // (worktree, absolute path) → sessions that edited it.
+    let mut editors: BTreeMap<(&str, String), Vec<&SessionId>> = BTreeMap::new();
+    for s in room.sessions().filter(|s| s.is_alive() && !s.archived) {
+        let worktree = s.workspace.worktree_path.as_str();
+        for file in summaries.get(&s.id).into_iter().flat_map(|x| &x.edited_files) {
+            let absolute = if file.starts_with('/') { file.clone() } else { format!("{worktree}/{file}") };
+            editors.entry((worktree, absolute)).or_default().push(&s.id);
+        }
+    }
+    let mut out: HashMap<SessionId, Vec<SharedFileView>> = HashMap::new();
+    for ((worktree, file), ids) in editors.into_iter().filter(|(_, ids)| ids.len() > 1) {
+        let path = file.strip_prefix(worktree).and_then(|p| p.strip_prefix('/')).unwrap_or(&file).to_owned();
+        for id in &ids {
+            let sessions = ids.iter().filter(|o| o != &id).map(|o| o.0.clone()).collect();
+            out.entry((*id).clone()).or_default().push(SharedFileView { path: path.clone(), sessions });
+        }
+    }
+    out
 }
 
 /// A completed main turn still owns any commands running in the background.
@@ -456,6 +498,7 @@ pub(crate) fn session_view(
         in_warp: s.host.warp_focus_url.is_some(),
         pty_id: s.host.pty_id.clone(),
         can_approve,
+        shared_files: Vec::new(),
     };
     // Running ones first; within each group, in order of arrival.
     view.subagents.sort_by_key(|a| (!a.running, a.started_at));

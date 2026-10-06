@@ -1914,3 +1914,42 @@ pre.diff [data-line="file"] {
   background: color-mix(in srgb, var(--accent, #60a5fa) 25%, transparent);
   font-size: 11px;
 }
+
+/* ---------- Files shared with another session ---------- */
+.badge.shared {
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+  color: #fbbf24;
+}
+
+.shared-files {
+  margin-top: 10px;
+  padding: 10px 14px !important;
+  border: 1px solid color-mix(in srgb, #f59e0b 40%, transparent) !important;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, #f59e0b 8%, transparent);
+}
+
+.shared-files h3 {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: #fbbf24;
+}
+
+.shared-files ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+}
+
+.shared-files code {
+  overflow-wrap: anywhere;
+}
+
+.shared-files button.linkish + button.linkish::before {
+  content: ", ";
+  color: var(--muted);
+}

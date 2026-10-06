@@ -100,6 +100,13 @@
       "long": "¿Atascada? {minutes} min sin actividad",
       "title": "Sigue trabajando pero no da señales: puede estar colgada o esperando algo que no avisa"
     },
+    "shared": {
+      "badge_one": "{n} archivo compartido",
+      "badge_other": "{n} archivos compartidos",
+      "title": "Otra sesión viva en este worktree editó los mismos archivos: una puede pisar el trabajo de la otra. Un worktree por sesión lo evita.",
+      "heading": "También los edita otra sesión",
+      "with": "también lo edita"
+    },
     "session": {
       "effort": "esfuerzo {name}",
       "context": "{tokens} ctx",

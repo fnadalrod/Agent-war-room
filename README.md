@@ -82,6 +82,10 @@ doing, with which model and how much it has spent.
 The **Changes** button shows the files the session edited (its subagents included) and the **commits
 made in its worktree since it started**, with each one's diff. Nothing is computed until you ask.
 
+**Two sessions on the same files.** When two live sessions of the same worktree edit the same file,
+both cards say so ("1 shared file") and the preview lists the files with a link to the other session:
+one may be overwriting the other's work. A worktree per session avoids it. (Claude Code and Codex.)
+
 ![A session's changes](docs/screenshots/changes.png)
 
 ![A commit's diff](docs/screenshots/diff.png)

@@ -328,7 +328,8 @@ impl WarRoomService {
             let room = self.room();
             let session = known(&room, &id)?;
             let can_approve = self.approvals().contains_key(&id);
-            let view = view::session_view(session, self.summaries().get(&id), can_approve, self.ports.clock.now());
+            let mut view = view::session_view(session, self.summaries().get(&id), can_approve, self.ports.clock.now());
+            view.shared_files = view::shared_files(&room, &self.summaries()).remove(&id).unwrap_or_default();
             (view, session.transcript_path.clone().map(|p| (session.provider, p)))
         };
         let timeline = transcript
@@ -1004,6 +1005,25 @@ mod tests {
             .unwrap();
         assert_eq!(h.svc.view().aggregate, AttentionView::NeedsYou);
         assert_eq!(h.rec.notices.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn files_edited_by_two_live_sessions_of_a_worktree_are_flagged() {
+        let h = harness();
+        h.transcript.0.lock().unwrap().edited_files =
+            ["/code/app/src/a.rs".to_owned(), "notes.md".to_owned()].into_iter().collect();
+        h.svc.ingest(signal("a", "prompt")).unwrap();
+        assert!(h.svc.view().rooms[0].sessions[0].shared_files.is_empty(), "alone, nothing clashes");
+
+        h.svc.ingest(signal("b", "prompt")).unwrap();
+        let view = h.svc.view();
+        let a = view.rooms[0].sessions.iter().find(|s| s.id == "a").unwrap();
+        let paths: Vec<_> = a.shared_files.iter().map(|f| (f.path.as_str(), f.sessions.clone())).collect();
+        assert_eq!(paths, vec![("notes.md", vec!["b".to_owned()]), ("src/a.rs", vec!["b".to_owned()])]);
+        assert_eq!(h.svc.session_detail(id("a"), 5).unwrap().session.shared_files.len(), 2);
+
+        h.svc.archive(id("b")).unwrap();
+        assert!(h.svc.view().rooms[0].sessions.iter().all(|s| s.shared_files.is_empty()), "archived ones don't count");
     }
 
     #[test]

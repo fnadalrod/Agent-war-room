@@ -100,6 +100,13 @@
       "long": "Stuck? {minutes} min without activity",
       "title": "Still working but silent: it may be hung or waiting on something that doesn't notify"
     },
+    "shared": {
+      "badge_one": "{n} shared file",
+      "badge_other": "{n} shared files",
+      "title": "Another live session in this worktree edited the same files: one may overwrite the other's work. A worktree per session avoids it.",
+      "heading": "Also edited by another session",
+      "with": "also edited by"
+    },
     "session": {
       "effort": "{name} effort",
       "context": "{tokens} ctx",

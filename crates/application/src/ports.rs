@@ -1,5 +1,6 @@
 use crate::view::{IntegrationStatus, WarRoomView};
 use awr_domain::{Attention, ProviderKind, SessionEvent, SessionEventKind, SessionId, Timestamp, Workspace};
+use std::collections::BTreeSet;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PortError {
@@ -132,6 +133,8 @@ pub struct TranscriptSummary {
     pub automatic_permission_review: bool,
     /// Commands confirmed as running in the transcript. Derived, never persisted.
     pub running_commands: usize,
+    /// Files edited so far (as the agent wrote the path), subagents included. Derived, never persisted.
+    pub edited_files: BTreeSet<String>,
     /// Title the agent itself generates for the session.
     pub title: Option<String>,
     /// The task the session started with.

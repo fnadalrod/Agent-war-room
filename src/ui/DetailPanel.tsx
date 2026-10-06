@@ -20,7 +20,7 @@ import {
   type TimelineEntryView,
 } from "../domain/attention";
 import { copy } from "../domain/copy";
-import { CheckIcon, GoIcon, PlayIcon, ReadIcon, RobotIcon, TerminalIcon, XIcon } from "./icons";
+import { CheckIcon, GoIcon, PlayIcon, ReadIcon, RobotIcon, TerminalIcon, WarnIcon, XIcon } from "./icons";
 import { CopyButton } from "./CopyButton";
 import { Markdown } from "./Markdown";
 import { ChangesSection, DiffView } from "./Changes";
@@ -102,6 +102,8 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
             <span className="muted">{copy.detail.answerInTerminal}</span>
           </section>
         )}
+
+        {s.shared_files.length > 0 && <SharedFiles session={s} store={store} />}
 
         {(s.first_prompt || s.command) && (
           <section>
@@ -451,4 +453,33 @@ function Collapsible({ text, lines, plain, onLink }: { text: string; lines: numb
 
 function clock(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Files another live session of the same worktree also edited, with a way to jump to it. */
+function SharedFiles({ session: s, store }: { session: SessionView; store: WarRoomStore }) {
+  const others = store.snapshot().view?.rooms.flatMap((r) => r.sessions) ?? [];
+  const name = (id: string) => {
+    const o = others.find((x) => x.id === id);
+    return o ? (o.title ?? deskName(o)) : id.slice(0, 8);
+  };
+  return (
+    <section className="shared-files" title={copy.shared.title}>
+      <h3>
+        <WarnIcon size={14} /> {copy.shared.heading}
+      </h3>
+      <ul>
+        {s.shared_files.map((f) => (
+          <li key={f.path}>
+            <code>{f.path}</code>
+            <span className="muted"> · {copy.shared.with} </span>
+            {f.sessions.map((id) => (
+              <button key={id} className="linkish" onClick={() => store.openDetail(id)}>
+                {name(id)}
+              </button>
+            ))}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }

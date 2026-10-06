@@ -61,6 +61,12 @@ export const copy = {
     long: (minutes: number) => t("stalled.long", { minutes }),
     title: t("stalled.title"),
   },
+  shared: {
+    badge: (n: number) => tn("shared.badge", n),
+    title: t("shared.title"),
+    heading: t("shared.heading"),
+    with: t("shared.with"),
+  },
   session: {
     /** "high effort". */
     effort: (name: string) => t("session.effort", { name }),

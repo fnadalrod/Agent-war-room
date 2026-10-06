@@ -59,6 +59,8 @@ service picks it by the session's `ProviderKind`. A new port means: trait + fake
   review on domain attention.
   Views, tray aggregates, completion notices and acknowledgements share this rule; a tick notifies
   when the final pending command completes. Transcript-derived command counts are never persisted.
+- `view::shared_files` crosses the summaries' `edited_files` (Claude, Codex) of live, unarchived
+  sessions per worktree: files edited by two of them show on both cards and in the detail.
 
 ## Adding a new agent provider (Codex, Gemini, opencode…)
 

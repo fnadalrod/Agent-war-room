@@ -36,6 +36,7 @@ export function aSession(p: Partial<SessionView> = {}): SessionView {
     in_warp: false,
     pty_id: null,
     can_approve: false,
+    shared_files: [],
     ...p,
   };
 }
