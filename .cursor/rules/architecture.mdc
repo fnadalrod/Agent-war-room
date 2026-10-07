@@ -42,7 +42,7 @@ domain`; `infrastructure/` implements the ports in `application/ports.ts`.
 
 AgentProvider · RepoResolver · EventStore · Clock · ProcessProbe · Notifier · ViewPublisher ·
 TranscriptReader · WindowNavigator · AgentLauncher · SessionInput · SkillCatalog · GitHistory ·
-ApprovalResponder · IntegrationInstaller. All bundled in `service::Ports`; what is specific to one
+HookResponder · IntegrationInstaller. All bundled in `service::Ports`; what is specific to one
 agent (provider, transcripts, skills) comes as an `AgentPorts` per agent in `Ports.agents`, and the
 service picks it by the session's `ProviderKind`. A new port means: trait + fake in `service.rs` tests
 + real adapter + wiring in `src-tauri/src/lib.rs` + the e2e harness (`tests/e2e/mod.rs`).

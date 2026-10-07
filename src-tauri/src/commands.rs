@@ -6,6 +6,7 @@ use awr_application::ports::{FocusOutcome, IntegrationInstaller, LaunchOutcome, 
 use awr_application::view::{IntegrationStatus, SessionChanges, SessionDetail, SubagentPreview, WarRoomView};
 use awr_domain::{ProviderKind, SessionId};
 use awr_infrastructure::pty::{PtyInfo, PtyManager};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use tauri::State;
 
@@ -128,6 +129,15 @@ pub async fn approve(service: State<'_, Arc<WarRoomService>>, id: String) -> Res
 #[tauri::command]
 pub async fn deny(service: State<'_, Arc<WarRoomService>>, id: String, message: Option<String>) -> Result<(), String> {
     blocking(&service, move |s| s.deny(SessionId(id), message)).await
+}
+
+#[tauri::command]
+pub async fn answer_question(
+    service: State<'_, Arc<WarRoomService>>,
+    id: String,
+    answers: BTreeMap<String, String>,
+) -> Result<(), String> {
+    blocking(&service, move |s| s.answer_question(SessionId(id), answers)).await
 }
 
 #[tauri::command]

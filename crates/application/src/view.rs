@@ -1,7 +1,7 @@
 //! Read model consumed by the front end. Exported to TS with `ts-rs` (`cargo test -p awr-application`).
 
 use crate::locale;
-use crate::ports::{TranscriptSummary, Usage};
+use crate::ports::{QuestionOption, QuestionPrompt, TranscriptSummary, Usage};
 use awr_domain::{Attention, Session, SessionId, SessionStatus, Timestamp, WaitReason, WarRoom};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -178,8 +178,49 @@ pub struct SessionView {
     pub pty_id: Option<String>,
     /// There is a pending permission that can be approved or denied from the app.
     pub can_approve: bool,
+    /// The agent is waiting for an answer to a question (not a permission decision).
+    pub awaiting_question: bool,
+    /// The question text when the provider included it in the hook payload.
+    pub pending_question: Option<String>,
+    /// A live hook is waiting for answers from this app.
+    pub can_answer_question: bool,
+    /// Structured questions and choices from that hook.
+    pub questions: Vec<QuestionView>,
     /// Files this session edited that another live session in the same worktree edited too.
     pub shared_files: Vec<SharedFileView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct QuestionView {
+    pub question: String,
+    pub header: Option<String>,
+    pub options: Vec<QuestionOptionView>,
+    pub multi_select: bool,
+}
+
+impl From<&QuestionPrompt> for QuestionView {
+    fn from(prompt: &QuestionPrompt) -> Self {
+        Self {
+            question: prompt.question.clone(),
+            header: prompt.header.clone(),
+            options: prompt.options.iter().map(QuestionOptionView::from).collect(),
+            multi_select: prompt.multi_select,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct QuestionOptionView {
+    pub label: String,
+    pub description: Option<String>,
+}
+
+impl From<&QuestionOption> for QuestionOptionView {
+    fn from(option: &QuestionOption) -> Self {
+        Self { label: option.label.clone(), description: option.description.clone() }
+    }
 }
 
 /// A file two live sessions of the same worktree both edited: one may overwrite the other's work.
@@ -423,6 +464,10 @@ pub(crate) fn session_view(
 ) -> SessionView {
     let summary = summary.cloned().unwrap_or_default();
     let detail = |id: &str| summary.subagents.iter().find(|d| d.id == id).cloned().unwrap_or_default();
+    let (awaiting_question, pending_question) = match &s.status {
+        SessionStatus::AwaitingYou { reason: WaitReason::Question, detail, .. } => (true, detail.clone()),
+        _ => (false, None),
+    };
     let mut view = SessionView {
         id: s.id.0.clone(),
         provider: format!("{:?}", s.provider).to_lowercase(),
@@ -498,6 +543,10 @@ pub(crate) fn session_view(
         in_warp: s.host.warp_focus_url.is_some(),
         pty_id: s.host.pty_id.clone(),
         can_approve,
+        awaiting_question,
+        pending_question,
+        can_answer_question: false,
+        questions: Vec::new(),
         shared_files: Vec::new(),
     };
     // Running ones first; within each group, in order of arrival.

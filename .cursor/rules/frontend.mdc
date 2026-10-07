@@ -38,7 +38,8 @@ alwaysApply: false
   source color via `data-source`; amber `#f59e0b` = stalled. No CSS framework, no inline colors.
 - Links in agent Markdown never navigate the app window (`Markdown.tsx` → `openExternal`, http(s) only).
 - The detail panel is the one place for a session's depth: task, last reply, usage, changes (on
-  demand), skills, subagents (clickable → subagent view, Esc goes back), timeline, diff overlay.
+  demand), skills, subagents (clickable → subagent view, Esc goes back), timeline, pending question
+  and direct reply where the terminal is writable, diff overlay.
 - A final answer at reading size: `store.readAnswer(id, agent?)` → `state.reading`, rendered once by
   `App` (`AnswerReader`, a portal over the whole window, with copy; its Esc is caught first). Opened
   from the preview, cards and queue rows (not while working), the desk menu and the `r` key.

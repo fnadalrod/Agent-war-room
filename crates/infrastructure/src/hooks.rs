@@ -4,7 +4,7 @@
 //! that speaks it; a [`Dialect`] carries what differs.
 
 use crate::tools::{clip, tool_argument};
-use awr_application::ports::{PortError, PortResult, Translated};
+use awr_application::ports::{PortError, PortResult, QuestionOption, QuestionPrompt, Translated};
 use awr_domain::{EndReason, ProviderKind, SessionEventKind, SessionId, SkillInvoker, SkillSource, WaitReason};
 use serde_json::Value;
 
@@ -40,6 +40,12 @@ pub fn translate(dialect: &Dialect, payload: &Value) -> PortResult<Option<Transl
         return Err(PortError::Failed(format!("{} hook without session_id or hook_event_name", dialect.wire_name)));
     };
     let tool = field("tool_name").map(str::to_owned);
+    // Claude also sends `PermissionRequest` for `AskUserQuestion` while its dialog is on screen: that
+    // hook is the one the app answers (first answer wins), so it is a question, not a permission.
+    let asks = tool.as_deref().is_some_and(|t| dialect.question_tools.contains(&t));
+    let question = (asks && matches!(event, "PreToolUse" | "PermissionRequest"))
+        .then(|| question_prompts(payload.get("tool_input")))
+        .flatten();
     // Tool hooks fired from a subagent carry `agent_id`.
     let subagent = field("agent_id").map(str::to_owned);
 
@@ -55,7 +61,11 @@ pub fn translate(dialect: &Dialect, payload: &Value) -> PortResult<Option<Transl
         }
         "PreToolUse" => match tool {
             Some(t) if dialect.question_tools.contains(&t.as_str()) => {
-                SessionEventKind::AwaitingYou { reason: WaitReason::Question, tool: Some(t), detail: None }
+                SessionEventKind::AwaitingYou {
+                    reason: WaitReason::Question,
+                    tool: Some(t),
+                    detail: question_detail(payload.get("tool_input")),
+                }
             }
             Some(t) => {
                 if Some(t.as_str()) == dialect.skill_tool
@@ -73,6 +83,11 @@ pub fn translate(dialect: &Dialect, payload: &Value) -> PortResult<Option<Transl
         "PostToolUse" | "PostToolUseFailure" => match (tool, subagent) {
             (Some(t), None) => SessionEventKind::ToolFinished { tool: t, failed: event == "PostToolUseFailure" },
             _ => return Ok(None),
+        },
+        "PermissionRequest" if question.is_some() => SessionEventKind::AwaitingYou {
+            reason: WaitReason::Question,
+            tool,
+            detail: question_detail(payload.get("tool_input")),
         },
         "PermissionRequest" => SessionEventKind::AwaitingYou {
             reason: WaitReason::Permission,
@@ -109,7 +124,92 @@ pub fn translate(dialect: &Dialect, payload: &Value) -> PortResult<Option<Transl
         kind: Some(kind),
         extra,
         facts: Default::default(),
+        question,
     }))
+}
+
+fn question_prompts(input: Option<&Value>) -> Option<Vec<QuestionPrompt>> {
+    let input = input?;
+    let mut prompts: Vec<QuestionPrompt> = input
+        .get("questions")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|q| {
+            let question = q.get("question").and_then(Value::as_str)?.trim();
+            if question.is_empty() {
+                return None;
+            }
+            let options = q
+                .get("options")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|option| {
+                    let label = option.get("label").and_then(Value::as_str)?.trim();
+                    (!label.is_empty()).then(|| QuestionOption {
+                        label: label.to_owned(),
+                        description: option
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|description| !description.is_empty())
+                            .map(str::to_owned),
+                    })
+                })
+                .collect();
+            Some(QuestionPrompt {
+                question: question.to_owned(),
+                header: q
+                    .get("header")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|header| !header.is_empty())
+                    .map(str::to_owned),
+                options,
+                multi_select: q.get("multiSelect").and_then(Value::as_bool).unwrap_or(false),
+            })
+        })
+        .collect();
+    if prompts.is_empty()
+        && let Some(question) = input
+            .get("question")
+            .or_else(|| input.get("prompt"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|question| !question.is_empty())
+    {
+        prompts.push(QuestionPrompt {
+            question: question.to_owned(),
+            header: None,
+            options: Vec::new(),
+            multi_select: false,
+        });
+    }
+    (!prompts.is_empty()).then_some(prompts)
+}
+
+/// Human-readable question from Claude/Codex question tools. Both currently use a `questions`
+/// array; the singular shapes keep the adapter tolerant of older clients.
+fn question_detail(input: Option<&Value>) -> Option<String> {
+    let questions = question_prompts(input)?;
+    let text = questions
+        .into_iter()
+        .map(|prompt| {
+            if prompt.options.is_empty() {
+                prompt.question
+            } else {
+                let options = prompt.options.into_iter().map(|option| option.label).collect::<Vec<_>>().join("\n• ");
+                format!("{}\n• {options}", prompt.question)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    Some(if text.chars().count() <= 500 {
+        text
+    } else {
+        format!("{}…", text.chars().take(499).collect::<String>())
+    })
 }
 
 /// Claude's `Notification`: recent versions send `notification_type`; older ones only the message.

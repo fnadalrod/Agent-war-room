@@ -157,6 +157,18 @@ export class WarRoomStore {
     void this.run(() => this.rooms.deny(s.id)).then((ok) => ok && this.notify({ text: copy.toasts.denied, tone: "ok" }));
   }
 
+  /** Delivers structured answers to the hook currently waiting for this session. */
+  async answerQuestion(s: SessionView, answers: Record<string, string>): Promise<boolean> {
+    try {
+      await this.rooms.answerQuestion(s.id, answers);
+      this.notify({ text: copy.toasts.questionAnswered, tone: "ok" });
+      return true;
+    } catch (e) {
+      this.notify({ text: String(e), tone: "warn" });
+      return false;
+    }
+  }
+
   /** Types a message into the session and sends it. Resolves to `true` if delivered. */
   async send(s: SessionView, text: string): Promise<boolean> {
     try {
@@ -315,6 +327,7 @@ export class WarRoomStore {
       fresh.last_activity_at !== shown.last_activity_at ||
       fresh.attention !== shown.attention ||
       fresh.can_approve !== shown.can_approve ||
+      fresh.can_answer_question !== shown.can_answer_question ||
       fresh.title !== shown.title
     ) {
       // Paint the fresh card now and fetch the conversation behind it.

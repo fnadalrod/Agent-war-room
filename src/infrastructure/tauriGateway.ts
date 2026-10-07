@@ -33,6 +33,7 @@ export const tauriWarRoomGateway: WarRoomGateway = {
   unmute: (id) => invoke("unmute", { id }),
   approve: (id) => invoke("approve", { id }),
   deny: (id, message) => invoke("deny", { id, message: message ?? null }),
+  answerQuestion: (id, answers) => invoke("answer_question", { id, answers }),
   sendInput: (id, text) => invoke("send_input", { id, text }),
   launch: (provider, cwd, target) => invoke<Launched>("launch", { provider, cwd, target }),
   resume: (id, target) => invoke<Launched>("resume", { id, target }),

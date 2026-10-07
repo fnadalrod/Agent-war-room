@@ -4,7 +4,8 @@
 //
 // Builds nothing: run `npm run build` first if the source changed (npm run shot does it for you).
 // Writes classic.png (full page), detail.png, reader.png, changes.png, diff.png, subagent.png, filtered.png,
-// agents.png, shortcuts.png, pixel.png, pixel-later.png, pixel-menu.png and lobby.png to <out-dir>.
+// agents.png, shortcuts.png, question.png, pixel.png, pixel-later.png, pixel-menu.png and lobby.png
+// to <out-dir>.
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
@@ -45,6 +46,9 @@ try {
 
   await page.goto(`http://localhost:${port}/?lang=${lang}`);
   await shot("classic", true);
+  await page.getByText("Sync conflicts strategy").first().click();
+  await shot("question");
+  await page.keyboard.press("Escape");
   // Subagent first: the detail panel would cover the chips. Esc goes back to its session's
   // detail (which has subagents), a second Esc closes it.
   await page.locator(".agent-chip").first().click();

@@ -160,6 +160,13 @@ export const copy = {
   quickInput: {
     placeholder: t("quick_input.placeholder"),
     label: t("quick_input.label"),
+    answerPlaceholder: t("quick_input.answer_placeholder"),
+    answerLabel: t("quick_input.answer_label"),
+    send: t("quick_input.send"),
+    otherAnswer: t("quick_input.other_answer"),
+    sendAnswers: t("quick_input.send_answers"),
+    sendAnswersOther: t("quick_input.send_answers_other"),
+    multipleAllowed: t("quick_input.multiple_allowed"),
   },
 
   room: {
@@ -215,6 +222,8 @@ export const copy = {
     skills: t("detail.skills"),
     subagents: t("detail.subagents"),
     recentConversation: t("detail.recent_conversation"),
+    openToAnswer: t("detail.open_to_answer"),
+    questionInTerminal: t("detail.question_in_terminal"),
     loading: t("detail.loading"),
     noTranscript: t("detail.no_transcript"),
     goToSession: t("detail.go_to_session"),
@@ -312,6 +321,7 @@ export const copy = {
   toasts: {
     approved: t("toasts.approved"),
     denied: t("toasts.denied"),
+    questionAnswered: t("toasts.question_answered"),
     openedIn: (via: string) => t("toasts.opened_in", { via }),
   },
 

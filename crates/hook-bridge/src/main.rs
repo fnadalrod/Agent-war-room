@@ -3,9 +3,10 @@
 //! Invariants: always exits with 0, takes milliseconds if the app is not running, and only writes
 //! an explicit decision from the app to stdout. It must never break or slow down the agent.
 //!
-//! On `PermissionRequest` it waits for the app's decision (approve/deny from the war room). It
-//! blocks nobody: the agent shows its own dialog at the same time and, if you answer in the terminal,
-//! kills this process and discards its reply. Claude Code and Codex share this protocol.
+//! On `PermissionRequest` it waits for the app's decision (approve/deny from the war room) or, for
+//! `AskUserQuestion`, its answers. It blocks nobody: the agent shows its own dialog at the same time
+//! and, if you answer in the terminal, kills this process and discards its reply. Claude Code and
+//! Codex share this protocol.
 
 use awr_wire::{EnvHints, HookEnvelope, HookReply, PROTOCOL_VERSION, WireProcess};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -90,7 +91,7 @@ fn run(event_arg: Option<&str>) -> Option<String> {
     let mut reply = String::new();
     BufReader::new(stream).read_line(&mut reply).ok()?;
     let reply: HookReply = serde_json::from_str(reply.trim()).ok()?;
-    Some(permission_output(&reply))
+    Some(hook_output(&reply, &envelope.payload))
 }
 
 /// Agents recognisable by their payload alone. Cursor also runs the hooks in Claude's settings, with
@@ -113,14 +114,22 @@ fn provider(env: Option<String>, payload: Option<&str>, ancestor: Option<&str>) 
         .unwrap_or_else(|| "claude".into())
 }
 
-/// Output Claude Code and Codex understand for `PermissionRequest` (the same contract).
-fn permission_output(reply: &HookReply) -> String {
+/// Output Claude Code and Codex understand for `PermissionRequest` (the same contract). Answers to
+/// `AskUserQuestion` are an "allow" whose `updatedInput` is the original input plus `answers`.
+fn hook_output(reply: &HookReply, payload: &serde_json::Value) -> String {
     let decision = match reply {
         HookReply::Allow => serde_json::json!({ "behavior": "allow" }),
         HookReply::Deny { message } => serde_json::json!({
             "behavior": "deny",
             "message": message.clone().unwrap_or_else(|| awr_i18n::t("bridge.default_deny").into()),
         }),
+        HookReply::Answer { answers } => {
+            let mut input = payload.get("tool_input").cloned().unwrap_or_else(|| serde_json::json!({}));
+            if let Some(input) = input.as_object_mut() {
+                input.insert("answers".into(), serde_json::json!(answers));
+            }
+            serde_json::json!({ "behavior": "allow", "updatedInput": input })
+        }
     };
     serde_json::json!({
         "hookSpecificOutput": { "hookEventName": "PermissionRequest", "decision": decision }
@@ -205,13 +214,36 @@ mod tests {
 
     #[test]
     fn permission_output_matches_claude_code_contract() {
-        let allow: serde_json::Value = serde_json::from_str(&permission_output(&HookReply::Allow)).unwrap();
+        let allow: serde_json::Value = serde_json::from_str(&hook_output(&HookReply::Allow, &serde_json::json!({}))).unwrap();
         assert_eq!(allow["hookSpecificOutput"]["hookEventName"], "PermissionRequest");
         assert_eq!(allow["hookSpecificOutput"]["decision"]["behavior"], "allow");
 
         let deny: serde_json::Value =
-            serde_json::from_str(&permission_output(&HookReply::Deny { message: Some("no".into()) })).unwrap();
+            serde_json::from_str(&hook_output(&HookReply::Deny { message: Some("no".into()) }, &serde_json::json!({}))).unwrap();
         assert_eq!(deny["hookSpecificOutput"]["decision"]["behavior"], "deny");
         assert_eq!(deny["hookSpecificOutput"]["decision"]["message"], "no");
+    }
+
+    #[test]
+    fn question_output_preserves_the_questions_and_supplies_answers() {
+        let payload = serde_json::json!({
+            "tool_input": {
+                "questions": [{
+                    "question": "Which framework?",
+                    "header": "Framework",
+                    "options": [{"label": "React", "description": "Components"}],
+                    "multiSelect": false
+                }]
+            }
+        });
+        let answer = HookReply::Answer {
+            answers: [("Which framework?".into(), "React".into())].into_iter().collect(),
+        };
+        let output: serde_json::Value = serde_json::from_str(&hook_output(&answer, &payload)).unwrap();
+        let decision = &output["hookSpecificOutput"]["decision"];
+        assert_eq!(output["hookSpecificOutput"]["hookEventName"], "PermissionRequest");
+        assert_eq!(decision["behavior"], "allow");
+        assert_eq!(decision["updatedInput"]["questions"], payload["tool_input"]["questions"]);
+        assert_eq!(decision["updatedInput"]["answers"]["Which framework?"], "React");
     }
 }

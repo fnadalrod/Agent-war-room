@@ -1,6 +1,20 @@
 use crate::view::{IntegrationStatus, WarRoomView};
 use awr_domain::{Attention, ProviderKind, SessionEvent, SessionEventKind, SessionId, Timestamp, Workspace};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuestionOption {
+    pub label: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuestionPrompt {
+    pub question: String,
+    pub header: Option<String>,
+    pub options: Vec<QuestionOption>,
+    pub multi_select: bool,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum PortError {
@@ -22,6 +36,8 @@ pub struct Translated {
     /// `SkillInvoked` arrives with a provisional source; [`SkillCatalog`] settles it.
     pub extra: Vec<SessionEventKind>,
     pub facts: HookFacts,
+    /// Structured prompts when this signal is an answerable question.
+    pub question: Option<Vec<QuestionPrompt>>,
 }
 
 /// What a hook says about the session besides its state, for agents whose transcript lacks it
@@ -258,17 +274,18 @@ pub trait WindowNavigator: Send + Sync {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ApprovalDecision {
+pub enum HookResponse {
     Allow,
     Deny { message: Option<String> },
+    Answer { answers: BTreeMap<String, String> },
 }
 
-/// Back channel to an agent waiting for a permission decision.
-pub trait ApprovalResponder: Send + Sync {
+/// Back channel to an agent waiting for a permission decision or question answer.
+pub trait HookResponder: Send + Sync {
     /// The agent is still waiting: nobody has answered in the terminal yet.
     fn is_open(&self) -> bool;
     /// Delivers the decision. `false` if nobody was waiting any more.
-    fn respond(&self, decision: ApprovalDecision) -> bool;
+    fn respond(&self, response: HookResponse) -> bool;
 }
 
 /// Where to open a new or resumed agent.

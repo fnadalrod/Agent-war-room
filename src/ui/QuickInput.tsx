@@ -31,10 +31,13 @@ export function QuickInput({
         autoFocus={autoFocus}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={copy.quickInput.placeholder}
+        placeholder={session.awaiting_question ? copy.quickInput.answerPlaceholder : copy.quickInput.placeholder}
         disabled={sending}
-        aria-label={copy.quickInput.label}
+        aria-label={session.awaiting_question ? copy.quickInput.answerLabel : copy.quickInput.label}
       />
+      <button className="primary" type="submit" disabled={sending || !text.trim()}>
+        {copy.quickInput.send}
+      </button>
     </form>
   );
 }

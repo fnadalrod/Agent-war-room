@@ -69,6 +69,15 @@ pub fn stalled_body(minutes: i64, doing: Option<&str>) -> String {
 pub fn no_pending_permission() -> &'static str {
     t("core.error.no_pending_permission")
 }
+pub fn no_pending_question() -> &'static str {
+    t("core.error.no_pending_question")
+}
+pub fn incomplete_question_answer() -> &'static str {
+    t("core.error.incomplete_question_answer")
+}
+pub fn question_already_answered() -> &'static str {
+    t("core.error.question_already_answered")
+}
 pub fn already_answered_in_terminal() -> &'static str {
     t("core.error.already_answered_in_terminal")
 }

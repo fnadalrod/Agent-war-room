@@ -1,16 +1,18 @@
 use crate::locale;
 use crate::ports::{
-    AgentLauncher, AgentProvider, ApprovalDecision, ApprovalResponder, Clock, EventStore, FocusOutcome, FocusTarget,
-    GitHistory, HookFacts, LaunchOutcome, LaunchRequest, LaunchTarget, Notice, Notifier, PortError, PortResult,
-    ProcessProbe, RepoResolver, SessionInput, SkillCatalog, TranscriptReader, TranscriptSummary, Usage, ViewPublisher,
-    WindowNavigator,
+    AgentLauncher, AgentProvider, Clock, EventStore, FocusOutcome, FocusTarget, GitHistory, HookFacts, HookResponder,
+    HookResponse, LaunchOutcome, LaunchRequest, LaunchTarget, Notice, Notifier, PortError, PortResult, ProcessProbe,
+    QuestionPrompt, RepoResolver, SessionInput, SkillCatalog, TranscriptReader, TranscriptSummary, Usage,
+    ViewPublisher, WindowNavigator,
 };
-use crate::view::{self, CommitView, SessionChanges, SessionDetail, SubagentPreview, TouchedFileView, WarRoomView};
+use crate::view::{
+    self, CommitView, QuestionView, SessionChanges, SessionDetail, SubagentPreview, TouchedFileView, WarRoomView,
+};
 use awr_domain::{
     Attention, AttentionChange, ProviderKind, SessionContext, SessionEvent, SessionEventKind, SessionId, TerminalHost,
     Timestamp, WarRoom,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 /// How much history is rebuilt on startup.
@@ -24,8 +26,8 @@ pub struct IncomingSignal {
     pub received_at: Option<Timestamp>,
     pub host: TerminalHost,
     pub payload: serde_json::Value,
-    /// Present if the agent awaits a decision (permission approvable from the app).
-    pub reply: Option<Arc<dyn ApprovalResponder>>,
+    /// Present if the agent awaits a permission decision or question answer from the app.
+    pub reply: Option<Arc<dyn HookResponder>>,
 }
 
 /// Everything external the service needs.
@@ -55,12 +57,20 @@ pub struct WarRoomService {
     /// Enrichment derived from the transcript; not domain state and not persisted.
     summaries: Mutex<HashMap<SessionId, TranscriptSummary>>,
     /// Permissions resolvable from the app. Ephemeral: they live as long as the hook connection.
-    approvals: Mutex<HashMap<SessionId, Arc<dyn ApprovalResponder>>>,
+    approvals: Mutex<HashMap<SessionId, Arc<dyn HookResponder>>>,
+    /// Questions answerable through a hook that is currently waiting for the app.
+    questions: Mutex<HashMap<SessionId, PendingQuestion>>,
     /// Sessions already notified as possibly stuck (until they show activity again).
     stalled: Mutex<HashSet<SessionId>>,
     /// What hooks said that transcripts don't (model, tokens…), merged into the summaries.
     hook_facts: Mutex<HashMap<SessionId, HookTotals>>,
     ports: Ports,
+}
+
+#[derive(Clone)]
+struct PendingQuestion {
+    prompts: Vec<QuestionPrompt>,
+    responder: Arc<dyn HookResponder>,
 }
 
 /// [`HookFacts`] accumulated per session.
@@ -101,6 +111,7 @@ impl WarRoomService {
             room: Mutex::new(WarRoom::new()),
             summaries: Mutex::default(),
             approvals: Mutex::default(),
+            questions: Mutex::default(),
             stalled: Mutex::default(),
             hook_facts: Mutex::default(),
             ports,
@@ -233,10 +244,19 @@ impl WarRoomService {
             return Ok(());
         };
 
-        if let Some(reply) = signal.reply
-            && matches!(kind, SessionEventKind::AwaitingYou { reason: awr_domain::WaitReason::Permission, .. })
-        {
-            self.approvals().insert(translated.session.clone(), reply);
+        if let Some(reply) = signal.reply {
+            match &kind {
+                SessionEventKind::AwaitingYou { reason: awr_domain::WaitReason::Permission, .. } => {
+                    self.approvals().insert(translated.session.clone(), reply);
+                }
+                SessionEventKind::AwaitingYou { reason: awr_domain::WaitReason::Question, .. } => {
+                    if let Some(prompts) = translated.question.clone().filter(|prompts| !prompts.is_empty()) {
+                        self.questions()
+                            .insert(translated.session.clone(), PendingQuestion { prompts, responder: reply });
+                    }
+                }
+                _ => {}
+            }
         }
 
         let workspace = self.ports.resolver.resolve(&translated.cwd);
@@ -307,19 +327,38 @@ impl WarRoomService {
 
     /// Approves the pending permission as if you had pressed "Yes" in the terminal.
     pub fn approve(&self, id: SessionId) -> PortResult<()> {
-        self.decide(id, ApprovalDecision::Allow)
+        self.decide(id, HookResponse::Allow)
     }
 
     pub fn deny(&self, id: SessionId, message: Option<String>) -> PortResult<()> {
-        self.decide(id, ApprovalDecision::Deny { message })
+        self.decide(id, HookResponse::Deny { message })
     }
 
-    fn decide(&self, id: SessionId, decision: ApprovalDecision) -> PortResult<()> {
+    fn decide(&self, id: SessionId, response: HookResponse) -> PortResult<()> {
         let responder =
             self.approvals().remove(&id).ok_or_else(|| PortError::Failed(locale::no_pending_permission().into()))?;
-        let delivered = responder.respond(decision);
+        let delivered = responder.respond(response);
         self.publish();
         if delivered { Ok(()) } else { Err(PortError::Failed(locale::already_answered_in_terminal().into())) }
+    }
+
+    /// Answers the exact questions carried by a waiting Claude `AskUserQuestion` hook.
+    pub fn answer_question(&self, id: SessionId, answers: BTreeMap<String, String>) -> PortResult<()> {
+        let pending = {
+            let mut questions = self.questions();
+            let pending = questions.get(&id).ok_or_else(|| PortError::Failed(locale::no_pending_question().into()))?;
+            let complete = pending
+                .prompts
+                .iter()
+                .all(|prompt| answers.get(&prompt.question).is_some_and(|answer| !answer.trim().is_empty()));
+            if !complete {
+                return Err(PortError::Failed(locale::incomplete_question_answer().into()));
+            }
+            questions.remove(&id).expect("question checked above")
+        };
+        let delivered = pending.responder.respond(HookResponse::Answer { answers });
+        self.publish();
+        if delivered { Ok(()) } else { Err(PortError::Failed(locale::question_already_answered().into())) }
     }
 
     /// Preview: the session card and its last `limit` conversation entries.
@@ -329,6 +368,7 @@ impl WarRoomService {
             let session = known(&room, &id)?;
             let can_approve = self.approvals().contains_key(&id);
             let mut view = view::session_view(session, self.summaries().get(&id), can_approve, self.ports.clock.now());
+            self.enrich_question(&id, &mut view);
             view.shared_files = view::shared_files(&room, &self.summaries()).remove(&id).unwrap_or_default();
             (view, session.transcript_path.clone().map(|p| (session.provider, p)))
         };
@@ -464,6 +504,12 @@ impl WarRoomService {
             approvals.retain(|_, r| r.is_open());
             approvals.len() != before
         };
+        changed |= {
+            let mut questions = self.questions();
+            let before = questions.len();
+            questions.retain(|_, pending| pending.responder.is_open());
+            questions.len() != before
+        };
         for id in &active {
             let from = self.room().get(id).map(|s| view::effective_attention(s, self.summaries().get(id)));
             changed |= self.refresh_summary(id);
@@ -528,7 +574,20 @@ impl WarRoomService {
 
     pub fn view(&self) -> WarRoomView {
         let approvable: HashSet<SessionId> = self.approvals().keys().cloned().collect();
-        view::project(&self.room(), &self.summaries(), &approvable, self.ports.clock.now())
+        let mut view = view::project(&self.room(), &self.summaries(), &approvable, self.ports.clock.now());
+        for room in &mut view.rooms {
+            for session in &mut room.sessions {
+                self.enrich_question(&SessionId(session.id.clone()), session);
+            }
+        }
+        view
+    }
+
+    fn enrich_question(&self, id: &SessionId, session: &mut view::SessionView) {
+        let questions = self.questions();
+        let Some(pending) = questions.get(id) else { return };
+        session.can_answer_question = pending.responder.is_open();
+        session.questions = pending.prompts.iter().map(QuestionView::from).collect();
     }
 
     fn intent(&self, id: SessionId, kind: SessionEventKind) -> PortResult<()> {
@@ -540,9 +599,10 @@ impl WarRoomService {
         let persisted = event.clone();
         let id = event.session.clone();
         let from_agent = event.context.is_some();
-        // Any other signal from the agent means the permission was already resolved some other way.
+        // Any other signal from the agent means the pending interaction was already resolved.
         if from_agent && !matches!(event.kind, SessionEventKind::AwaitingYou { .. }) {
             self.approvals().remove(&id);
+            self.questions().remove(&id);
         }
         let mut change = {
             let mut room = self.room();
@@ -624,8 +684,12 @@ impl WarRoomService {
         self.room.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn approvals(&self) -> MutexGuard<'_, HashMap<SessionId, Arc<dyn ApprovalResponder>>> {
+    fn approvals(&self) -> MutexGuard<'_, HashMap<SessionId, Arc<dyn HookResponder>>> {
         self.approvals.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn questions(&self) -> MutexGuard<'_, HashMap<SessionId, PendingQuestion>> {
+        self.questions.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     fn summaries(&self) -> MutexGuard<'_, HashMap<SessionId, TranscriptSummary>> {
@@ -691,12 +755,19 @@ mod tests {
                         }),
                         ..HookFacts::default()
                     },
+                    question: None,
                 }));
             }
-            let kind = match payload["e"].as_str().unwrap() {
+            let event = payload["e"].as_str().unwrap();
+            let kind = match event {
                 "prompt" => SessionEventKind::PromptSubmitted,
                 "stop" => SessionEventKind::TurnEnded,
                 "ask" => SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: None, detail: None },
+                "question" => SessionEventKind::AwaitingYou {
+                    reason: WaitReason::Question,
+                    tool: Some("AskUserQuestion".into()),
+                    detail: Some("Which database?".into()),
+                },
                 "slash" => SessionEventKind::PromptSubmitted,
                 _ => return Ok(None),
             };
@@ -716,6 +787,17 @@ mod tests {
                 kind: Some(kind),
                 extra,
                 facts: HookFacts::default(),
+                question: (event == "question").then(|| {
+                    vec![QuestionPrompt {
+                        question: "Which database?".into(),
+                        header: Some("Database".into()),
+                        options: vec![crate::ports::QuestionOption {
+                            label: "SQLite".into(),
+                            description: Some("Local file".into()),
+                        }],
+                        multi_select: false,
+                    }]
+                }),
             }))
         }
     }
@@ -924,14 +1006,14 @@ mod tests {
     #[derive(Default)]
     struct FakeResponder {
         closed: std::sync::atomic::AtomicBool,
-        got: Mutex<Option<ApprovalDecision>>,
+        got: Mutex<Option<HookResponse>>,
     }
-    impl ApprovalResponder for FakeResponder {
+    impl HookResponder for FakeResponder {
         fn is_open(&self) -> bool {
             !self.closed.load(Ordering::SeqCst)
         }
-        fn respond(&self, decision: ApprovalDecision) -> bool {
-            *self.got.lock().unwrap() = Some(decision);
+        fn respond(&self, response: HookResponse) -> bool {
+            *self.got.lock().unwrap() = Some(response);
             self.is_open()
         }
     }
@@ -939,6 +1021,13 @@ mod tests {
     fn asking(s: &str) -> (IncomingSignal, Arc<FakeResponder>) {
         let responder = Arc::new(FakeResponder::default());
         let mut sig = signal(s, "ask");
+        sig.reply = Some(responder.clone());
+        (sig, responder)
+    }
+
+    fn asking_question(s: &str) -> (IncomingSignal, Arc<FakeResponder>) {
+        let responder = Arc::new(FakeResponder::default());
+        let mut sig = signal(s, "question");
         sig.reply = Some(responder.clone());
         (sig, responder)
     }
@@ -1000,10 +1089,17 @@ mod tests {
         h.svc
             .intent(
                 id("a"),
-                SessionEventKind::AwaitingYou { reason: awr_domain::WaitReason::Question, tool: None, detail: None },
+                SessionEventKind::AwaitingYou {
+                    reason: awr_domain::WaitReason::Question,
+                    tool: None,
+                    detail: Some("Which database should we use?".into()),
+                },
             )
             .unwrap();
-        assert_eq!(h.svc.view().aggregate, AttentionView::NeedsYou);
+        let view = h.svc.view();
+        assert_eq!(view.aggregate, AttentionView::NeedsYou);
+        assert!(view.rooms[0].sessions[0].awaiting_question);
+        assert_eq!(view.rooms[0].sessions[0].pending_question.as_deref(), Some("Which database should we use?"));
         assert_eq!(h.rec.notices.lock().unwrap().len(), 1);
     }
 
@@ -1125,9 +1221,40 @@ mod tests {
         assert!(h.svc.view().rooms[0].sessions[0].can_approve);
 
         h.svc.approve(id("a")).unwrap();
-        assert_eq!(*responder.got.lock().unwrap(), Some(ApprovalDecision::Allow));
+        assert_eq!(*responder.got.lock().unwrap(), Some(HookResponse::Allow));
         assert!(!h.svc.view().rooms[0].sessions[0].can_approve);
         assert!(h.svc.approve(id("a")).is_err(), "it can only be answered once");
+    }
+
+    #[test]
+    fn a_pending_question_can_be_answered_from_the_app() {
+        let h = harness();
+        h.svc.ingest(signal("a", "prompt")).unwrap();
+        let (sig, responder) = asking_question("a");
+        h.svc.ingest(sig).unwrap();
+
+        let session = h.svc.view().rooms[0].sessions[0].clone();
+        assert!(session.awaiting_question);
+        assert!(session.can_answer_question);
+        assert_eq!(session.questions[0].header.as_deref(), Some("Database"));
+        assert_eq!(session.questions[0].options[0].label, "SQLite");
+
+        let answers: BTreeMap<String, String> = [("Which database?".into(), "SQLite".into())].into_iter().collect();
+        h.svc.answer_question(id("a"), answers.clone()).unwrap();
+        assert_eq!(*responder.got.lock().unwrap(), Some(HookResponse::Answer { answers }));
+        assert!(!h.svc.view().rooms[0].sessions[0].can_answer_question);
+        assert!(h.svc.answer_question(id("a"), BTreeMap::new()).is_err(), "it can only be answered once");
+    }
+
+    #[test]
+    fn a_question_requires_an_answer_for_every_prompt() {
+        let h = harness();
+        let (sig, responder) = asking_question("a");
+        h.svc.ingest(sig).unwrap();
+
+        assert!(h.svc.answer_question(id("a"), BTreeMap::new()).is_err());
+        assert!(responder.got.lock().unwrap().is_none());
+        assert!(h.svc.view().rooms[0].sessions[0].can_answer_question);
     }
 
     #[test]

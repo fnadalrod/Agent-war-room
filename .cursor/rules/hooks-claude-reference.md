@@ -17,9 +17,9 @@ when the hook fires inside a subagent. No env var identifies the session or the 
 |---|---|---|
 | SessionStart | `source` (startup/resume/clear/compact/fork) | `Started` |
 | UserPromptSubmit | `prompt` (`/name args` → skill unless built-in) | `PromptSubmitted` (+ `SkillInvoked{User}`) |
-| PreToolUse | `tool_name`, `tool_input` (`skill` for `Skill`), `agent_id` | `ToolStarted` / `SubagentTool` / `AwaitingYou{Question}` (+ `SkillInvoked{Agent}`) |
+| PreToolUse | `tool_name`, `tool_input` (`skill` for `Skill`; `questions[].question/options[].label` for `AskUserQuestion`), `agent_id` | `ToolStarted` / `SubagentTool` / `AwaitingYou{Question, detail}` (+ `SkillInvoked{Agent}`) |
 | PostToolUse, PostToolUseFailure | `tool_name` | `ToolFinished` (subagent ones ignored) |
-| PermissionRequest | `tool_name`, `tool_input.command` | `AwaitingYou{Permission, detail}` (bridge waits for a reply) |
+| PermissionRequest | `tool_name`, `tool_input.command` (`questions` for `AskUserQuestion`) | `AwaitingYou{Permission, detail}`, or `AwaitingYou{Question}` for `AskUserQuestion` (bridge waits for a reply: decision or answers) |
 | Notification | `notification_type` (or legacy `message`) | permission_prompt → AwaitingYou, elicitation_dialog → Question, idle_prompt → IdlePrompt; others ignored |
 | Stop | — | `TurnEnded` (every turn, not only "task done") |
 | SubagentStart / SubagentStop | `agent_id`, `agent_type` | `SubagentStarted` / `SubagentStopped` |

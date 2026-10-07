@@ -23,6 +23,9 @@
     },
     "error": {
       "no_pending_permission": "there is no pending permission in that session",
+      "no_pending_question": "there is no pending question in that session",
+      "incomplete_question_answer": "answer every question before sending",
+      "question_already_answered": "the question is no longer waiting for an answer",
       "already_answered_in_terminal": "it was already answered in the terminal",
       "session_closed": "the session is closed",
       "session_still_open": "the session is still open: use \"Go to\"",
@@ -180,7 +183,14 @@
     },
     "quick_input": {
       "placeholder": "Write to the session… (Enter sends)",
-      "label": "Message for the session"
+      "label": "Message for the session",
+      "answer_placeholder": "Answer the agent…",
+      "answer_label": "Answer to the agent's question",
+      "send": "Send",
+      "other_answer": "Or write another answer…",
+      "send_answers": "Send answer",
+      "send_answers_other": "Send answers",
+      "multiple_allowed": "Choose one or more"
     },
     "room": {
       "new_agent": "Agent",
@@ -231,6 +241,8 @@
       "skills": "Skills",
       "subagents": "Subagents",
       "recent_conversation": "Recent conversation",
+      "open_to_answer": "Open the session to answer this question. Direct replies are available for app and tmux terminals.",
+      "question_in_terminal": "The question is now in the session's terminal: answer it there.",
       "loading": "Loading…",
       "no_transcript": "No transcript yet.",
       "go_to_session": "Go to the session",
@@ -318,6 +330,7 @@
     "toasts": {
       "approved": "Permission approved",
       "denied": "Permission denied",
+      "question_answered": "Answer sent to the agent",
       "opened_in": "Opened in {via}"
     },
     "pixel": {

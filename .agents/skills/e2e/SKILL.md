@@ -13,6 +13,6 @@ cargo test -p awr-infrastructure --test claude_e2e -- --ignored --nocapture --te
 ```
 
 1. Tell the user it launches a real `claude` (short prompts; a little usage).
-2. Expect ~8 s (approval) and ~60 s (app terminal). On timeout, read the printed screen and view.
+2. Expect ~5–10 s per approval or question test and ~60 s for the app terminal; ~95 s in all. On timeout, read the printed screen and view.
 3. After: tell the user Claude left transcripts under `~/.claude/projects/-tmp-awr-e2e*`; delete them
    only if they ask.

@@ -68,6 +68,7 @@ pub fn run() {
             commands::commit_diff,
             commands::approve,
             commands::deny,
+            commands::answer_question,
             commands::send_input,
             commands::launch,
             commands::resume,

@@ -26,6 +26,7 @@ import { Markdown } from "./Markdown";
 import { ChangesSection, DiffView } from "./Changes";
 import { ContextBar } from "./ContextBar";
 import { QuickInput } from "./QuickInput";
+import { QuestionForm } from "./QuestionForm";
 import { SkillTag } from "./SkillTag";
 import { since } from "./useStore";
 
@@ -100,6 +101,20 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
               <button onClick={() => store.deny(s)}>{copy.actions.deny}</button>
             </div>
             <span className="muted">{copy.detail.answerInTerminal}</span>
+          </section>
+        )}
+
+        {s.awaiting_question && (
+          <section className="question-banner">
+            <strong>{s.status_label}</strong>
+            {s.can_answer_question ? (
+              <QuestionForm key={`${s.id}:${s.status_since}`} session={s} store={store} />
+            ) : (
+              <>
+                {s.pending_question && <p>{s.pending_question}</p>}
+                <span className="muted">{isWritable(s) ? copy.detail.questionInTerminal : copy.detail.openToAnswer}</span>
+              </>
+            )}
           </section>
         )}
 
@@ -200,7 +215,7 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
         </section>
       </div>
 
-      {isWritable(s) && (
+      {isWritable(s) && !s.can_answer_question && (
         <footer className="detail-foot">
           <QuickInput session={s} store={store} autoFocus={detail.reply} />
         </footer>

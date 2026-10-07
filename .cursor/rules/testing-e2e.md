@@ -15,6 +15,12 @@ the user; delete only if asked.
 
 - **Trust dialog first.** A new folder asks "trust this folder?" *after* `SessionStart` fired, so
   "session exists" is not "Claude is ready". Wait for the dialog text or for Working/NeedsYou.
+- **Its default is "No, exit"** and it renders before its keys work: a blind `Down`+`Enter` quits
+  Claude (empty screen, no view). Use `trust_folder`, which presses `Down` until "❯ Yes, I trust".
+- **Run from inside Claude Code?** Unset the `CLAUDECODE`/`CLAUDE_CODE_*`/`CLAUDE_*` markers first
+  (`env -u …`): the tmux server inherits them otherwise.
+- **Your own `~/.claude/settings.json` hooks still run** (settings merge): the installed bridge also
+  sends each event to the test socket (same `XDG_RUNTIME_DIR`), so a dump shows every event twice.
 - **Read-only commands don't ask permission** (`date`): use a write (`touch x.txt`) to trigger
   `PermissionRequest`.
 - **Count the dialog options before pressing keys**: the permission dialog has 4 (Yes, Yes-always,
@@ -29,5 +35,5 @@ the user; delete only if asked.
 
 ## Expectations
 
-Approval test ~8 s; app-terminal test ~60 s. A timeout prints the terminal screen and the last view:
+Approval and question tests ~5–10 s each; app-terminal test ~60 s. A timeout prints the terminal screen and the last view:
 read them before retrying.

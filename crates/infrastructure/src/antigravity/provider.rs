@@ -71,6 +71,7 @@ impl AgentProvider for AntigravityProvider {
                 model: field("modelName").filter(|m| *m != "auto").map(str::to_owned),
                 ..HookFacts::default()
             },
+            question: None,
         }))
     }
 }

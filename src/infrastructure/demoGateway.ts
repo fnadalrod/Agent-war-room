@@ -136,6 +136,10 @@ function session(p: Partial<SessionView> & Pick<SessionView, "id" | "attention" 
     in_warp: false,
     pty_id: null,
     can_approve: false,
+    awaiting_question: false,
+    pending_question: null,
+    can_answer_question: false,
+    questions: [],
     shared_files: [],
     ...p,
   };
@@ -332,8 +336,23 @@ function initialRooms(): RoomView[] {
           id: "b9b9b9b9-backend-sync",
           attention: "needs_you",
           status_label: STATUS.asksQuestion,
+          awaiting_question: true,
+          pending_question: "Should I keep the remote changes or the local changes for the conflicting migration?",
+          can_answer_question: true,
+          questions: [
+            {
+              question: "Should I keep the remote changes or the local changes for the conflicting migration?",
+              header: "Resolution",
+              options: [
+                { label: "Keep remote", description: "Use the migration already merged upstream." },
+                { label: "Keep local", description: "Preserve this branch's migration." },
+              ],
+              multi_select: false,
+            },
+          ],
           title: "Sync conflicts strategy",
           last_action: "AskUserQuestion",
+          tmux_pane: "%4",
           worktree_path: "/code/HarborBackend",
           status_since: minutes(4),
           usage: usage(5_500_000, 2.2),
@@ -478,6 +497,15 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
       approve: async (id) =>
         update(id, { attention: "working", status_label: "Bash", can_approve: false, status_since: Date.now() }),
       deny: async (id) => update(id, { attention: "working", status_label: STATUS.thinking, can_approve: false }),
+      answerQuestion: async (id) =>
+        update(id, {
+          attention: "working",
+          status_label: STATUS.thinking,
+          awaiting_question: false,
+          pending_question: null,
+          can_answer_question: false,
+          questions: [],
+        }),
       sendInput: done,
       launch: launched,
       resume: launched,

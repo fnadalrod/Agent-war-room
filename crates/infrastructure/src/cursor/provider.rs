@@ -87,6 +87,7 @@ impl AgentProvider for CursorProvider {
             kind,
             extra: Vec::new(),
             facts,
+            question: None,
         }))
     }
 }

@@ -5,6 +5,7 @@
 //! closes it without replying, the agent carries on as normal.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 pub const PROTOCOL_VERSION: u8 = 1;
@@ -36,6 +37,7 @@ pub struct HookEnvelope {
 pub enum HookReply {
     Allow,
     Deny { message: Option<String> },
+    Answer { answers: BTreeMap<String, String> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

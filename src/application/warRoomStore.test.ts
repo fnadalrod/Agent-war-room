@@ -104,4 +104,15 @@ describe("WarRoomStore", () => {
     expect(await store.send(aSession(), "hello")).toBe(false);
     expect(store.snapshot().toast?.tone).toBe("warn");
   });
+
+  it("delivers structured answers through the question channel", async () => {
+    const answerQuestion = vi.fn().mockResolvedValue(undefined);
+    const store = storeWith({ answerQuestion });
+    const session = aSession({ can_answer_question: true });
+    const answers = { "Which database?": "SQLite" };
+
+    expect(await store.answerQuestion(session, answers)).toBe(true);
+    expect(answerQuestion).toHaveBeenCalledWith(session.id, answers);
+    expect(store.snapshot().toast?.text).toBe(copy.toasts.questionAnswered);
+  });
 });

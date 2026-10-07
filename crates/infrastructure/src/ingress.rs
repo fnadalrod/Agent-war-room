@@ -1,7 +1,7 @@
 //! Inbound adapter: Unix socket where `warroom-hook` drops one envelope per connection.
 
 use awr_application::IncomingSignal;
-use awr_application::ports::{ApprovalDecision, ApprovalResponder};
+use awr_application::ports::{HookResponder, HookResponse};
 use awr_domain::{ProcessInfo, TerminalHost, Timestamp};
 use awr_wire::{HookEnvelope, HookReply, PROTOCOL_VERSION};
 use std::io::{self, Write};
@@ -69,7 +69,7 @@ async fn receive(stream: UnixStream) -> io::Result<Option<IncomingSignal>> {
     let envelope: HookEnvelope =
         serde_json::from_str(line.trim_end()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-    let reply: Option<Arc<dyn ApprovalResponder>> = if envelope.expects_reply {
+    let reply: Option<Arc<dyn HookResponder>> = if envelope.expects_reply {
         Some(Arc::new(SocketResponder::watch(reader.into_inner().into_inner())?))
     } else {
         None
@@ -77,7 +77,7 @@ async fn receive(stream: UnixStream) -> io::Result<Option<IncomingSignal>> {
     Ok(to_signal(envelope, reply))
 }
 
-fn to_signal(envelope: HookEnvelope, reply: Option<Arc<dyn ApprovalResponder>>) -> Option<IncomingSignal> {
+fn to_signal(envelope: HookEnvelope, reply: Option<Arc<dyn HookResponder>>) -> Option<IncomingSignal> {
     if envelope.v != PROTOCOL_VERSION {
         eprintln!("[ingress] unsupported protocol version {}", envelope.v);
         return None;
@@ -128,19 +128,20 @@ impl SocketResponder {
     }
 }
 
-impl ApprovalResponder for SocketResponder {
+impl HookResponder for SocketResponder {
     fn is_open(&self) -> bool {
         !self.closed.load(Ordering::SeqCst) && self.stream.lock().unwrap().is_some()
     }
 
-    fn respond(&self, decision: ApprovalDecision) -> bool {
+    fn respond(&self, response: HookResponse) -> bool {
         let Some(mut stream) = self.stream.lock().unwrap().take() else { return false };
         if self.closed.load(Ordering::SeqCst) {
             return false;
         }
-        let reply = match decision {
-            ApprovalDecision::Allow => HookReply::Allow,
-            ApprovalDecision::Deny { message } => HookReply::Deny { message },
+        let reply = match response {
+            HookResponse::Allow => HookReply::Allow,
+            HookResponse::Deny { message } => HookReply::Deny { message },
+            HookResponse::Answer { answers } => HookReply::Answer { answers },
         };
         let Ok(mut line) = serde_json::to_vec(&reply) else { return false };
         line.push(b'\n');
@@ -228,12 +229,12 @@ mod tests {
         let reply = next(&mut rx).await.reply.expect("responder");
         assert!(reply.is_open());
         let responder = reply.clone();
-        tokio::task::spawn_blocking(move || assert!(responder.respond(ApprovalDecision::Allow))).await.unwrap();
+        tokio::task::spawn_blocking(move || assert!(responder.respond(HookResponse::Allow))).await.unwrap();
 
         let mut answer = String::new();
         BufReader::new(client).read_line(&mut answer).await.unwrap();
         assert_eq!(serde_json::from_str::<HookReply>(answer.trim()).unwrap(), HookReply::Allow);
-        assert!(!reply.respond(ApprovalDecision::Allow), "only one reply");
+        assert!(!reply.respond(HookResponse::Allow), "only one reply");
     }
 
     #[tokio::test]
@@ -249,6 +250,6 @@ mod tests {
         drop(client);
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(!reply.is_open());
-        assert!(!reply.respond(ApprovalDecision::Deny { message: None }));
+        assert!(!reply.respond(HookResponse::Deny { message: None }));
     }
 }

@@ -36,6 +36,10 @@ export function aSession(p: Partial<SessionView> = {}): SessionView {
     in_warp: false,
     pty_id: null,
     can_approve: false,
+    awaiting_question: false,
+    pending_question: null,
+    can_answer_question: false,
+    questions: [],
     shared_files: [],
     ...p,
   };

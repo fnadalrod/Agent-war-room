@@ -115,18 +115,57 @@ mod tests {
 
     #[test]
     fn questions_are_distinguished_from_regular_tools() {
+        let payload = hook(
+            "PreToolUse",
+            json!({
+                "tool_name": "AskUserQuestion",
+                "tool_input": {
+                    "questions": [{
+                        "question": "Which database should we use?",
+                        "header": "Database",
+                        "options": [
+                            { "label": "SQLite", "description": "Local file" },
+                            { "label": "PostgreSQL", "description": "Shared server" }
+                        ],
+                        "multiSelect": false
+                    }]
+                }
+            }),
+        );
+        let translated = ClaudeProvider.translate(&payload).unwrap().unwrap();
         assert_eq!(
-            translate(hook("PreToolUse", json!({ "tool_name": "AskUserQuestion" }))),
+            translated.kind,
             Some(SessionEventKind::AwaitingYou {
                 reason: WaitReason::Question,
                 tool: Some("AskUserQuestion".into()),
-                detail: None
+                detail: Some("Which database should we use?\n• SQLite\n• PostgreSQL".into())
             })
         );
+        let question = translated.question.unwrap().remove(0);
+        assert_eq!(question.header.as_deref(), Some("Database"));
+        assert_eq!(question.options[0].description.as_deref(), Some("Local file"));
+        assert!(!question.multi_select);
         assert_eq!(
             translate(hook("PreToolUse", json!({ "tool_name": "Bash" }))),
             Some(SessionEventKind::ToolStarted { tool: "Bash".into() })
         );
+    }
+
+    #[test]
+    fn the_permission_request_for_a_question_is_an_answerable_question() {
+        let input = json!({ "questions": [{ "question": "Which color?", "options": [{ "label": "Red" }] }] });
+        let translated = ClaudeProvider
+            .translate(&hook("PermissionRequest", json!({ "tool_name": "AskUserQuestion", "tool_input": input })))
+            .unwrap()
+            .unwrap();
+        assert!(matches!(translated.kind, Some(SessionEventKind::AwaitingYou { reason: WaitReason::Question, .. })));
+        assert_eq!(translated.question.unwrap()[0].options[0].label, "Red");
+
+        // A plan to approve stays a permission: it has no questions to answer.
+        assert!(matches!(
+            translate(hook("PermissionRequest", json!({ "tool_name": "ExitPlanMode", "tool_input": { "plan": "x" } }))),
+            Some(SessionEventKind::AwaitingYou { reason: WaitReason::Permission, .. })
+        ));
     }
 
     #[test]

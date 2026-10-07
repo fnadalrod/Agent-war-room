@@ -23,7 +23,8 @@ and a `HookSpec` (events + timeouts). Codex specifics → `codex.mdc`.
 
 - **Exit 0 always, in milliseconds when the app is down** (connect fails → exit). A slow or failing
   hook degrades every agent session on the machine.
-- **stdout only carries an explicit app decision** (PermissionRequest reply). Anything else printed
+- **stdout only carries an explicit app decision** (PermissionRequest reply: allow, deny, or the
+  answers to `AskUserQuestion`). Anything else printed
   is interpreted by the agent.
 - It walks `/proc` from its parent upward: hooks may run through a shell, so `getppid()` is not the
   agent. The chain gives the agent PID (liveness) and the terminal/IDE (focus).

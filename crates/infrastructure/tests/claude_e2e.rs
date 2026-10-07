@@ -13,6 +13,7 @@ use awr_domain::SessionId;
 use awr_infrastructure::launch::inherited_agent_markers;
 use awr_infrastructure::pty::PtySpec;
 use e2e::{Room, TmuxServer, bridge, is_busy, tmux, wait_for};
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 /// `settings.json` for these sessions only, pointing every hook we use at the bridge.
@@ -43,6 +44,25 @@ fn claude_args(room: &Room, prompt: Option<&str>) -> Vec<String> {
     args
 }
 
+/// The trust dialog defaults to "No, exit" and renders before its keys work: a `Down` sent too early
+/// is lost and `Enter` quits Claude. Move until "Yes" is selected, then confirm.
+fn trust_folder(socket: &std::path::Path, diag: &dyn Fn() -> String) {
+    wait_for(
+        "\"Yes, I trust\" selected",
+        Duration::from_secs(10),
+        || {
+            if tmux(socket, &["capture-pane", "-p"]).contains("❯ Yes, I trust") {
+                return true;
+            }
+            tmux(socket, &["send-keys", "Down"]);
+            std::thread::sleep(Duration::from_millis(300));
+            false
+        },
+        diag,
+    );
+    tmux(socket, &["send-keys", "Enter"]);
+}
+
 #[test]
 #[ignore]
 fn a_real_permission_request_is_approved_from_the_war_room() {
@@ -69,9 +89,7 @@ fn a_real_permission_request_is_approved_from_the_war_room() {
         &diag,
     );
     if screen().contains("trust this folder") {
-        tmux(&tmux_socket, &["send-keys", "Down"]);
-        std::thread::sleep(Duration::from_millis(300));
-        tmux(&tmux_socket, &["send-keys", "Enter"]);
+        trust_folder(&tmux_socket, &diag);
     }
 
     wait_for(
@@ -95,6 +113,103 @@ fn a_real_permission_request_is_approved_from_the_war_room() {
     );
     assert!(screen().contains("Allowed by PermissionRequest hook"));
     println!("title: {:?}", room.service.view().rooms[0].sessions[0].title);
+}
+
+#[test]
+#[ignore]
+fn a_real_question_is_answered_from_the_war_room() {
+    let room = Room::start();
+    let dir = room.dir();
+    let tmux_socket = dir.join("t.sock");
+    let prompt = "Use AskUserQuestion exactly once to ask Which database should we use? with the options SQLite and PostgreSQL. After the answer, reply with CHOSEN followed by the answer.";
+    let args: Vec<String> = claude_args(&room, Some(prompt)).into_iter().map(|a| format!("'{a}'")).collect();
+    let command = format!("XDG_RUNTIME_DIR={} claude {}", room.runtime.display(), args.join(" "));
+    tmux(&tmux_socket, &["new-session", "-d", "-x", "160", "-y", "40", "-c", dir.to_str().unwrap(), &command]);
+    let _server = TmuxServer(tmux_socket.clone());
+
+    let screen = || tmux(&tmux_socket, &["capture-pane", "-p"]);
+    let diag = || room.diag(&screen);
+    wait_for(
+        "trust dialog or work",
+        Duration::from_secs(30),
+        || screen().contains("trust this folder") || room.session().is_some_and(|s| is_busy(&s)),
+        &diag,
+    );
+    if screen().contains("trust this folder") {
+        trust_folder(&tmux_socket, &diag);
+    }
+
+    wait_for(
+        "answerable question",
+        Duration::from_secs(90),
+        || room.session().is_some_and(|s| s.can_answer_question && !s.questions.is_empty()),
+        &diag,
+    );
+    wait_for("Claude's own dialog at the same time", Duration::from_secs(10), || screen().contains("Enter to select"), &diag);
+    let session = room.session().unwrap();
+    let prompt = session.questions[0].question.clone();
+    assert!(session.questions[0].options.iter().any(|option| option.label == "SQLite"));
+    let answers: BTreeMap<String, String> = [(prompt, "SQLite".into())].into_iter().collect();
+    room.service.answer_question(SessionId(session.id), answers).unwrap();
+
+    wait_for(
+        "Claude continuation after the answer",
+        Duration::from_secs(90),
+        || {
+            room.session().is_some_and(|s| {
+                s.attention == AttentionView::Finished
+                    && s.last_reply.as_deref().is_some_and(|reply| reply.contains("CHOSEN") && reply.contains("SQLite"))
+            })
+        },
+        &diag,
+    );
+    println!("reply: {:?}", room.session().unwrap().last_reply);
+}
+
+#[test]
+#[ignore]
+fn a_real_question_answered_in_the_terminal_leaves_the_war_room() {
+    let room = Room::start();
+    let dir = room.dir();
+    let tmux_socket = dir.join("t.sock");
+    let prompt = "Use AskUserQuestion exactly once to ask Which database should we use? with the options SQLite and PostgreSQL.";
+    let args: Vec<String> = claude_args(&room, Some(prompt)).into_iter().map(|a| format!("'{a}'")).collect();
+    let command = format!("XDG_RUNTIME_DIR={} claude {}", room.runtime.display(), args.join(" "));
+    tmux(&tmux_socket, &["new-session", "-d", "-x", "160", "-y", "40", "-c", dir.to_str().unwrap(), &command]);
+    let _server = TmuxServer(tmux_socket.clone());
+
+    let screen = || tmux(&tmux_socket, &["capture-pane", "-p"]);
+    let diag = || room.diag(&screen);
+    wait_for(
+        "trust dialog or work",
+        Duration::from_secs(30),
+        || screen().contains("trust this folder") || room.session().is_some_and(|s| is_busy(&s)),
+        &diag,
+    );
+    if screen().contains("trust this folder") {
+        trust_folder(&tmux_socket, &diag);
+    }
+
+    wait_for(
+        "answerable question",
+        Duration::from_secs(90),
+        || room.session().is_some_and(|s| s.can_answer_question),
+        &diag,
+    );
+    wait_for("Claude's own dialog at the same time", Duration::from_secs(10), || screen().contains("Enter to select"), &diag);
+
+    // The first option is selected: answering in the terminal kills the waiting hook.
+    tmux(&tmux_socket, &["send-keys", "Enter"]);
+    wait_for(
+        "the app's question withdrawn",
+        Duration::from_secs(20),
+        || {
+            let _ = room.service.tick();
+            room.session().is_some_and(|s| !s.can_answer_question)
+        },
+        &diag,
+    );
+    assert!(room.service.answer_question(SessionId(room.session().unwrap().id), BTreeMap::new()).is_err());
 }
 
 #[test]
