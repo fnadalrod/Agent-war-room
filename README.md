@@ -1,30 +1,47 @@
-# Agent War Room
+<div align="center">
 
-A control room for your coding agents: **Claude Code, Codex, Cursor and Antigravity**. If you run several agent sessions
-at once, spread across repos, terminals and IDE windows, you end up losing track of which one is
-waiting for you. Agent War Room shows **one screen per session, grouped by repository**, that lights up
-when something needs you, when it finishes or when it looks stuck. It lives in the system tray: you
-only look at it when it changes color.
+<h1>Agent War Room</h1>
+<p><strong>Mission control for your coding agents</strong></p>
+<p>
+Monitor <strong>Claude Code, Codex, Cursor and Antigravity</strong> across repositories, terminals
+and IDEs from one local desktop app. See what needs you, what finished and what may be stuck—then
+jump straight back into the right session.
+</p>
 
-![Classic view: several repos, sessions and subagents](docs/screenshots/classic.png)
+</div>
 
-![Pixel-art War Room: a mission control where each agent works at its console or rests in the crew lounge](docs/screenshots/pixel.png)
+![Pixel-art War Room: each coding agent works at its repository console or rests in the crew lounge](docs/screenshots/pixel.png)
 
-- **Fully local.** No server, no account: it reads the agents' hooks and transcripts on your
-  machine.
-- **Never gets in the agent's way.** If the app is closed, the hook bridge exits immediately and
-  the agent carries on as if nothing happened.
-- **Linux first** (KDE Plasma on Wayland is the tested environment). The core is Rust and the UI is
-  React on Tauri 2.
+Running several coding agents in parallel quickly turns attention—not compute—into the bottleneck.
+Agent War Room gives every session a screen, groups it under its repository and lights it up only
+when its state matters. The tray icon inherits the most urgent state in the room, so the app can
+stay out of the way until something changes.
+
+| | |
+|---|---|
+| **One room, four agents** | Claude Code, Codex, Cursor and Antigravity share the same view without hiding their differences. |
+| **Attention, not noise** | Permissions, questions, completed turns and suspected stalls are ranked in one queue. |
+| **Real session context** | Inspect the prompt, latest answer, conversation, tools, model, usage, subagents, skills and code changes. |
+| **Jump back into the work** | Focus the exact KWin window, tmux pane or Warp pane; reply from the room when the session supports it. |
+| **Local by design** | No server and no account. Events and transcripts stay on your machine, and the app makes no network requests. |
+| **Two interfaces** | Use compact cards or the pixel-art mission control; both are views of the same live state. |
+
+> [!NOTE]
+> Agent War Room is Linux-first. Fedora with KDE Plasma on Wayland is the primary tested
+> environment. Other Linux desktops can use the room, while per-window **Go to** currently depends
+> on KWin, Warp or tmux.
 
 ## Contents
 
-- [What you see](#what-you-see)
-- [Usage guide](#usage-guide)
+- [Why Agent War Room](#why-agent-war-room)
+- [Quick start](#quick-start)
+- [Visual tour](#visual-tour)
+- [Daily workflow](#daily-workflow)
 - [Installation](#installation)
-- [Connecting your agents](#connecting-your-agents)
+- [Agent integrations](#agent-integrations)
+- [Terminals and IDEs](#terminals-and-ides)
 - [Languages](#languages)
-- [How it works](#how-it-works)
+- [Architecture](#architecture)
 - [Data and privacy](#data-and-privacy)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
@@ -33,9 +50,55 @@ only look at it when it changes color.
 - [Limitations and roadmap](#limitations-and-roadmap)
 - [License](#license)
 
-## What you see
+## Why Agent War Room
 
-### States
+Most agent tools are good at telling you what a single session is doing. The problem starts when
+there are six of them: one is waiting for a permission, another finished ten minutes ago, a third
+has stopped producing output, and each lives in a different terminal or IDE window.
+
+Agent War Room turns those raw events into a small attention model:
+
+1. **Needs you** comes first: permissions, questions and plan approvals.
+2. **Finished** comes next: work that is ready for review.
+3. **Stuck** highlights a session that has stayed active without a sign of life.
+4. **Working**, **idle** and **closed** sessions remain visible without interrupting you.
+
+The result is a single queue for human attention, not another transcript viewer. You can still open
+the full session detail when you need evidence, and use **Next** to move through pending work in
+order.
+
+## Quick start
+
+Agent War Room currently builds from source. You need Linux, Node.js 20 or newer, Rust 1.85 or newer
+and the [Tauri 2 system dependencies](#requirements).
+
+```sh
+npm install
+npm run app
+```
+
+Then:
+
+1. Click **Connect** in the banner of each agent you use (Claude Code, Codex, Cursor or
+   Antigravity). Codex asks you to trust the new hooks once the next time it opens.
+2. Start a **new** agent session; sessions already running before connection are not discovered.
+3. Leave Agent War Room in the tray. Its color changes when a session needs attention, finishes or
+   appears stuck.
+
+The connector creates a backup before editing an agent's hook configuration, and **Disconnect**
+removes only the hooks installed by Agent War Room. See [Agent integrations](#agent-integrations)
+for the exact behavior and limitations of each provider.
+
+## Visual tour
+
+### One room for every repository and session
+
+The classic view keeps dense information scannable: repositories form groups, sessions become
+cards, and subagents stay attached to the parent that launched them.
+
+![Classic view with several repositories, sessions and subagents](docs/screenshots/classic.png)
+
+### Attention states
 
 Every session has an attention level, from most to least urgent. The tray takes the color of the most
 urgent one in the whole room.
@@ -61,7 +124,8 @@ Clicking a screen opens its detail, read from the transcript:
 
 - Title, **initial request** (first prompt) and **the command it was launched with**.
 - **Full last answer rendered as Markdown**, with an expanded view.
-- Recent conversation with tools grouped, and the action in progress (`Bash · cargo test`).
+- Recent conversation with tools grouped, with the complete history available on demand, and the
+  action in progress (`Bash · cargo test`).
 - **Model and effort** of the session, of each subagent and of each answer.
 - **Context used** (warns before it compacts), tokens and **estimated cost** at API prices,
   subagents included.
@@ -72,8 +136,8 @@ Clicking a screen opens its detail, read from the transcript:
 
 ### Subagents
 
-Subagents appear in small around their session, with their own state. Click one to see what it is
-doing, with which model and how much it has spent.
+Subagents appear as small screens around their parent session, each with its own state. Click one
+to see what it is doing, with which model and how much it has spent.
 
 ![Subagent detail](docs/screenshots/subagent.png)
 
@@ -90,25 +154,43 @@ one may be overwriting the other's work. A worktree per session avoids it. (Clau
 
 ![A commit's diff](docs/screenshots/diff.png)
 
-## Usage guide
+## Daily workflow
+
+A typical loop is deliberately short: glance at the queue, open the oldest item that needs you,
+act, and move on. The room keeps the session context close enough that you do not have to hunt for
+the correct terminal first.
+
+1. **Scan.** The tray and the queue show the most urgent state across every repository.
+2. **Inspect.** Open the session preview for its request, latest answer, current tool and usage.
+3. **Act.** Approve, reply or use **Go to** to return to the exact terminal or IDE window.
+4. **Review.** Open **Changes** to inspect touched files, overlapping work and commits.
+5. **Clear.** Dismiss completed work, mute noisy sessions or press **Next** for the next item.
+
+### Navigation and interaction
 
 - **Next.** Jumps to whatever has been waiting for you the longest: first what asks you for
   something, then what has finished. There is a button in the header, an entry in the tray menu and
   the `agent-war-room --next` command for a global shortcut (see
   [Global "next" shortcut](#global-next-shortcut-kde)).
-- **Go to.** Takes you to the session's window:
-  - Warp: to the exact pane, via `WARP_FOCUS_URL`.
-  - tmux: to the pane, switching the client if needed.
-  - KDE: to the window, found through its process chain and disambiguated by title. That way several
-    projects open in the same IDE are told apart.
+- **Go to.** Takes you to the session's window: the exact Warp pane, the tmux pane, or on KDE the
+  terminal or IDE window (WebStorm included, even with several projects open). See
+  [Terminals and IDEs](#terminals-and-ides).
 - **Approve or deny permissions from the room** or straight from the notification (Claude Code).
   Claude still shows its own dialog in the terminal: whoever answers first wins. Codex's requests are
   reported and answered in Codex (see [Codex](#codex)).
-- **Reply.** Write into the session when it runs in an app terminal or in tmux. The notifications'
-  "Reply" button opens the preview with the cursor in the message box (Linux notifications do not
-  support typing inside the notification).
+- **Yes to all.** The drinking bird in the lower-right corner repeatedly presses its pixel-art `Y`
+  key while it automatically approves current and future Claude permissions. Its badge counts
+  successful automatic approvals and pops a `+1` for each one. Click it again to stop; the mode is
+  intentionally reset when the app restarts. Codex approvals still happen in Codex.
+- **Reply and answer questions.** The room shows the agent's pending question and lets you write into
+  the session when it runs in an app terminal or in tmux. The notifications' **Reply** button opens
+  the preview with the cursor in the message box (Linux notifications do not support typing inside
+  the notification).
+
+### Session management
+
 - **Launch and resume.** Start an agent in a repo, or resume a closed session, in a built-in terminal
-  (xterm.js) or in a Warp tab.
+  or in a Warp tab (see [Terminals and IDEs](#terminals-and-ides)).
 - **Dismiss** (archive) a session even if it is still open: it stops notifying and leaves the room. It
   comes back on its own if you write to it, and can be restored for 3 days.
 - **Mute**: still visible, but without notifications.
@@ -120,41 +202,190 @@ one may be overwriting the other's work. A worktree per session avoids it. (Clau
   cost bars on each console, totals per repo and for today on the screen wall; running subagents show
   what they are doing. Busy repos fold their closed sessions into a cabinet. Switch from the header.
 
-Desktop notifications come with buttons: **View**, **Go to**, **Approve** and **Reply**.
+Desktop notifications come with buttons: **View**, **Go to**, **Approve** and **Reply**. The
+first agent's menu in the header also has **Open at login (in the tray)**, which starts the app
+hidden in the tray.
+
+### Global "next" shortcut (KDE)
+
+System Settings → Keyboard → Shortcuts → Add New → Command or Script: `agent-war-room --next` (or the
+binary's path if it is not installed), and bind it to a key.
+
+With the app open, the shortcut jumps to the window of the session that has been waiting the longest;
+if it cannot find the window, it opens its preview. If the app is not running, it starts it.
 
 ## Installation
 
+There are no prebuilt releases yet: you build Agent War Room from source, either to run it in
+development mode or to produce an installable package. Both paths use [Tauri 2](https://tauri.app),
+which compiles the Rust core into a native binary and embeds the React front end in the system
+WebView (WebKitGTK on Linux).
+
+### Platform support
+
+| Platform | Status |
+|---|---|
+| **Linux** (x86_64) | Supported. Builds `.deb`, `.rpm` and AppImage. Tested on Fedora with KDE Plasma (Wayland). |
+| **macOS** | Not supported yet. Tauri can build a `.app`/`.dmg`, but the app relies on Linux-only pieces (see [Porting to macOS or Windows](#porting-to-macos-or-windows)). |
+| **Windows** | Not supported. The hook bridge and the app socket use Unix domain sockets, so the code does not compile for Windows today. |
+
+Tauri does not cross-compile desktop bundles reliably: build each platform's packages **on that
+platform** (or in CI runners of that OS).
+
 ### Requirements
 
-- Linux. Tested on Fedora with KDE Plasma (Wayland). Other desktops work, but without per-window
-  "Go to": only Warp and tmux.
-- Stable Rust (2024 edition) and Node 20 or later.
-- Tauri's system dependencies. On Fedora:
+**Toolchains**
 
-  ```sh
-  sudo dnf install webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel openssl-devel
-  ```
+- [Rust](https://rustup.rs) stable, 1.85 or newer (the workspace uses the 2024 edition).
+- [Node.js](https://nodejs.org) 20 or newer, with npm.
+- A C toolchain (gcc or clang, `make`, `pkg-config`): SQLite is compiled from source through
+  `rusqlite`'s `bundled` feature, and Tauri links against GTK and WebKitGTK.
 
-  On Debian/Ubuntu: `libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev`.
-- Optional: `tmux` (writing into sessions and "Go to" inside tmux), [Warp](https://www.warp.dev/)
-  (tabs and per-pane focus), `git` (a session's commit list).
+**System libraries (Tauri 2 on Linux)**
 
-### From source
+Fedora:
+
+```sh
+sudo dnf install webkit2gtk4.1-devel openssl-devel curl wget file \
+  libappindicator-gtk3-devel librsvg2-devel libxdo-devel
+sudo dnf group install "c-development"
+```
+
+Debian or Ubuntu (22.04 or newer):
+
+```sh
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
+  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+```
+
+Arch Linux:
+
+```sh
+sudo pacman -S --needed webkit2gtk-4.1 base-devel curl wget file openssl \
+  appmenu-gtk-module libappindicator-gtk3 librsvg xdotool
+```
+
+Other distributions: see Tauri's [Linux prerequisites](https://v2.tauri.app/start/prerequisites/#linux).
+
+**Runtime tools (optional, used when present)**
+
+| Tool | Used for |
+|---|---|
+| `git` | A session's commit list and diffs in **Changes**. |
+| `tmux` | Writing into sessions and **Go to** inside tmux. |
+| [Warp](https://www.warp.dev/) | Launching sessions in Warp tabs and per-pane **Go to**. |
+| `busctl` (systemd) + KDE Plasma | Per-window **Go to** through KWin. |
+| `xdg-open` (xdg-utils) | Opening links. |
+| A notification daemon | Desktop notifications and their buttons (any freedesktop one; Plasma ships it). |
+
+### Run from source (development)
+
+From a clone of the repository:
 
 ```sh
 npm install
-npm run app          # builds the warroom-hook bridge and runs `tauri dev`
+npm run app
 ```
 
-### As a package
+`npm run app` does two things:
+
+1. `npm run bridge` builds the hook bridge in debug mode (`cargo build -p warroom-hook`).
+2. `tauri dev` starts Vite on `http://localhost:1420`, compiles the Rust app and opens the window
+   with hot reload for the front end. Rust changes trigger a rebuild and restart.
+
+The first build downloads and compiles every Rust crate and takes a few minutes; later ones are
+incremental. To work on the UI only, `npm run dev` serves it in a browser with a demo room and no
+Rust at all.
+
+### Build an installable package (Linux)
 
 ```sh
-npm run package      # builds the bridge in release and produces .deb, .rpm and AppImage
+npm install
+npm run package
 ```
 
-Packages end up in `target/release/bundle/` and ship `warroom-hook` next to the executable.
+`npm run package` runs two steps:
 
-## Connecting your agents
+1. **Sidecar** (`scripts/sidecar.sh`): builds `warroom-hook` in release mode and copies it to
+   `src-tauri/binaries/warroom-hook-<target-triple>` (for example
+   `warroom-hook-x86_64-unknown-linux-gnu`), the name Tauri expects for bundled binaries.
+2. **Bundle**: `tauri build --config src-tauri/tauri.bundle.conf.json` builds the front end
+   (`tsc && vite build` into `dist/`), compiles the app in release mode and produces every target in
+   `tauri.conf.json` (`deb`, `rpm`, `appimage`). The extra config adds the bridge as an
+   `externalBin`, so each package ships `warroom-hook` next to the app binary (`/usr/bin/` in the
+   `.deb` and `.rpm`).
+
+The results land in `target/release/bundle/`:
+
+```text
+target/release/bundle/
+├── deb/       Agent War Room_0.1.0_amd64.deb
+├── rpm/       Agent War Room-0.1.0-1.x86_64.rpm
+└── appimage/  Agent War Room_0.1.0_amd64.AppImage
+```
+
+Arguments after `--` go to `tauri build`. Useful ones:
+
+```sh
+npm run package -- --bundles rpm        # only one format (deb, rpm or appimage)
+npm run package -- --bundles deb,rpm    # several
+npm run package -- --no-bundle          # just the binary in target/release/
+npm run package -- --debug              # debug build, bundles in target/debug/bundle/
+npm run package -- --verbose            # see what the bundler is doing
+```
+
+### Install the package
+
+```sh
+sudo dnf install ./target/release/bundle/rpm/*.rpm     # Fedora, openSUSE…
+sudo apt install ./target/release/bundle/deb/*.deb     # Debian, Ubuntu…
+```
+
+The `.deb` and `.rpm` declare their runtime dependencies (WebKitGTK, GTK, AppIndicator), so the
+package manager pulls them in. After installing, `agent-war-room` is on your `PATH` and the app
+appears in the application menu.
+
+The AppImage bundles its libraries and needs no installation:
+
+```sh
+chmod +x "target/release/bundle/appimage/Agent War Room_0.1.0_amd64.AppImage"
+"./target/release/bundle/appimage/Agent War Room_0.1.0_amd64.AppImage"
+```
+
+AppImages need FUSE 2 to mount themselves (`fuse-libs` on Fedora, `libfuse2` on Debian/Ubuntu).
+
+When you connect an agent, the app copies the bridge to `~/.local/share/agent-war-room/bin/` and
+points the hooks there, so updating or moving the package does not break existing hooks; reconnect
+after an update to refresh that copy.
+
+### Porting to macOS or Windows
+
+Tauri itself builds for both, so the packaging side is ready in principle:
+
+| | macOS | Windows |
+|---|---|---|
+| Toolchain | Xcode Command Line Tools (`xcode-select --install`) | Visual Studio Build Tools with "Desktop development with C++", WebView2 (preinstalled on Windows 10/11) |
+| Command | `npm run package -- --bundles app,dmg` | `npm run package -- --bundles msi,nsis` |
+| Output | `.app` and `.dmg` | `.msi` and `-setup.exe` |
+| Icons | `src-tauri/icons/icon.icns` (exists; add it to `bundle.icon`) | `src-tauri/icons/icon.ico` (exists; add it to `bundle.icon`) |
+| Distribution | Code signing and notarization with an Apple Developer ID, or Gatekeeper blocks it | Code signing recommended, or SmartScreen warns |
+
+What blocks a working build today is the app code, not Tauri:
+
+- **Both:** `bundle.targets` in `tauri.conf.json` lists only Linux formats (`--bundles` overrides
+  it), and `scripts/sidecar.sh` is a POSIX shell script (on Windows the bridge would be
+  `warroom-hook.exe`).
+- **Windows:** the bridge and `ingress.rs` use Unix domain sockets (`std::os::unix`); they need a
+  named pipe or TCP-on-localhost transport. The installer also writes Unix paths into the hooks.
+- **macOS:** it compiles in principle (Unix sockets exist), but process liveness and the
+  terminal/IDE lookup read `/proc`, which macOS does not have, so every session would look closed.
+  **Go to** depends on KWin, tmux or Warp, and links open with `xdg-open` instead of `open`.
+
+The ports are behind traits (`ProcessProbe`, the desktop adapters), so a port means new adapters in
+`crates/infrastructure`, not changes to the domain. See
+[`.cursor/rules/desktop.mdc`](.cursor/rules/desktop.mdc).
+
+## Agent integrations
 
 The app shows a banner for each supported agent it finds on your machine (`~/.claude`, `~/.codex`,
 `~/.cursor`, `~/.gemini/config`) that is not connected yet. They all use the same bridge; each gets
@@ -205,8 +436,8 @@ cover the Cursor app's agent and `cursor-agent` in a terminal.
 
 - Cursor **also runs Claude Code's hooks**. If both integrations are connected it notices our command
   twice and runs it once, so nothing arrives duplicated.
-- Its transcripts have no model or tokens; they come from its hooks (`afterAgentResponse`), from the
-  moment the app is running.
+- Its transcripts carry no model or tokens, so those come from its hooks (`afterAgentResponse`) and
+  only for turns that happen while the app is running.
 - It doesn't report when it is waiting for your approval, so Cursor sessions don't turn red.
 
 ### Antigravity
@@ -216,22 +447,87 @@ Click **Connect Antigravity**. It adds one named block (`agent-war-room`) to its
 
 - Its hooks run inside its agent loop and don't say when a conversation starts or ends: a
   conversation appears with its first model call and finishes at each `Stop`.
-- No approvals, no tokens (the model yes), and it can't be started from the room: it lives in its
-  own app.
+- No approvals and no tokens (only the model), and it can't be started from the room: it lives in
+  its own app.
 
 Cursor and Antigravity are built from their own hook contracts and real transcripts, but have **not
 been tried live** yet (see [Limitations](#limitations-and-roadmap)).
 
-The first agent's menu also has **Open at login (in the tray)**, which starts the app hidden in the
-tray.
+## Terminals and IDEs
 
-### Global "next" shortcut (KDE)
+Agent War Room does not care where an agent runs: an app terminal, tmux, Warp, Konsole, or the
+built-in terminal of an IDE such as WebStorm. Every hook event carries where it came from (the
+process chain up to the terminal or IDE, the tmux pane, the Warp pane), and **Go to** uses the most
+precise route available, in this order: Warp pane → tmux pane → KDE window.
 
-System Settings → Keyboard → Shortcuts → Add New → Command or Script: `agent-war-room --next` (or the
-binary's path if it is not installed), and bind it to a key.
+| Where the agent runs | Go to | Type and answer from the room | Start / resume from the room |
+|---|---|---|---|
+| App terminal (built in) | opens it inside the room | yes | yes |
+| tmux (inside any terminal) | exact pane, and raises its terminal on KDE | yes | no |
+| Warp | exact tab and pane | no | yes (new tab) |
+| Any other terminal or IDE (Konsole, WebStorm, VS Code…) | its window, on KDE | no | no |
 
-With the app open, the shortcut jumps to the window of the session that has been waiting the longest;
-if it cannot find the window, it opens its preview. If the app is not running, it starts it.
+### App terminal
+
+The room has its own terminals (xterm.js on a real PTY), so you can work without leaving it.
+
+- Each repository has a **+ Agent** button; with several agents connected it opens a menu of agent ×
+  terminal ("Claude Code · app terminal", "Codex · Warp tab"…). Closed sessions offer **Resume in an
+  app terminal**, which runs the resume command in the session's exact folder.
+- The agent starts through your login shell, so it finds the same `PATH` as in a normal terminal.
+- Sessions started this way get a terminal button on their card and in the preview. Closing the
+  window keeps the terminals alive: the app stays in the tray, and reopening a terminal brings back
+  its recent output.
+- Replies and answers typed in the room are written straight into the terminal.
+
+### tmux
+
+Nothing to set up: when an agent runs inside tmux, the bridge records the pane and the tmux server.
+
+- **Go to** selects the pane, switches the attached client to its session if needed and, on KDE,
+  raises the terminal window that shows it.
+- Replies from the room are typed into the pane with `tmux send-keys`, so tmux is the way to answer
+  from the room for agents started in any external terminal.
+
+### Any terminal or IDE (KDE Plasma)
+
+On KDE Plasma, **Go to** reaches the window of whatever runs the agent: Konsole, Kitty, the terminal
+of WebStorm or another JetBrains IDE, VS Code, Cursor… The bridge walks `/proc` from the agent up to
+its terminal or IDE, and a small KWin script activates the right window (on Wayland only the
+compositor may hand focus to another app). It restores minimized windows and switches virtual
+desktops if needed.
+
+One process often owns several windows: a single WebStorm can have five projects open, and Warp or
+Konsole can have several windows. The window title breaks the tie: the room looks for the session
+title, then its worktree folder, then the repository name, and prefers whole-word matches (so
+`Harbor` does not pick `Harbor3Repo`). IDEs put the project name in the title, so this usually just
+works; if it lands on the wrong window, make the repository name visible in the window title.
+
+These sessions cannot be typed into from the room: use **Go to** and answer there, or run the agent
+inside tmux.
+
+### Warp
+
+[Warp](https://www.warp.dev/) gets the most precise jump, and works on any desktop.
+
+- **Go to the exact pane.** Warp sets `WARP_FOCUS_URL` in every pane, and the bridge records it with
+  each event. **Go to** opens that link, so Warp brings up the exact tab and pane the agent runs in,
+  even with many tabs open. On KDE, KWin also raises the Warp window (without it, Wayland may only
+  flash the taskbar entry).
+- **Start an agent in a Warp tab.** Each repository has a **+ in Warp** button (with several agents
+  connected, the **+ Agent** menu offers "<agent> · Warp tab"). The new tab opens in the repository
+  folder, already running the agent, and is named "War Room · <label>".
+- **Resume a closed session in Warp.** Closed cards and the session preview offer **Resume in Warp**,
+  which runs the agent's resume command (`claude --resume`, `codex resume`…) in a new tab.
+
+How it works: Warp's URIs cannot run commands, but its tab configs can. The app writes one
+(`awr-<id>.toml`) into `~/.local/share/warp-terminal/tab_configs/` with the folder and the command,
+then opens `warp://tab_config/awr-<id>`. It only ever touches files with the `awr-` prefix, and
+deletes them after 24 hours.
+
+Limits: the room cannot type into a Warp pane, so to reply you use **Go to** and answer in Warp
+(typing from the room works in app terminals and tmux). Whether Warp picks up a freshly written
+tab config without restarting has not been verified live yet.
 
 ## Languages
 
@@ -244,11 +540,17 @@ language, copy `locales/en.json`, translate the values and register the code (se
 [`.cursor/rules/i18n.mdc`](.cursor/rules/i18n.mdc)); `cargo test -p awr-i18n` checks it has every key
 and the same placeholders. Preview it with `npm run shot -- /tmp/shots 1500 <code>`.
 
-## How it works
+## Architecture
 
-```
+Agent War Room is a Tauri 2 desktop application with a Rust core, a React and TypeScript front end,
+SQLite persistence and a small Rust hook bridge. The bridge is intentionally disposable from the
+agent's point of view: if the app is not running, it exits immediately and never blocks the session.
+
+```text
  Claude Code ─┐
- Codex ───────┴hook──▶ warroom-hook ──unix socket──▶ Agent War Room (Tauri)
+ Codex ───────┤
+ Cursor ──────┤
+ Antigravity ─┴hook──▶ warroom-hook ──unix socket──▶ Agent War Room (Tauri)
    (each event)        (bridge, Rust)                 ├─ Rust core (hexagonal)
                         · walks /proc up to the        │   domain ─ application ─ infrastructure
                           terminal/IDE                 ├─ SQLite: append-only events
@@ -256,16 +558,16 @@ and the same placeholders. Preview it with `npm run shot -- /tmp/shots 1500 <cod
                         · always exits 0               └─ React UI: classic and pixel-art views
 ```
 
-1. The agent runs `warroom-hook` on every event (Claude Code and Codex share the hook protocol). The
-   bridge works out which agent it is and where the session runs
-   (process, terminal, tmux or Warp pane) and sends an envelope to the app's socket. If the app is not
-   there, it exits at once.
+1. The agent runs `warroom-hook` on every event; all four agents share the same bridge. The bridge
+   works out which agent it is and where the session runs (process, terminal, tmux or Warp pane) and
+   sends an envelope to the app's socket. If the app is not there, it exits at once.
 2. For Claude's `PermissionRequest`, the bridge waits for the room's decision (up to ~10 minutes). If
    you answer in the terminal, Claude kills the hook and the room notices.
 3. The app stores every event in SQLite and recomputes the session's state. The domain is pure: one
    state machine per session that decides its attention level.
-4. In parallel it reads the agent's JSONL transcript (Claude's, or Codex's rollout) incrementally for the title, answers, model, skills,
-   subagents, usage and touched files.
+4. In parallel it reads the agent's transcript incrementally (Claude's JSONL, Codex's rollout,
+   Cursor's and Antigravity's own formats) for the title, answers, model, skills, subagents, usage
+   and touched files.
 5. The UI receives a precomputed view; the TypeScript types are generated from Rust with `ts-rs`.
 
 The project is split like this:
@@ -297,13 +599,14 @@ Everything stays on your machine; the app makes no network requests.
 | Events (append-only, 14 days) | `~/.local/share/agent-war-room/events.db` |
 | Installed bridge | `~/.local/share/agent-war-room/bin/warroom-hook` |
 | Socket (`0700` permissions) | `$XDG_RUNTIME_DIR/agent-war-room/ingress.sock` |
+| Warp tab configs (only when you launch in Warp) | `~/.local/share/warp-terminal/tab_configs/` |
 | Added hooks | `~/.claude/settings.json`, `$CODEX_HOME/hooks.json`, `~/.cursor/hooks.json`, `~/.gemini/config/hooks.json` (copies in `.warroom-bak`) |
 
 The app **reads** the transcripts in `~/.claude/projects/`, `~/.codex/sessions/` (plus Codex's
 `session_index.jsonl` for titles), `~/.cursor/projects/*/agent-transcripts/` and
-`~/.gemini/antigravity/brain/`, `/proc` (to locate processes and
-windows) and, when you click **Changes**, the `git log` of the session's worktree. It only **writes**
-into your sessions when you reply or approve something from the room.
+`~/.gemini/antigravity/brain/`, `/proc` (to locate processes and windows) and, when you click
+**Changes**, the `git log` of the session's worktree. It only **writes** into your sessions when you
+reply or approve something from the room.
 
 The cost is an **estimate** at public API prices: on a subscription it is not what you pay, but it is
 useful to compare sessions.
@@ -312,12 +615,13 @@ useful to compare sessions.
 
 | Symptom | What to check |
 |---|---|
-| A session does not show up | Only sessions started after connecting show up. Check that the menu says "connected" and restart that Claude session. |
+| A session does not show up | Only sessions started after connecting show up. Check that the agent's menu says "connected" and start a new session. |
+| Codex sessions never show up | Codex runs the hooks only after you trust them: open Codex and choose **Trust all and continue**. `codex exec` never asks, so it skips them. |
 | It shows up but without title or answers | Claude launched from inside another Claude session inherits `CLAUDE_CODE_*` variables that disable the transcript. Launch it from a clean terminal (launches from the app already scrub them). |
-| "Go to" does nothing | Outside KDE only Warp and tmux work. On KDE, with several windows of the same IDE, the project title breaks the tie: having the repo name in the window title helps. |
-| I cannot write into a session | Only possible when it runs in an app terminal or in tmux. |
+| "Go to" does nothing or picks the wrong window | Outside KDE only Warp and tmux work. On KDE, with several windows of the same terminal or IDE, the window title breaks the tie: having the repo name in it helps (see [Terminals and IDEs](#terminals-and-ides)). |
+| I cannot write into a session | Only possible when it runs in an app terminal or in tmux; elsewhere use **Go to**. |
 | No notifications | Check that the session is not muted or dismissed and that the desktop allows the app's notifications. |
-| I want to see what Claude sends | Start Claude with `WARROOM_HOOK_DUMP=/path/file.jsonl`: the bridge saves every envelope. |
+| I want to see what an agent sends | Start the agent with `WARROOM_HOOK_DUMP=/path/file.jsonl`: the bridge saves every envelope. |
 
 ## Development
 
