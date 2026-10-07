@@ -141,7 +141,8 @@ impl TranscriptReader for CursorTranscriptReader {
 }
 
 fn recent_items(path: &Path, limit: usize) -> Vec<TimelineItem> {
-    let Ok(lines) = tail_lines(path, TIMELINE_TAIL_BYTES) else { return Vec::new() };
+    let lines = if limit == usize::MAX { head_lines(path, u64::MAX) } else { tail_lines(path, TIMELINE_TAIL_BYTES) };
+    let Ok(lines) = lines else { return Vec::new() };
     let items: Vec<TimelineItem> = lines.iter().flat_map(items).collect();
     let skip = items.len().saturating_sub(limit);
     items.into_iter().skip(skip).collect()

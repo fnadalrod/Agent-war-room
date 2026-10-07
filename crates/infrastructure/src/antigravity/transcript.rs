@@ -75,7 +75,13 @@ impl TranscriptReader for AntigravityTranscriptReader {
     }
 
     fn recent(&self, transcript_path: &str, limit: usize) -> Vec<TimelineItem> {
-        let Ok(steps) = tail_lines(Path::new(transcript_path), TIMELINE_TAIL_BYTES) else { return Vec::new() };
+        let path = Path::new(transcript_path);
+        let steps = if limit == usize::MAX {
+            head_lines(path, u64::MAX)
+        } else {
+            tail_lines(path, TIMELINE_TAIL_BYTES)
+        };
+        let Ok(steps) = steps else { return Vec::new() };
         let items: Vec<TimelineItem> = steps.iter().flat_map(items).collect();
         let skip = items.len().saturating_sub(limit);
         items.into_iter().skip(skip).collect()

@@ -197,8 +197,10 @@ pub async fn session_detail(
     service: State<'_, Arc<WarRoomService>>,
     id: String,
     limit: Option<usize>,
+    full: Option<bool>,
 ) -> Result<SessionDetail, String> {
-    blocking(&service, move |s| s.session_detail(SessionId(id), limit.unwrap_or(60))).await
+    let limit = if full.unwrap_or(false) { usize::MAX } else { limit.unwrap_or(60) };
+    blocking(&service, move |s| s.session_detail(SessionId(id), limit)).await
 }
 
 /// Opens a link (from an agent's Markdown) in the system browser. http(s) only.

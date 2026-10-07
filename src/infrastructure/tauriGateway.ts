@@ -37,7 +37,7 @@ export const tauriWarRoomGateway: WarRoomGateway = {
   sendInput: (id, text) => invoke("send_input", { id, text }),
   launch: (provider, cwd, target) => invoke<Launched>("launch", { provider, cwd, target }),
   resume: (id, target) => invoke<Launched>("resume", { id, target }),
-  detail: (id) => invoke<SessionDetail>("session_detail", { id, limit: 80 }),
+  detail: (id, fullHistory = false) => invoke<SessionDetail>("session_detail", { id, limit: 80, full: fullHistory }),
   subagentDetail: (id, agent) => invoke<SubagentPreview>("subagent_detail", { id, agent }),
   openExternal: (url) => invoke("open_external", { url }),
   onOpenRequest: (listener) =>

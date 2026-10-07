@@ -161,7 +161,13 @@ impl TranscriptReader for ClaudeTranscriptReader {
     }
 
     fn recent(&self, transcript_path: &str, limit: usize) -> Vec<TimelineItem> {
-        let Ok(lines) = tail_lines(Path::new(transcript_path), TIMELINE_TAIL_BYTES) else {
+        let path = Path::new(transcript_path);
+        let lines = if limit == usize::MAX {
+            head_lines(path, u64::MAX)
+        } else {
+            tail_lines(path, TIMELINE_TAIL_BYTES)
+        };
+        let Ok(lines) = lines else {
             return Vec::new();
         };
         let mut items: Vec<TimelineItem> = lines.iter().flat_map(|e| timeline_items(e, false)).collect();
@@ -206,8 +212,13 @@ impl TranscriptReader for ClaudeTranscriptReader {
             .flat_map(|e| timeline_items(e, true))
             .find(|i| i.kind == TimelineKind::Prompt)
             .map(|i| i.text);
-        let mut timeline: Vec<TimelineItem> =
-            tail_lines(&path, TIMELINE_TAIL_BYTES).ok()?.iter().flat_map(|e| timeline_items(e, true)).collect();
+        let lines = if limit == usize::MAX {
+            head_lines(&path, u64::MAX)
+        } else {
+            tail_lines(&path, TIMELINE_TAIL_BYTES)
+        }
+        .ok()?;
+        let mut timeline: Vec<TimelineItem> = lines.iter().flat_map(|e| timeline_items(e, true)).collect();
         let last_reply = timeline.iter().rev().find(|i| i.kind == TimelineKind::Reply).map(|i| i.text.clone());
         let skip = timeline.len().saturating_sub(limit);
         timeline.drain(..skip);
@@ -647,6 +658,22 @@ mod tests {
         let last = ClaudeTranscriptReader::new().recent(path.to_str().unwrap(), 1);
         assert_eq!(last.len(), 1);
         assert_eq!(last[0].kind, TimelineKind::Reply);
+    }
+
+    #[test]
+    fn full_timeline_reads_entries_before_the_preview_tail() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.jsonl");
+        append(&path, &line(json!({ "type": "user", "message": { "content": "the original question" } })));
+        let filler = line(json!({ "type": "progress", "data": "x".repeat(1000) }));
+        append(&path, &filler.repeat(2200));
+        append(&path, &assistant(json!([{ "type": "text", "text": "the latest answer" }])));
+
+        let reader = ClaudeTranscriptReader::new();
+        assert!(!reader.recent(path.to_str().unwrap(), 80).iter().any(|item| item.text == "the original question"));
+        let full = reader.recent(path.to_str().unwrap(), usize::MAX);
+        assert_eq!(full.first().map(|item| item.text.as_str()), Some("the original question"));
+        assert_eq!(full.last().map(|item| item.text.as_str()), Some("the latest answer"));
     }
 
     #[test]

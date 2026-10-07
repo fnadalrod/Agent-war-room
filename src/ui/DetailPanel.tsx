@@ -204,7 +204,14 @@ export function DetailPanel({ detail, fallback, store, now }: Props) {
         )}
 
         <section>
-          <h3>{copy.detail.recentConversation}</h3>
+          <div className="section-head">
+            <h3>{detail.history.full ? copy.detail.fullConversation : copy.detail.recentConversation}</h3>
+            {!detail.history.full && detail.data?.timeline.length ? (
+              <button className="ghost small" disabled={detail.history.loading} onClick={() => store.loadFullHistory()}>
+                {detail.history.loading ? copy.detail.loading : copy.detail.loadFullHistory}
+              </button>
+            ) : null}
+          </div>
           {detail.data == null ? (
             <p className="muted">{copy.detail.loading}</p>
           ) : detail.data.timeline.length === 0 ? (

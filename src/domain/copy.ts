@@ -222,6 +222,8 @@ export const copy = {
     skills: t("detail.skills"),
     subagents: t("detail.subagents"),
     recentConversation: t("detail.recent_conversation"),
+    fullConversation: t("detail.full_conversation"),
+    loadFullHistory: t("detail.load_full_history"),
     openToAnswer: t("detail.open_to_answer"),
     questionInTerminal: t("detail.question_in_terminal"),
     loading: t("detail.loading"),

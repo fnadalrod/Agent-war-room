@@ -34,8 +34,8 @@ export interface WarRoomGateway {
   /** `provider`: which agent to run (`claude`, `codex`…). */
   launch(provider: string, cwd: string, target: LaunchTarget): Promise<Launched>;
   resume(id: string, target: LaunchTarget): Promise<Launched>;
-  /** Preview: card + recent conversation. */
-  detail(id: string): Promise<SessionDetail>;
+  /** Preview: card + recent conversation, or the complete transcript on explicit request. */
+  detail(id: string, fullHistory?: boolean): Promise<SessionDetail>;
   /** Preview of one of the session's subagents. */
   subagentDetail(id: string, agent: string): Promise<SubagentPreview>;
   /** Opens a link in the system browser. */

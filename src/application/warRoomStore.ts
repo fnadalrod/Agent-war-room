@@ -27,6 +27,8 @@ export type OpenDetail = {
   id: string;
   data: SessionDetail | null;
   agent: { id: string; data: SubagentPreview | null } | null;
+  /** Full transcript is loaded only when requested; it may be large. */
+  history: { full: boolean; loading: boolean };
   /** Put the cursor in the message box (came from a notification's "Reply"). */
   reply?: boolean;
   /** "What did it change": null until asked for (it runs git and scans transcripts). */
@@ -202,6 +204,7 @@ export class WarRoomStore {
         id,
         data: same ? this.state.detail!.data : null,
         agent: null,
+        history: same ? this.state.detail!.history : { full: false, loading: false },
         reply: options.reply ?? false,
         changes: same ? this.state.detail!.changes : null,
       },
@@ -260,7 +263,14 @@ export class WarRoomStore {
   /** Opens a subagent preview (inside its session panel). */
   openSubagent(id: string, agent: string) {
     const same = this.state.detail?.id === id;
-    this.set({ detail: { id, data: same ? this.state.detail!.data : null, agent: { id: agent, data: null } } });
+    this.set({
+      detail: {
+        id,
+        data: same ? this.state.detail!.data : null,
+        agent: { id: agent, data: null },
+        history: same ? this.state.detail!.history : { full: false, loading: false },
+      },
+    });
     if (!same) void this.loadDetail(id);
     void this.loadSubagent(id, agent);
   }
@@ -301,17 +311,30 @@ export class WarRoomStore {
     void this.rooms.openExternal(url).catch((e) => this.notify({ text: String(e), tone: "warn" }));
   }
 
-  private async loadDetail(id: string, review = false) {
+  loadFullHistory() {
+    const open = this.state.detail;
+    if (!open || open.history.full || open.history.loading) return;
+    this.set({ detail: { ...open, history: { ...open.history, loading: true } } });
+    void this.loadDetail(open.id, false, true);
+  }
+
+  private async loadDetail(id: string, review = false, fullHistory?: boolean) {
     try {
-      const data = await this.rooms.detail(id);
+      const history = this.state.detail?.history;
+      const requestedFull = fullHistory ?? Boolean(history?.full || history?.loading);
+      const data = await this.rooms.detail(id, requestedFull);
       // It may have been closed or switched while loading.
       const open = this.state.detail;
       if (open?.id === id) {
-        this.set({ detail: { ...open, data } });
+        this.set({ detail: { ...open, data, history: { full: requestedFull, loading: false } } });
         if (review && data.session.attention === "finished") this.acknowledge(data.session);
       }
     } catch (e) {
-      if (this.state.detail?.id === id) this.set({ detail: null });
+      const open = this.state.detail;
+      if (open?.id === id) {
+        if (open.data) this.set({ detail: { ...open, history: { ...open.history, loading: false } } });
+        else this.set({ detail: null });
+      }
       this.notify({ text: String(e), tone: "warn" });
     }
   }

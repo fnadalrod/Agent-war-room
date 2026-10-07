@@ -241,6 +241,8 @@
       "skills": "Skills",
       "subagents": "Subagentes",
       "recent_conversation": "Conversación reciente",
+      "full_conversation": "Conversación completa",
+      "load_full_history": "Ver todo el historial",
       "open_to_answer": "Abre la sesión para responder a esta pregunta. La respuesta directa está disponible en terminales de la app y tmux.",
       "question_in_terminal": "La pregunta está ahora en el terminal de la sesión: respóndela allí.",
       "loading": "Cargando…",

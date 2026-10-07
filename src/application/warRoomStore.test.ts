@@ -43,6 +43,21 @@ describe("WarRoomStore", () => {
     expect(store.snapshot().detail?.id).toBe("b2c3d4e5-harbor-pixie");
   });
 
+  it("loads the complete conversation only when requested", async () => {
+    const demo = createDemo();
+    const detail = vi.fn(demo.rooms.detail);
+    const store = storeWith({ detail });
+    await store.start();
+    const id = "a1b2c3d4-harbor-sync";
+    store.openDetail(id);
+    await vi.waitFor(() => expect(store.snapshot().detail?.data).not.toBeNull());
+    expect(detail).toHaveBeenCalledWith(id, false);
+
+    store.loadFullHistory();
+    await vi.waitFor(() => expect(store.snapshot().detail?.history.full).toBe(true));
+    expect(detail).toHaveBeenLastCalledWith(id, true);
+  });
+
   it("moves a reviewed finished session to idle while keeping its detail", async () => {
     const store = storeWith();
     await store.start();
