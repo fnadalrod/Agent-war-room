@@ -38,6 +38,9 @@ pub struct WarRoomView {
     pub rooms: Vec<RoomView>,
     /// Tokens and estimated cost of every known session today.
     pub today: UsageView,
+    /// Permissions successfully answered by automatic approval during this app run.
+    #[ts(type = "number")]
+    pub auto_approved: u64,
 }
 
 /// A working session with no activity for this long is flagged as possibly stuck.
@@ -400,7 +403,7 @@ pub fn project(
         today.add(&summary.usage_today);
     }
     let aggregate = rooms.iter().map(|r| r.attention).max().unwrap_or(AttentionView::Offline);
-    WarRoomView { aggregate, rooms, today: (&today).into() }
+    WarRoomView { aggregate, rooms, today: (&today).into(), auto_approved: 0 }
 }
 
 /// Files edited by more than one live, not archived session of the same worktree, per session.

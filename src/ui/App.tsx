@@ -7,6 +7,7 @@ import { copy } from "../domain/copy";
 import { AnswerReader } from "./AnswerReader";
 import { AttentionQueue } from "./AttentionQueue";
 import { DetailPanel } from "./DetailPanel";
+import { DrinkingBird } from "./DrinkingBird";
 import { FilterBar } from "./FilterBar";
 import { GoIcon } from "./icons";
 import { AgentsMenu, IntegrationBar } from "./IntegrationBar";
@@ -84,6 +85,12 @@ export function App({ store }: { store: WarRoomStore }) {
               {copy.topbar.archived} <span className="muted">{archivedCount(view)}</span>
             </label>
           )}
+          <DrinkingBird
+            active={state.autoApprove ?? false}
+            count={fullView?.auto_approved ?? 0}
+            disabled={state.autoApprove == null || state.busy}
+            onToggle={() => store.setAutoApprove(!state.autoApprove)}
+          />
           <AgentsMenu integrations={state.integrations} busy={state.busy} store={store} autostart={state.autostart} />
           <button className="icon help" onClick={toggleHelp} title={copy.shortcuts.button} aria-label={copy.shortcuts.button}>
             ?

@@ -117,6 +117,49 @@ fn a_real_permission_request_is_approved_from_the_war_room() {
 
 #[test]
 #[ignore]
+fn a_real_permission_request_is_approved_automatically() {
+    let room = Room::start();
+    assert!(room.service.set_auto_approve(true));
+    let dir = room.dir();
+    let tmux_socket = dir.join("t.sock");
+    let args: Vec<String> = claude_args(&room, Some("Run exactly this with Bash: touch approved.txt"))
+        .into_iter()
+        .map(|a| format!("'{a}'"))
+        .collect();
+    let command = format!("XDG_RUNTIME_DIR={} claude {}", room.runtime.display(), args.join(" "));
+    tmux(&tmux_socket, &["new-session", "-d", "-x", "160", "-y", "40", "-c", dir.to_str().unwrap(), &command]);
+    let _server = TmuxServer(tmux_socket.clone());
+
+    let screen = || tmux(&tmux_socket, &["capture-pane", "-p"]);
+    let diag = || room.diag(&screen);
+
+    // New folder: Claude asks whether we trust it. `SessionStart` arrives before that dialog,
+    // so "there is a session" is not enough: wait for work or the dialog itself.
+    wait_for(
+        "trust dialog or work",
+        Duration::from_secs(30),
+        || screen().contains("trust this folder") || room.session().is_some_and(|s| is_busy(&s)),
+        &diag,
+    );
+    if screen().contains("trust this folder") {
+        trust_folder(&tmux_socket, &diag);
+    }
+
+    wait_for("file created by Claude", Duration::from_secs(60), || dir.join("approved.txt").exists(), &diag);
+    wait_for(
+        "end of turn",
+        Duration::from_secs(60),
+        || room.session().is_some_and(|s| s.attention == AttentionView::Finished),
+        &diag,
+    );
+    assert!(screen().contains("Allowed by PermissionRequest hook"));
+    let session = &room.service.view().rooms[0].sessions[0];
+    assert!(!session.can_approve, "the automatic decision never becomes a pending approval");
+    println!("title: {:?}", session.title);
+}
+
+#[test]
+#[ignore]
 fn a_real_question_is_answered_from_the_war_room() {
     let room = Room::start();
     let dir = room.dir();

@@ -142,7 +142,10 @@
       "war_room": "War Room",
       "archived": "Dismissed",
       "agents": "Agents",
-      "agents_title": "Which agents the war room follows, and their hooks"
+      "agents_title": "Which agents the war room follows, and their hooks",
+      "auto_approve_on": "Yes to all is on: Claude permissions are approved automatically",
+      "auto_approve_off": "Turn on yes to all for Claude permissions",
+      "auto_approve_increment": "+1"
     },
     "app": {
       "close": "Close",
@@ -333,6 +336,8 @@
       "approved": "Permission approved",
       "denied": "Permission denied",
       "question_answered": "Answer sent to the agent",
+      "auto_approve_on": "Yes to all is on — Claude permissions will be approved automatically",
+      "auto_approve_off": "Yes to all is off",
       "opened_in": "Opened in {via}"
     },
     "pixel": {

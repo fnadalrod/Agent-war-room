@@ -142,7 +142,10 @@
       "war_room": "War Room",
       "archived": "Despedidas",
       "agents": "Agentes",
-      "agents_title": "Qué agentes sigue la war room, y sus hooks"
+      "agents_title": "Qué agentes sigue la war room, y sus hooks",
+      "auto_approve_on": "Sí a todo está activo: los permisos de Claude se aprueban automáticamente",
+      "auto_approve_off": "Activar sí a todo para los permisos de Claude",
+      "auto_approve_increment": "+1"
     },
     "app": {
       "close": "Cerrar",
@@ -333,6 +336,8 @@
       "approved": "Permiso aprobado",
       "denied": "Permiso denegado",
       "question_answered": "Respuesta enviada al agente",
+      "auto_approve_on": "Sí a todo activo: los permisos de Claude se aprobarán automáticamente",
+      "auto_approve_off": "Sí a todo desactivado",
       "opened_in": "Abierto en {via}"
     },
     "pixel": {

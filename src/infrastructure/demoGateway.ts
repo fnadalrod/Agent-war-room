@@ -419,7 +419,7 @@ diff --git a/src/app/sync/outbox.ts b/src/app/sync/outbox.ts
 const ORDER: AttentionView[] = ["offline", "idle", "working", "finished", "needs_you"];
 const rank = (a: AttentionView) => ORDER.indexOf(a);
 
-function project(rooms: RoomView[]): WarRoomView {
+function project(rooms: RoomView[], autoApproved = 0): WarRoomView {
   const onWatch = (s: SessionView) => !s.archived && !s.muted;
   const best = (list: SessionView[]) =>
     list.filter(onWatch).reduce<AttentionView>((acc, s) => (rank(s.attention) > rank(acc) ? s.attention : acc), "offline");
@@ -428,13 +428,14 @@ function project(rooms: RoomView[]): WarRoomView {
     (acc, s) => ({ ...acc, total_tokens: acc.total_tokens + s.usage.total_tokens, cost_usd: acc.cost_usd + s.usage.cost_usd }),
     usage(0, 0),
   );
-  return { aggregate: best(next.flatMap((r) => r.sessions)), rooms: next, today };
+  return { aggregate: best(next.flatMap((r) => r.sessions)), rooms: next, today, auto_approved: autoApproved };
 }
 
 export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationGateway; terminals: TerminalGateway } {
   let rooms = initialRooms();
+  let autoApproved = 0;
   const listeners = new Set<(v: WarRoomView) => void>();
-  const emit = () => listeners.forEach((l) => l(project(rooms)));
+  const emit = () => listeners.forEach((l) => l(project(rooms, autoApproved)));
   const update = (id: string, patch: Partial<SessionView>) => {
     rooms = rooms.map((r) => ({ ...r, sessions: r.sessions.map((s) => (s.id === id ? { ...s, ...patch } : s)) }));
     emit();
@@ -455,6 +456,7 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
 
   const done = async () => {};
   let autostart = false;
+  let autoApprove = false;
   const launched = async (): Promise<Launched> => ({ pty_id: null, via: "demo" });
 
   const integration = (provider: string, settings_path: string, launchable = true): IntegrationStatus => ({
@@ -477,7 +479,7 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
 
   return {
     rooms: {
-      load: async () => project(rooms),
+      load: async () => project(rooms, autoApproved),
       onChange: async (l): Promise<Unsubscribe> => {
         listeners.add(l);
         return () => listeners.delete(l);
@@ -506,6 +508,20 @@ export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationG
           can_answer_question: false,
           questions: [],
         }),
+      autoApproveEnabled: async () => autoApprove,
+      setAutoApprove: async (enabled) => {
+        autoApprove = enabled;
+        if (enabled) {
+          rooms
+            .flatMap((r) => r.sessions)
+            .filter((s) => s.can_approve)
+            .forEach((s) => {
+              autoApproved += 1;
+              update(s.id, { attention: "working", status_label: "Bash", can_approve: false });
+            });
+        }
+        return autoApprove;
+      },
       sendInput: done,
       launch: launched,
       resume: launched,

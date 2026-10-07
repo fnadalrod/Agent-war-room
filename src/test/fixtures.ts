@@ -66,5 +66,5 @@ export function aRoom(name: string, sessions: SessionView[], attention: Attentio
 
 export function aView(rooms: RoomView[], aggregate: AttentionView = "idle"): WarRoomView {
   const today = { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, total_tokens: 0, cost_usd: 0, partial_cost: false };
-  return { aggregate, rooms, today };
+  return { aggregate, rooms, today, auto_approved: 0 };
 }

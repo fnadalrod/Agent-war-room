@@ -101,6 +101,9 @@ export const copy = {
     archived: t("topbar.archived"),
     agents: t("topbar.agents"),
     agentsTitle: t("topbar.agents_title"),
+    autoApproveOn: t("topbar.auto_approve_on"),
+    autoApproveOff: t("topbar.auto_approve_off"),
+    autoApproveIncrement: t("topbar.auto_approve_increment"),
   },
 
   app: {
@@ -324,6 +327,8 @@ export const copy = {
     approved: t("toasts.approved"),
     denied: t("toasts.denied"),
     questionAnswered: t("toasts.question_answered"),
+    autoApproveOn: t("toasts.auto_approve_on"),
+    autoApproveOff: t("toasts.auto_approve_off"),
     openedIn: (via: string) => t("toasts.opened_in", { via }),
   },
 

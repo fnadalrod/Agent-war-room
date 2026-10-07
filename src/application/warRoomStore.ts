@@ -52,6 +52,8 @@ export type WarRoomState = {
   /** One per supported agent; empty until loaded. */
   integrations: IntegrationStatus[];
   autostart: boolean | null;
+  /** Null until the core reports whether automatic permission approval is enabled. */
+  autoApprove: boolean | null;
   error: string | null;
   toast: Toast | null;
   busy: boolean;
@@ -61,7 +63,7 @@ const TOAST_MS = 3500;
 
 /** Framework-free store: the UI subscribes with `useSyncExternalStore`. */
 export class WarRoomStore {
-  private state: WarRoomState = { view: null, filter: NO_FILTER, detail: null, terminal: null, reading: null, integrations: [], autostart: null, error: null, toast: null, busy: false };
+  private state: WarRoomState = { view: null, filter: NO_FILTER, detail: null, terminal: null, reading: null, integrations: [], autostart: null, autoApprove: null, error: null, toast: null, busy: false };
   private readonly listeners = new Set<() => void>();
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly rooms: WarRoomGateway;
@@ -123,8 +125,12 @@ export class WarRoomStore {
     });
     const offOpen = await this.rooms.onOpenRequest((id, reply) => this.openDetail(id, { reply }));
     await this.run(async () => {
-      const [view, integrations] = await Promise.all([this.rooms.load(), this.integration.status()]);
-      this.set({ view, integrations });
+      const [view, integrations, autoApprove] = await Promise.all([
+        this.rooms.load(),
+        this.integration.status(),
+        this.rooms.autoApproveEnabled(),
+      ]);
+      this.set({ view, integrations, autoApprove });
     });
     this.integration.autostart().then(
       (autostart) => this.set({ autostart }),
@@ -169,6 +175,12 @@ export class WarRoomStore {
       this.notify({ text: String(e), tone: "warn" });
       return false;
     }
+  }
+
+  setAutoApprove(enabled: boolean) {
+    void this.run(async () => this.set({ autoApprove: await this.rooms.setAutoApprove(enabled) })).then(
+      (ok) => ok && this.notify({ text: enabled ? copy.toasts.autoApproveOn : copy.toasts.autoApproveOff, tone: "ok" }),
+    );
   }
 
   /** Types a message into the session and sends it. Resolves to `true` if delivered. */

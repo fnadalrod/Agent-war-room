@@ -69,6 +69,8 @@ pub fn run() {
             commands::approve,
             commands::deny,
             commands::answer_question,
+            commands::auto_approve_enabled,
+            commands::set_auto_approve,
             commands::send_input,
             commands::launch,
             commands::resume,

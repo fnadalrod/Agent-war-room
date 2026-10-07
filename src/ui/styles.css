@@ -265,6 +265,183 @@ button.linkish:hover:not(:disabled) {
   margin-left: auto;
 }
 
+/* Lives in the sticky top bar: always visible, never over the rooms. */
+.drinking-bird {
+  --bird-active: var(--working);
+  position: relative;
+  justify-content: center;
+  width: 54px;
+  height: 36px;
+  padding: 2px 4px;
+  border-color: var(--border-strong);
+  background: var(--surface);
+  overflow: visible;
+}
+
+.drinking-bird svg {
+  flex: none;
+  width: 44px;
+  height: 30px;
+  overflow: visible;
+}
+
+.drinking-bird__key {
+  transform-box: view-box;
+  transform-origin: 11px 38px;
+}
+
+.drinking-bird__key-shadow {
+  fill: #38445b;
+}
+
+.drinking-bird__keycap {
+  fill: #e7ecf5;
+}
+
+.drinking-bird__key-letter {
+  fill: #172033;
+}
+
+.drinking-bird__stand,
+.drinking-bird__pivot {
+  fill: #7d89a1;
+}
+
+.drinking-bird__rocker {
+  transform-box: view-box;
+  transform-origin: 34px 21px;
+}
+
+.drinking-bird__body,
+.drinking-bird__neck {
+  fill: #50b9d8;
+}
+
+.drinking-bird__head {
+  fill: #d94b5d;
+}
+
+.drinking-bird__beak {
+  fill: #f3b62f;
+}
+
+.drinking-bird__eye {
+  fill: #f7fbff;
+}
+
+.drinking-bird__pupil {
+  fill: #172033;
+}
+
+.drinking-bird__count {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  display: grid;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 5px;
+  place-items: center;
+  border: 2px solid var(--bg);
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.drinking-bird__increment {
+  position: absolute;
+  top: -12px;
+  right: 13px;
+  color: #84f0b3;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
+  text-shadow: 0 2px 8px rgb(0 0 0 / 0.8);
+  animation: approval-increment 1s ease-out both;
+}
+
+.drinking-bird[data-active="true"] {
+  border-color: color-mix(in srgb, var(--bird-active) 70%, var(--border));
+  background: color-mix(in srgb, var(--bird-active) 14%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bird-active) 20%, transparent),
+    0 0 12px color-mix(in srgb, var(--bird-active) 18%, transparent);
+  color: #c8f7dc;
+}
+
+.drinking-bird[data-active="true"] .drinking-bird__count {
+  background: color-mix(in srgb, var(--bird-active) 32%, var(--surface-3));
+  color: #e4fff0;
+}
+
+.drinking-bird[data-active="true"] .drinking-bird__rocker {
+  animation: drink-water 1.55s steps(5, end) infinite;
+}
+
+.drinking-bird[data-active="true"] .drinking-bird__key {
+  animation: press-y 1.55s steps(2, end) infinite;
+}
+
+@keyframes drink-water {
+  0%,
+  18%,
+  100% {
+    transform: rotate(0deg);
+  }
+  48%,
+  68% {
+    transform: rotate(-58deg);
+  }
+}
+
+@keyframes press-y {
+  0%,
+  46%,
+  72%,
+  100% {
+    transform: translateY(0);
+  }
+  50%,
+  68% {
+    transform: translateY(2px);
+  }
+}
+
+@keyframes approval-increment {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.8);
+  }
+  25% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-18px) scale(1.05);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drinking-bird[data-active="true"] .drinking-bird__rocker {
+    animation: none;
+    transform: rotate(-40deg);
+  }
+
+  .drinking-bird[data-active="true"] .drinking-bird__key {
+    animation: none;
+    transform: translateY(2px);
+  }
+
+  .drinking-bird__increment {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 .segmented {
   display: inline-flex;
   padding: 2px;

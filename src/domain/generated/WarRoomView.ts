@@ -7,4 +7,8 @@ export type WarRoomView = { aggregate: AttentionView, rooms: Array<RoomView>,
 /**
  * Tokens and estimated cost of every known session today.
  */
-today: UsageView, };
+today: UsageView, 
+/**
+ * Permissions successfully answered by automatic approval during this app run.
+ */
+auto_approved: number, };

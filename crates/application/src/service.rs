@@ -13,6 +13,7 @@ use awr_domain::{
     Timestamp, WarRoom,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 /// How much history is rebuilt on startup.
@@ -60,6 +61,10 @@ pub struct WarRoomService {
     approvals: Mutex<HashMap<SessionId, Arc<dyn HookResponder>>>,
     /// Questions answerable through a hook that is currently waiting for the app.
     questions: Mutex<HashMap<SessionId, PendingQuestion>>,
+    /// While enabled, permission hooks with a reply channel are approved before they reach the room.
+    auto_approve: AtomicBool,
+    /// Permissions successfully answered by automatic approval during this app run.
+    auto_approved: AtomicU64,
     /// Sessions already notified as possibly stuck (until they show activity again).
     stalled: Mutex<HashSet<SessionId>>,
     /// What hooks said that transcripts don't (model, tokens…), merged into the summaries.
@@ -112,6 +117,8 @@ impl WarRoomService {
             summaries: Mutex::default(),
             approvals: Mutex::default(),
             questions: Mutex::default(),
+            auto_approve: AtomicBool::new(false),
+            auto_approved: AtomicU64::new(0),
             stalled: Mutex::default(),
             hook_facts: Mutex::default(),
             ports,
@@ -247,7 +254,26 @@ impl WarRoomService {
         if let Some(reply) = signal.reply {
             match &kind {
                 SessionEventKind::AwaitingYou { reason: awr_domain::WaitReason::Permission, .. } => {
-                    self.approvals().insert(translated.session.clone(), reply);
+                    // Recheck while holding the approvals lock: enabling the mode drains this same map, so
+                    // an arriving permission cannot slip between the toggle and the drain.
+                    let automatic = {
+                        let mut approvals = self.approvals();
+                        if self.auto_approve.load(Ordering::SeqCst) {
+                            true
+                        } else {
+                            approvals.insert(translated.session.clone(), reply.clone());
+                            false
+                        }
+                    };
+                    if automatic {
+                        // PermissionRequest follows PreToolUse, which already left the session working.
+                        // Do not persist a synthetic "needs you" state that nobody needs to answer.
+                        if reply.respond(HookResponse::Allow) {
+                            self.auto_approved.fetch_add(1, Ordering::SeqCst);
+                            self.publish();
+                        }
+                        return Ok(());
+                    }
                 }
                 SessionEventKind::AwaitingYou { reason: awr_domain::WaitReason::Question, .. } => {
                     if let Some(prompts) = translated.question.clone().filter(|prompts| !prompts.is_empty()) {
@@ -332,6 +358,26 @@ impl WarRoomService {
 
     pub fn deny(&self, id: SessionId, message: Option<String>) -> PortResult<()> {
         self.decide(id, HookResponse::Deny { message })
+    }
+
+    pub fn auto_approve_enabled(&self) -> bool {
+        self.auto_approve.load(Ordering::SeqCst)
+    }
+
+    /// Enables or disables automatic approval. Enabling also answers permissions already waiting.
+    pub fn set_auto_approve(&self, enabled: bool) -> bool {
+        self.auto_approve.store(enabled, Ordering::SeqCst);
+        if enabled {
+            let pending: Vec<_> = self.approvals().drain().map(|(_, responder)| responder).collect();
+            for responder in pending {
+                if responder.respond(HookResponse::Allow) {
+                    self.auto_approved.fetch_add(1, Ordering::SeqCst);
+                    self.publish();
+                }
+            }
+            self.publish();
+        }
+        enabled
     }
 
     fn decide(&self, id: SessionId, response: HookResponse) -> PortResult<()> {
@@ -580,6 +626,7 @@ impl WarRoomService {
                 self.enrich_question(&SessionId(session.id.clone()), session);
             }
         }
+        view.auto_approved = self.auto_approved.load(Ordering::SeqCst);
         view
     }
 
@@ -1255,6 +1302,35 @@ mod tests {
         assert!(h.svc.answer_question(id("a"), BTreeMap::new()).is_err());
         assert!(responder.got.lock().unwrap().is_none());
         assert!(h.svc.view().rooms[0].sessions[0].can_answer_question);
+    }
+
+    #[test]
+    fn automatic_approval_answers_current_and_future_permissions() {
+        let h = harness();
+        h.svc.ingest(signal("a", "prompt")).unwrap();
+        let (waiting, current) = asking("a");
+        h.svc.ingest(waiting).unwrap();
+        assert!(h.svc.view().rooms[0].sessions[0].can_approve);
+
+        assert!(h.svc.set_auto_approve(true));
+        assert!(h.svc.auto_approve_enabled());
+        assert_eq!(*current.got.lock().unwrap(), Some(HookResponse::Allow));
+        assert!(!h.svc.view().rooms[0].sessions[0].can_approve);
+        assert_eq!(h.svc.view().auto_approved, 1);
+
+        h.svc.ingest(signal("b", "prompt")).unwrap();
+        let (future, next) = asking("b");
+        h.svc.ingest(future).unwrap();
+        assert_eq!(*next.got.lock().unwrap(), Some(HookResponse::Allow));
+        let b = h.svc.view().rooms[0].sessions.iter().find(|s| s.id == "b").unwrap().clone();
+        assert_eq!(b.attention, AttentionView::Working);
+        assert!(!b.can_approve);
+        assert_eq!(h.svc.view().auto_approved, 2);
+
+        assert!(!h.svc.set_auto_approve(false));
+        let (manual, _) = asking("b");
+        h.svc.ingest(manual).unwrap();
+        assert!(h.svc.view().rooms[0].sessions.iter().find(|s| s.id == "b").unwrap().can_approve);
     }
 
     #[test]

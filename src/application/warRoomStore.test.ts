@@ -17,6 +17,17 @@ describe("WarRoomStore", () => {
     expect(store.snapshot().view?.rooms.length).toBeGreaterThan(0);
     expect(store.snapshot().integrations.map((i) => i.provider)).toEqual(["claude", "codex", "cursor", "antigravity"]);
     expect(store.snapshot().integrations.every((i) => i.installed)).toBe(true);
+    expect(store.snapshot().autoApprove).toBe(false);
+  });
+
+  it("turns automatic approval on and reflects the core state", async () => {
+    const setAutoApprove = vi.fn().mockResolvedValue(true);
+    const store = storeWith({ setAutoApprove });
+    await store.start();
+    store.setAutoApprove(true);
+    await vi.waitFor(() => expect(store.snapshot().autoApprove).toBe(true));
+    expect(setAutoApprove).toHaveBeenCalledWith(true);
+    expect(store.snapshot().toast?.text).toBe(copy.toasts.autoApproveOn);
   });
 
   it("only confirms the approval if the core accepted it", async () => {

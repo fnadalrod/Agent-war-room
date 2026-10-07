@@ -141,6 +141,16 @@ pub async fn answer_question(
 }
 
 #[tauri::command]
+pub fn auto_approve_enabled(service: Service) -> bool {
+    service.auto_approve_enabled()
+}
+
+#[tauri::command]
+pub async fn set_auto_approve(service: State<'_, Arc<WarRoomService>>, enabled: bool) -> Result<bool, String> {
+    blocking(&service, move |s| Ok(s.set_auto_approve(enabled))).await
+}
+
+#[tauri::command]
 pub async fn send_input(service: State<'_, Arc<WarRoomService>>, id: String, text: String) -> Result<(), String> {
     blocking(&service, move |s| s.send_input(SessionId(id), &text)).await
 }

@@ -30,6 +30,9 @@ export interface WarRoomGateway {
   deny(id: string, message?: string): Promise<void>;
   /** Answers a provider question through its live hook response channel. */
   answerQuestion(id: string, answers: Record<string, string>): Promise<void>;
+  /** Automatically approve every permission that exposes a reply channel to the room. */
+  autoApproveEnabled(): Promise<boolean>;
+  setAutoApprove(enabled: boolean): Promise<boolean>;
   sendInput(id: string, text: string): Promise<void>;
   /** `provider`: which agent to run (`claude`, `codex`…). */
   launch(provider: string, cwd: string, target: LaunchTarget): Promise<Launched>;
