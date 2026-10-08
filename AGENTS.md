@@ -2,7 +2,7 @@
 
 Tauri desktop app that watches coding-agent sessions (Claude Code, Codex, Cursor, Antigravity) through hooks and routes your
 attention: one screen per session, grouped by repo, lit when something needs you, finished or looks
-stuck. Linux/KDE first. Human docs: `README.md`. Decisions: `docs/adr/0001-architecture.md`.
+stuck. Linux (KDE), macOS and Windows. Human docs: `README.md`. Decisions: `docs/adr/0001-architecture.md`.
 
 This file is an **index**, loaded every session: it says *where* knowledge is, not the knowledge.
 Tool support and what each tool loads → `.agents/README.md`.
@@ -58,7 +58,7 @@ All in `.cursor/rules/`. "+leaves" = router with a trigger table.
 - Engineering discipline (always) → `engineering-discipline.mdc` (+`doc-seeding.md`)
 - Layers, crates, ports, where things go → `architecture.mdc`
 - Sessions, status machine, attention, subagents, skills, stored events (`crates/domain/**`) → `domain-model.mdc`
-- Hook bridge, socket, shared hook protocol and installer, dialects (`crates/hook-bridge/**`, `crates/wire/**`, `ingress.rs`, `hooks.rs`, `hook_installer.rs`) → `hooks-ingest.mdc` (+leaves: approvals, Claude hooks reference)
+- Hook bridge, socket/pipe, process table, shared hook protocol and installer, dialects (`crates/hook-bridge/**`, `crates/wire/**`, `crates/procs/**`, `ingress.rs`, `hooks.rs`, `hook_installer.rs`) → `hooks-ingest.mdc` (+leaves: approvals, Claude hooks reference)
 - Codex: hooks trust, rollouts, CODEX_HOME (`codex/**`) → `codex.mdc`
 - Cursor: its own hooks, Claude hooks it also runs, transcripts (`cursor/**`) → `cursor.mdc`
 - Antigravity: named hooks.json, events without names, step transcripts (`antigravity/**`) → `antigravity.mdc`

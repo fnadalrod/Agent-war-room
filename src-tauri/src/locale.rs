@@ -32,17 +32,21 @@ pub fn tray_summary(parts: &[String]) -> String {
     tf("shell.tray.summary", &[("parts", &parts.join(" · "))])
 }
 
-// Notification buttons.
+// Notification buttons (freedesktop only).
 
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn notice_open() -> &'static str {
     t("shell.notice.open")
 }
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn notice_focus() -> &'static str {
     t("shell.notice.focus")
 }
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn notice_approve() -> &'static str {
     t("shell.notice.approve")
 }
+#[cfg(not(any(target_os = "macos", windows)))]
 pub fn notice_reply() -> &'static str {
     t("shell.notice.reply")
 }

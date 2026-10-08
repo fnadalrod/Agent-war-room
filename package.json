@@ -13,7 +13,7 @@
     "tauri": "tauri",
     "app": "npm run bridge && tauri dev",
     "test": "vitest run",
-    "sidecar": "sh scripts/sidecar.sh",
+    "sidecar": "node scripts/sidecar.mjs",
     "package": "npm run sidecar && tauri build --config src-tauri/tauri.bundle.conf.json",
     "shot": "npm run build --silent && node scripts/shot.mjs",
     "check": "bash scripts/check.sh"

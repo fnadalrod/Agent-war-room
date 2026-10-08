@@ -2,7 +2,6 @@ use awr_application::ports::{CommitInfo, GitHistory, PortError, PortResult, Repo
 use awr_domain::{RepoId, Workspace};
 use std::collections::HashMap;
 use std::path::Path;
-use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -58,7 +57,7 @@ fn branch(cwd: &str) -> Option<String> {
 }
 
 fn git(cwd: &str, args: &[&str]) -> Option<String> {
-    let out = Command::new("git").arg("-C").arg(cwd).args(args).output().ok()?;
+    let out = crate::system::quiet_command("git").arg("-C").arg(cwd).args(args).output().ok()?;
     if !out.status.success() {
         return None;
     }
@@ -153,7 +152,7 @@ mod tests {
     use super::*;
 
     fn git(dir: &Path, args: &[&str]) {
-        let ok = Command::new("git").arg("-C").arg(dir).args(args).output().unwrap().status.success();
+        let ok = std::process::Command::new("git").arg("-C").arg(dir).args(args).output().unwrap().status.success();
         assert!(ok, "git {args:?}");
     }
 
@@ -206,7 +205,7 @@ mod tests {
         let commit = |file: &str, body: &str, msg: &str, date: &str| {
             std::fs::write(repo.join(file), body).unwrap();
             git(repo, &["add", "."]);
-            let ok = Command::new("git")
+            let ok = std::process::Command::new("git")
                 .arg("-C")
                 .arg(repo)
                 .args(["-c", "user.name=Ana", "-c", "user.email=a@a", "commit", "-q", "-m", msg])

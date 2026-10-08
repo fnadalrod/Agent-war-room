@@ -78,13 +78,12 @@ impl AgentLauncher for DesktopLauncher {
         match request.target {
             LaunchTarget::Warp => self.launch_in_warp(request, &command),
             LaunchTarget::App => {
-                // Login shell: when launched from the desktop, PATH does not include ~/.local/bin.
-                let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into());
+                let (program, args) = shell_running(&command);
                 let pty_id = self
                     .pty
                     .spawn(PtySpec {
-                        program: shell,
-                        args: vec!["-l".into(), "-c".into(), format!("exec {command}")],
+                        program,
+                        args,
                         cwd: request.cwd.clone(),
                         label: request.label.clone(),
                         env: vec![],
@@ -95,6 +94,21 @@ impl AgentLauncher for DesktopLauncher {
             }
         }
     }
+}
+
+/// The program and arguments that run `command` in the user's shell.
+#[cfg(unix)]
+fn shell_running(command: &str) -> (String, Vec<String>) {
+    // Login shell: when launched from the desktop, PATH does not include ~/.local/bin.
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into());
+    (shell, vec!["-l".into(), "-c".into(), format!("exec {command}")])
+}
+
+/// `cmd` finds the agent on PATH whether it is an `.exe` or an npm `.cmd` shim.
+#[cfg(windows)]
+fn shell_running(command: &str) -> (String, Vec<String>) {
+    let cmd = std::env::var("ComSpec").unwrap_or_else(|_| "cmd.exe".into());
+    (cmd, vec!["/D".into(), "/C".into(), command.into()])
 }
 
 /// If the app was started from a Claude session, it inherits markers (`CLAUDE_CODE_CHILD_SESSION`…)

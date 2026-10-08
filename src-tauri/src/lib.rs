@@ -118,7 +118,7 @@ fn compose(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     let (notice_actions, picked) = std::sync::mpsc::channel();
     let pty = PtyManager::new(adapters::pty_sink(app.clone()));
     app.manage(pty.clone());
-    let warp_tab_configs = dirs::data_dir().ok_or("no data directory")?.join("warp-terminal/tab_configs");
+    let warp_tab_configs = warp_tab_configs().ok_or("no data directory")?;
     let home = dirs::home_dir().ok_or("no HOME directory")?;
     let codex_home = codex_home(&home);
 
@@ -163,7 +163,7 @@ fn compose(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     std::thread::spawn(move || reader.refresh_all_summaries());
 
     // One bridge binary for every agent; each gets our hooks in its own file.
-    let bridge = data_dir.join("bin/warroom-hook");
+    let bridge = data_dir.join("bin").join(BRIDGE_FILE);
     let installers: commands::Integrations = Arc::new(vec![
         (
             ProviderKind::Claude,
@@ -271,9 +271,24 @@ pub fn go_next(app: &AppHandle) {
     });
 }
 
-/// The bridge is built into the same `target/` as the app (workspace), next to the executable.
+/// `warroom-hook`, `warroom-hook.exe` on Windows.
+const BRIDGE_FILE: &str = if cfg!(windows) { "warroom-hook.exe" } else { "warroom-hook" };
+
+/// The bridge is built into the same `target/` as the app (workspace), next to the executable; the
+/// bundles put it there too (Tauri's `externalBin`).
 fn built_bridge() -> Option<PathBuf> {
-    std::env::current_exe().ok()?.parent().map(|dir| dir.join("warroom-hook"))
+    std::env::current_exe().ok()?.parent().map(|dir| dir.join(BRIDGE_FILE))
+}
+
+/// Where Warp reads tab configs (same layout as its launch configurations).
+fn warp_tab_configs() -> Option<PathBuf> {
+    if cfg!(target_os = "macos") {
+        dirs::home_dir().map(|home| home.join(".warp/tab_configs"))
+    } else if cfg!(windows) {
+        dirs::config_dir().map(|dir| dir.join("warp/Warp/data/tab_configs"))
+    } else {
+        dirs::data_dir().map(|dir| dir.join("warp-terminal/tab_configs"))
+    }
 }
 
 pub fn show_main(app: &AppHandle) {

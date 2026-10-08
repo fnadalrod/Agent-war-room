@@ -160,7 +160,8 @@ fn pump(id: String, mut reader: Box<dyn Read + Send>, session: Arc<PtySession>, 
     sink(PtyEvent::Exited { id });
 }
 
-#[cfg(test)]
+/// Drives `/bin/sh`: Unix only.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};

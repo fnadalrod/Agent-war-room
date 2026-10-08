@@ -17,12 +17,15 @@ crates/infrastructure  adapters: claude/ (provider, transcripts, installer, pric
 crates/wire            socket contract bridge ↔ app (serde only)
 crates/i18n            translation lookup over locales/<lang>.json (serde_json only); used by every
                        crate that shows text, the front reads the same catalogs
+crates/procs           the OS process table (name, parent, command line, alive): /proc on Linux,
+                       sysinfo on macOS/Windows; used by the bridge and infrastructure
 crates/hook-bridge     `warroom-hook`, the binary Claude runs on every hook
 src-tauri              composition root + driving adapters (commands) + tray/notifications
 src/                   React: domain · application · infrastructure · ui (same rule inside)
 ```
 
-`domain ← application ← infrastructure ← src-tauri`. The front mirrors it: `ui → application →
+`domain ← application ← infrastructure ← src-tauri`. Leaf crates (`wire`, `i18n`, `procs`) depend on
+no other crate of ours. The front mirrors it: `ui → application →
 domain`; `infrastructure/` implements the ports in `application/ports.ts`.
 
 ## Where does X go?
@@ -36,6 +39,7 @@ domain`; `infrastructure/` implements the ports in `application/ports.ts`.
 | Agent-specific knowledge (hook dialect, transcript shape, prices, config paths) | `crates/infrastructure/src/<agent>/` (`claude/`, `codex/`) — the domain must not know any agent |
 | Something several agents share (hook protocol, installer, JSONL reading, skill folders, tool labels) | `hooks.rs`, `hook_installer.rs`, `jsonl.rs`, `skills.rs`, `tools.rs` in `crates/infrastructure/src/` |
 | User-visible text | a key in every `locales/*.json`, exposed by the crate's `locale.rs` / `src/domain/copy.ts` (`i18n.mdc`) |
+| Something that differs per OS | an adapter in `crates/infrastructure` behind a port, chosen with `#[cfg]` (see `desktop/mod.rs`, `ingress.rs`); process facts go in `crates/procs`. Never `#[cfg]` in domain/application. Check with `scripts/cross_check.sh` |
 | A Tauri command or event | `src-tauri/src/commands.rs` / `adapters.rs`, mirrored in `src/infrastructure/tauriGateway.ts` |
 
 ## Ports (crates/application/src/ports.rs)

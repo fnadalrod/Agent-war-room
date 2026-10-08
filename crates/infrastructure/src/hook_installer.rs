@@ -64,8 +64,12 @@ impl HookInstaller {
         Self { spec, settings_path, bridge_source, bridge_target }
     }
 
+    /// The quoted bridge path. On Windows with forward slashes: Claude Code runs hooks through Git
+    /// Bash there, where a backslash may escape, and cmd accepts both.
     fn command(&self) -> String {
-        format!("\"{}\"", self.bridge_target.display())
+        let path = self.bridge_target.display().to_string();
+        let path = if cfg!(windows) { path.replace('\\', "/") } else { path };
+        format!("\"{path}\"")
     }
 
     fn read_settings(&self) -> PortResult<Map<String, Value>> {
@@ -104,10 +108,18 @@ impl HookInstaller {
         if let Some(dir) = self.bridge_target.parent() {
             fs::create_dir_all(dir).map_err(fail)?;
         }
-        // Copy to a temp file + rename: overwriting the binary while a hook runs it would fail with ETXTBSY.
+        // Copy to a temp file + rename: overwriting the binary while a hook runs it would fail with
+        // ETXTBSY. Windows doesn't let a running .exe be replaced at all, only renamed: the old one
+        // is moved aside first and removed when no hook holds it any more.
         let tmp = self.bridge_target.with_extension("new");
         fs::copy(source, &tmp).map_err(fail)?;
         set_executable(&tmp)?;
+        if cfg!(windows) && self.bridge_target.exists() {
+            let old = self.bridge_target.with_extension("old");
+            let _ = fs::remove_file(&old);
+            fs::rename(&self.bridge_target, &old).map_err(fail)?;
+            let _ = fs::remove_file(&old);
+        }
         fs::rename(&tmp, &self.bridge_target).map_err(fail)
     }
 }
@@ -239,20 +251,35 @@ fn is_ours(hook: &Value) -> bool {
     hook.get("command").and_then(Value::as_str).is_some_and(|c| c.contains(MARKER))
 }
 
-/// A real ELF: pointing the hooks at an empty or broken file would make every agent hook fail.
+/// A real executable of this OS (ELF, Mach-O, PE): pointing the hooks at an empty or broken file
+/// would make every agent hook fail.
 fn is_executable_binary(path: &Path) -> bool {
     use std::io::Read;
     let mut magic = [0u8; 4];
-    fs::File::open(path).and_then(|mut f| f.read_exact(&mut magic)).is_ok() && magic == *b"\x7fELF"
+    fs::File::open(path).and_then(|mut f| f.read_exact(&mut magic)).is_ok() && EXECUTABLE_MAGIC.iter().any(|m| magic.starts_with(m))
 }
+
+#[cfg(target_os = "macos")]
+const EXECUTABLE_MAGIC: &[&[u8]] = &[b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe"];
+#[cfg(windows)]
+const EXECUTABLE_MAGIC: &[&[u8]] = &[b"MZ"];
+#[cfg(not(any(target_os = "macos", windows)))]
+const EXECUTABLE_MAGIC: &[&[u8]] = &[b"\x7fELF"];
 
 fn backup_path(path: &Path) -> PathBuf {
     path.with_extension("json.warroom-bak")
 }
 
+#[cfg(unix)]
 fn set_executable(path: &Path) -> PortResult<()> {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).map_err(fail)
+}
+
+/// Windows decides by the extension.
+#[cfg(not(unix))]
+fn set_executable(_: &Path) -> PortResult<()> {
+    Ok(())
 }
 
 fn fail(e: impl ToString) -> PortError {
@@ -282,7 +309,7 @@ mod tests {
         }
         let source = dir.path().join("build/warroom-hook");
         fs::create_dir_all(source.parent().unwrap()).unwrap();
-        fs::write(&source, b"\x7fELF fake").unwrap();
+        fs::write(&source, [EXECUTABLE_MAGIC[0], b"fake"].concat()).unwrap();
         let target = dir.path().join("bin/warroom-hook");
         let installer = HookInstaller::new(&SPEC, settings, Some(source), target);
         (dir, installer)

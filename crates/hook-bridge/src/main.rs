@@ -10,8 +10,7 @@
 
 use awr_wire::{EnvHints, HookEnvelope, HookReply, PROTOCOL_VERSION, WireProcess};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::os::unix::net::UnixStream;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_PAYLOAD_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_ANCESTRY: usize = 12;
@@ -23,8 +22,6 @@ const AGENTS: &[(&str, &str)] =
 /// answer wins. Codex runs the hook first and shows its dialog only after it returns: waiting there
 /// would freeze its terminal, so for Codex the war room only reports the request.
 const DIALOG_WHILE_WAITING: &[&str] = &["claude"];
-/// Below the hook timeout (600 s) so we exit on our own terms.
-const REPLY_WAIT: Duration = Duration::from_secs(590);
 
 fn main() {
     // Antigravity names the event in our command (its payloads don't) and expects JSON back, always.
@@ -48,10 +45,16 @@ fn run(event_arg: Option<&str>) -> Option<String> {
     }
     let event = payload.get("hook_event_name").and_then(|e| e.as_str()).unwrap_or_default().to_owned();
 
-    let ancestry = ancestry(std::os::unix::process::parent_id());
+    let ancestry: Vec<WireProcess> = awr_procs::parent_id()
+        .map(|parent| awr_procs::ancestry(parent, MAX_ANCESTRY))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(pid, name)| WireProcess { pid, name })
+        .collect();
     let agent = ancestry
         .iter()
-        .find_map(|p| AGENTS.iter().find(|(name, _)| *name == p.name).map(|(_, provider)| (p.pid, *provider)));
+        .find_map(|p| AGENTS.iter().find(|(name, _)| *name == p.name).map(|(_, provider)| (p.pid, *provider)))
+        .or_else(|| ancestry.iter().find_map(|p| node_agent(p).map(|provider| (p.pid, provider))));
     let agent_pid = agent.map(|(pid, _)| pid);
 
     let provider = provider(std::env::var("WARROOM_PROVIDER").ok(), fingerprint(&payload), agent.map(|(_, p)| p));
@@ -60,7 +63,7 @@ fn run(event_arg: Option<&str>) -> Option<String> {
         v: PROTOCOL_VERSION,
         provider,
         received_at_ms: now_ms(),
-        agent_command: agent_pid.and_then(command_line),
+        agent_command: agent_pid.and_then(awr_procs::command_line),
         agent_pid,
         ancestry,
         env: EnvHints {
@@ -80,18 +83,39 @@ fn run(event_arg: Option<&str>) -> Option<String> {
         append_dump(&dump, &line);
     }
 
-    let mut stream = UnixStream::connect(awr_wire::socket_path()).ok()?;
-    stream.set_write_timeout(Some(Duration::from_millis(500))).ok()?;
+    let mut stream = transport::connect(&awr_wire::socket_path())?;
     stream.write_all(&line).ok()?;
     if !envelope.expects_reply {
         return None;
     }
 
-    stream.set_read_timeout(Some(REPLY_WAIT)).ok()?;
     let mut reply = String::new();
     BufReader::new(stream).read_line(&mut reply).ok()?;
     let reply: HookReply = serde_json::from_str(reply.trim()).ok()?;
     Some(hook_output(&reply, &envelope.payload))
+}
+
+/// An agent installed with npm whose process is still called `node`: on Linux Claude and Codex rename
+/// their process, but macOS and Windows name it after the executable. Its script path tells.
+fn node_agent(process: &WireProcess) -> Option<&'static str> {
+    if process.name != "node" {
+        return None;
+    }
+    let command = awr_procs::command_line(process.pid)?;
+    agent_in_node_command(&command)
+}
+
+fn agent_in_node_command(command: &str) -> Option<&'static str> {
+    // Paths with spaces come quoted: look at the whole line for the package, at the script for a bin link.
+    let line = command.split_once(char::is_whitespace)?.1.replace('\\', "/");
+    let script = line.split_whitespace().next()?.trim_matches('\'');
+    if line.contains("@anthropic-ai/claude-code") || script.ends_with("/claude") {
+        Some("claude")
+    } else if line.contains("@openai/codex") || script.ends_with("/codex") {
+        Some("codex")
+    } else {
+        None
+    }
 }
 
 /// Agents recognisable by their payload alone. Cursor also runs the hooks in Claude's settings, with
@@ -137,46 +161,108 @@ fn hook_output(reply: &HookReply, payload: &serde_json::Value) -> String {
     .to_string()
 }
 
-/// Walks up `/proc/<pid>/stat` from the hook's parent. The agent may launch the hook through a
-/// shell, so `getppid()` is not enough.
-fn ancestry(start: u32) -> Vec<WireProcess> {
-    let mut chain = Vec::new();
-    let mut pid = start;
-    while pid > 1 && chain.len() < MAX_ANCESTRY {
-        let Some((name, ppid)) = read_stat(pid) else { break };
-        chain.push(WireProcess { pid, name });
-        pid = ppid;
-    }
-    chain
-}
-
-/// `/proc/<pid>/stat` is `pid (comm) state ppid …`; `comm` may contain spaces and parentheses.
-fn read_stat(pid: u32) -> Option<(String, u32)> {
-    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    let open = stat.find('(')?;
-    let close = stat.rfind(')')?;
-    let name = stat[open + 1..close].to_string();
-    let ppid = stat[close + 1..].split_whitespace().nth(1)?.parse().ok()?;
-    Some((name, ppid))
-}
-
-/// Readable `/proc/<pid>/cmdline`: space-separated arguments, quoted when needed.
-fn command_line(pid: u32) -> Option<String> {
-    let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
-    let args: Vec<String> = raw
-        .split(|&b| b == 0)
-        .filter(|a| !a.is_empty())
-        .map(|a| {
-            let arg = String::from_utf8_lossy(a).into_owned();
-            if arg.contains(char::is_whitespace) { format!("'{}'", arg.replace('\'', "'\\''")) } else { arg }
-        })
-        .collect();
-    (!args.is_empty()).then(|| args.join(" "))
-}
-
 fn append_dump(path: &str, line: &[u8]) {
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
         let _ = f.write_all(line);
+    }
+}
+
+/// Connection to the app. It must fail at once when the app is not running.
+#[cfg(unix)]
+mod transport {
+    use std::os::unix::net::UnixStream;
+    use std::path::Path;
+    use std::time::Duration;
+
+    /// Below the hook timeout (600 s) so we exit on our own terms.
+    const REPLY_WAIT: Duration = Duration::from_secs(590);
+
+    pub fn connect(socket: &Path) -> Option<UnixStream> {
+        let stream = UnixStream::connect(socket).ok()?;
+        stream.set_write_timeout(Some(Duration::from_millis(500))).ok()?;
+        stream.set_read_timeout(Some(REPLY_WAIT)).ok()?;
+        Some(stream)
+    }
+}
+
+/// Windows: the app's named pipe, opened as a file. A missing pipe (app down) fails at once; a busy
+/// one (every instance taken by other hooks for an instant) is retried briefly. Pipe handles have no
+/// read timeout: if the app hangs while we wait for a decision, the agent's own hook timeout ends us.
+#[cfg(windows)]
+mod transport {
+    use std::fs::File;
+    use std::path::Path;
+    use std::time::Duration;
+
+    const ERROR_PIPE_BUSY: i32 = 231;
+
+    pub fn connect(socket: &Path) -> Option<File> {
+        let name = awr_wire::pipe_name(socket);
+        for _ in 0..20 {
+            match std::fs::OpenOptions::new().read(true).write(true).open(&name) {
+                // Pipe names are global: only a server run by this same user may receive our
+                // payloads and, above all, send back an "allow".
+                Ok(pipe) => return same_user_server(&pipe).then_some(pipe),
+                Err(e) if e.raw_os_error() == Some(ERROR_PIPE_BUSY) => std::thread::sleep(Duration::from_millis(10)),
+                Err(_) => return None,
+            }
+        }
+        None
+    }
+
+    fn same_user_server(pipe: &File) -> bool {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::Pipes::GetNamedPipeServerProcessId;
+        use windows_sys::Win32::System::Threading::{
+            GetCurrentProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+        let mut server = 0u32;
+        // SAFETY: a valid pipe handle owned by `pipe` and an out-pointer to a local.
+        if unsafe { GetNamedPipeServerProcessId(pipe.as_raw_handle(), &mut server) } == 0 {
+            return false;
+        }
+        // SAFETY: plain query; a null handle is checked below and every handle opened is closed.
+        unsafe {
+            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, server);
+            if process.is_null() {
+                return false;
+            }
+            let same = match (user_sid(process), user_sid(GetCurrentProcess())) {
+                (Some(theirs), Some(ours)) => same_sid(&theirs, &ours),
+                _ => false,
+            };
+            windows_sys::Win32::Foundation::CloseHandle(process);
+            same
+        }
+    }
+
+    /// The `TOKEN_USER` of a process, as raw bytes (the SID lives inside the buffer).
+    unsafe fn user_sid(process: windows_sys::Win32::Foundation::HANDLE) -> Option<Vec<u8>> {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::Security::{GetTokenInformation, TOKEN_QUERY, TokenUser};
+        use windows_sys::Win32::System::Threading::OpenProcessToken;
+        let mut token = std::ptr::null_mut();
+        // SAFETY: caller passes a process handle with query rights.
+        if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) } == 0 {
+            return None;
+        }
+        let mut buf = vec![0u8; 256];
+        let mut len = 0u32;
+        // SAFETY: `buf` is writable for its length; the token is closed right after.
+        let ok = unsafe { GetTokenInformation(token, TokenUser, buf.as_mut_ptr().cast(), buf.len() as u32, &mut len) };
+        unsafe { CloseHandle(token) };
+        (ok != 0).then_some(buf)
+    }
+
+    fn same_sid(a: &[u8], b: &[u8]) -> bool {
+        use windows_sys::Win32::Security::{EqualSid, TOKEN_USER};
+        // SAFETY: both buffers hold a TOKEN_USER written by GetTokenInformation, whose SID pointer
+        // points inside the same (still alive) buffer.
+        unsafe {
+            let a = &*(a.as_ptr() as *const TOKEN_USER);
+            let b = &*(b.as_ptr() as *const TOKEN_USER);
+            EqualSid(a.User.Sid, b.User.Sid) != 0
+        }
     }
 }
 
@@ -189,19 +275,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_own_process_stat() {
-        let (name, ppid) = read_stat(std::process::id()).unwrap();
-        assert!(!name.is_empty());
-        assert_eq!(ppid, std::os::unix::process::parent_id());
-    }
-
-    #[test]
-    fn reads_the_command_line_of_a_process() {
-        let own = command_line(std::process::id()).unwrap();
-        assert!(own.contains("warroom_hook"), "{own}");
-    }
-
-    #[test]
     fn the_provider_comes_from_the_environment_the_payload_then_the_agent_process() {
         assert_eq!(provider(Some("codex".into()), None, Some("claude")), "codex");
         assert_eq!(provider(None, None, Some("codex")), "codex");
@@ -210,6 +283,21 @@ mod tests {
         let cursor = serde_json::json!({ "cursor_version": "3.18.9", "hook_event_name": "stop" });
         assert_eq!(provider(None, fingerprint(&cursor), Some("claude")), "cursor");
         assert_eq!(fingerprint(&serde_json::json!({ "conversationId": "x" })), Some("antigravity"));
+    }
+
+    #[test]
+    fn npm_installs_running_under_node_are_recognised_by_their_script() {
+        assert_eq!(
+            agent_in_node_command(r"node C:\Users\a\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\cli.js"),
+            Some("claude")
+        );
+        assert_eq!(agent_in_node_command("node /opt/homebrew/bin/codex --yolo"), Some("codex"));
+        assert_eq!(
+            agent_in_node_command(r"node 'C:\Program Files\nodejs\node_modules\@anthropic-ai\claude-code\cli.js'"),
+            Some("claude")
+        );
+        assert_eq!(agent_in_node_command("node /usr/local/bin/vite"), None);
+        assert_eq!(agent_in_node_command("node"), None);
     }
 
     #[test]

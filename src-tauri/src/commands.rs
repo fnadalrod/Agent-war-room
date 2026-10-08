@@ -77,7 +77,7 @@ pub fn mark_all_seen(service: Service) -> Result<(), String> {
     done(service.mark_all_seen())
 }
 
-/// Returns how the window was reached ("kwin", "tmux + kwin", "warp") or fails with the reason.
+/// Returns how the window was reached ("kwin", "macos", "windows", "tmux + kwin", "warp") or fails with the reason.
 #[tauri::command]
 pub async fn focus(service: State<'_, Arc<WarRoomService>>, id: String) -> Result<String, String> {
     match blocking(&service, move |s| s.focus(SessionId(id))).await? {

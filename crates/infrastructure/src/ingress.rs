@@ -1,16 +1,18 @@
-//! Inbound adapter: Unix socket where `warroom-hook` drops one envelope per connection.
+//! Inbound adapter: where `warroom-hook` drops one envelope per connection. A Unix socket on Linux
+//! and macOS, a named pipe on Windows (`awr_wire::pipe_name`); everything past accepting a
+//! connection is the same code.
 
 use awr_application::IncomingSignal;
 use awr_application::ports::{HookResponder, HookResponse};
 use awr_domain::{ProcessInfo, TerminalHost, Timestamp};
 use awr_wire::{HookEnvelope, HookReply, PROTOCOL_VERSION};
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::io;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
-use tokio::net::{UnixListener, UnixStream};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::sync::oneshot;
 
 const MAX_ENVELOPE_BYTES: u64 = 8 * 1024 * 1024;
 const READ_TIMEOUT: Duration = Duration::from_secs(2);
@@ -18,29 +20,90 @@ const REPLY_WRITE_TIMEOUT: Duration = Duration::from_secs(1);
 
 pub type SignalHandler = Arc<dyn Fn(IncomingSignal) + Send + Sync>;
 
-/// Starts listening on the socket. Fails if another app instance already holds it.
-pub async fn bind(path: &Path) -> io::Result<UnixListener> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
-    }
-    if path.exists() {
-        if UnixStream::connect(path).await.is_ok() {
-            return Err(io::Error::new(
-                io::ErrorKind::AddrInUse,
-                "another instance is already listening on the socket",
-            ));
+pub use endpoint::{Listener, bind};
+
+#[cfg(unix)]
+mod endpoint {
+    use std::io;
+    use std::path::Path;
+    use tokio::net::{UnixListener, UnixStream};
+
+    pub struct Listener(UnixListener);
+
+    /// Starts listening on the socket. Fails if another app instance already holds it.
+    pub async fn bind(path: &Path) -> io::Result<Listener> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
         }
-        std::fs::remove_file(path)?;
+        if path.exists() {
+            if UnixStream::connect(path).await.is_ok() {
+                return Err(super::in_use());
+            }
+            std::fs::remove_file(path)?;
+        }
+        UnixListener::bind(path).map(Listener)
     }
-    UnixListener::bind(path)
+
+    impl Listener {
+        pub async fn accept(&mut self) -> io::Result<UnixStream> {
+            self.0.accept().await.map(|(stream, _)| stream)
+        }
+    }
+}
+
+/// One pipe instance waits for a client at a time; as soon as one connects, the next is created, so
+/// a hook arriving meanwhile finds it (or retries briefly on `ERROR_PIPE_BUSY`, see the bridge).
+/// Remote clients are rejected (tokio's default) and the default DACL only lets the owner write.
+#[cfg(windows)]
+mod endpoint {
+    use std::io;
+    use std::path::Path;
+    use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
+
+    pub struct Listener {
+        name: String,
+        next: NamedPipeServer,
+    }
+
+    /// Creates the pipe. Fails if another app instance already holds it.
+    pub async fn bind(path: &Path) -> io::Result<Listener> {
+        let name = awr_wire::pipe_name(path);
+        let next = ServerOptions::new().first_pipe_instance(true).create(&name).map_err(|e| {
+            if e.kind() == io::ErrorKind::PermissionDenied { super::in_use() } else { e }
+        })?;
+        Ok(Listener { name, next })
+    }
+
+    impl Listener {
+        /// The waiting instance is replaced whatever happens: one whose client died before connecting
+        /// (`ERROR_NO_DATA`) would otherwise be retried forever, and every bridge would find the
+        /// pipe busy.
+        pub async fn accept(&mut self) -> io::Result<NamedPipeServer> {
+            let connected = self.next.connect().await;
+            let next = ServerOptions::new().create(&self.name)?;
+            let current = std::mem::replace(&mut self.next, next);
+            connected.map(|()| current)
+        }
+    }
+}
+
+fn in_use() -> io::Error {
+    io::Error::new(io::ErrorKind::AddrInUse, "another instance is already listening on the socket")
 }
 
 /// Accepts connections forever. The handler runs outside the async runtime (it does blocking IO).
-pub async fn serve(listener: UnixListener, handler: SignalHandler) {
+pub async fn serve(mut listener: Listener, handler: SignalHandler) {
     loop {
-        let Ok((stream, _)) = listener.accept().await else { continue };
+        let stream = match listener.accept().await {
+            Ok(stream) => stream,
+            Err(e) => {
+                eprintln!("[ingress] accept failed: {e}");
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                continue;
+            }
+        };
         let handler = handler.clone();
         tokio::spawn(async move {
             match receive(stream).await {
@@ -60,20 +123,20 @@ pub fn default_socket_path() -> PathBuf {
 
 /// Reads one line (or up to EOF, as old bridges did) and, if the bridge expects a reply, keeps
 /// the connection open to answer it.
-async fn receive(stream: UnixStream) -> io::Result<Option<IncomingSignal>> {
-    let mut reader = BufReader::new(stream.take(MAX_ENVELOPE_BYTES));
+async fn receive<S>(stream: S) -> io::Result<Option<IncomingSignal>>
+where
+    S: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+{
+    let mut reader = BufReader::new(stream);
     let mut line = String::new();
-    tokio::time::timeout(READ_TIMEOUT, reader.read_line(&mut line))
+    tokio::time::timeout(READ_TIMEOUT, (&mut reader).take(MAX_ENVELOPE_BYTES).read_line(&mut line))
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "slow read"))??;
     let envelope: HookEnvelope =
         serde_json::from_str(line.trim_end()).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
-    let reply: Option<Arc<dyn HookResponder>> = if envelope.expects_reply {
-        Some(Arc::new(SocketResponder::watch(reader.into_inner().into_inner())?))
-    } else {
-        None
-    };
+    let reply: Option<Arc<dyn HookResponder>> =
+        if envelope.expects_reply { Some(Arc::new(StreamResponder::watch(reader.into_inner()))) } else { None };
     Ok(to_signal(envelope, reply))
 }
 
@@ -101,40 +164,62 @@ fn to_signal(envelope: HookEnvelope, reply: Option<Arc<dyn HookResponder>>) -> O
     })
 }
 
+/// A reply line for the connection's task, and where it tells whether it got written.
+type ReplyRequest = (Vec<u8>, std::sync::mpsc::Sender<bool>);
+
 /// Open connection to a `warroom-hook` waiting for a decision. If the user answers in the terminal,
-/// Claude kills the hook and EOF arrives: a task watches a clone of the socket to notice.
-struct SocketResponder {
-    stream: Mutex<Option<std::os::unix::net::UnixStream>>,
+/// Claude kills the hook and EOF arrives. A task owns the connection: it watches for that EOF and
+/// writes the reply when `respond` hands it over.
+struct StreamResponder {
+    reply: Mutex<Option<oneshot::Sender<ReplyRequest>>>,
     closed: Arc<AtomicBool>,
 }
 
-impl SocketResponder {
-    fn watch(stream: UnixStream) -> io::Result<Self> {
-        let stream = stream.into_std()?;
-        let mut watcher = UnixStream::from_std(stream.try_clone()?)?;
+impl StreamResponder {
+    fn watch<S>(stream: S) -> Self
+    where
+        S: AsyncRead + AsyncWrite + Send + Unpin + 'static,
+    {
+        let (tx, mut rx) = oneshot::channel::<ReplyRequest>();
         let closed = Arc::new(AtomicBool::new(false));
         let flag = closed.clone();
         tokio::spawn(async move {
+            let (mut read, mut write) = tokio::io::split(stream);
             let mut buf = [0u8; 64];
-            // The bridge sends nothing else: we only get past this on EOF or error.
-            while let Ok(n) = watcher.read(&mut buf).await {
-                if n == 0 {
-                    break;
+            loop {
+                tokio::select! {
+                    // The bridge sends nothing else: a read only ends on EOF or error.
+                    n = read.read(&mut buf) => {
+                        if !matches!(n, Ok(n) if n > 0) {
+                            flag.store(true, Ordering::SeqCst);
+                            return;
+                        }
+                    }
+                    reply = &mut rx, if !rx.is_terminated() => {
+                        let Ok((line, done)) = reply else { continue };
+                        let written = tokio::time::timeout(REPLY_WRITE_TIMEOUT, async {
+                            write.write_all(&line).await?;
+                            write.flush().await
+                        })
+                        .await;
+                        let _ = done.send(matches!(written, Ok(Ok(()))));
+                        return;
+                    }
                 }
             }
-            flag.store(true, Ordering::SeqCst);
         });
-        Ok(Self { stream: Mutex::new(Some(stream)), closed })
+        Self { reply: Mutex::new(Some(tx)), closed }
     }
 }
 
-impl HookResponder for SocketResponder {
+impl HookResponder for StreamResponder {
     fn is_open(&self) -> bool {
-        !self.closed.load(Ordering::SeqCst) && self.stream.lock().unwrap().is_some()
+        !self.closed.load(Ordering::SeqCst) && self.reply.lock().unwrap().is_some()
     }
 
+    /// Blocks until the line is written (at most `REPLY_WRITE_TIMEOUT`): call it off the runtime.
     fn respond(&self, response: HookResponse) -> bool {
-        let Some(mut stream) = self.stream.lock().unwrap().take() else { return false };
+        let Some(tx) = self.reply.lock().unwrap().take() else { return false };
         if self.closed.load(Ordering::SeqCst) {
             return false;
         }
@@ -145,20 +230,11 @@ impl HookResponder for SocketResponder {
         };
         let Ok(mut line) = serde_json::to_vec(&reply) else { return false };
         line.push(b'\n');
-        // The socket is non-blocking (shared with tokio); a short line easily fits in the buffer,
-        // but retry just in case.
-        let deadline = std::time::Instant::now() + REPLY_WRITE_TIMEOUT;
-        let mut written = 0;
-        while written < line.len() {
-            match stream.write(&line[written..]) {
-                Ok(n) => written += n,
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock && std::time::Instant::now() < deadline => {
-                    std::thread::sleep(Duration::from_millis(5));
-                }
-                Err(_) => return false,
-            }
+        let (done, written) = std::sync::mpsc::channel();
+        if tx.send((line, done)).is_err() {
+            return false;
         }
-        true
+        written.recv_timeout(REPLY_WRITE_TIMEOUT * 2).unwrap_or(false)
     }
 }
 
@@ -166,7 +242,7 @@ impl HookResponder for SocketResponder {
 mod tests {
     use super::*;
     use awr_wire::{EnvHints, WireProcess};
-    use tokio::io::AsyncWriteExt;
+    use std::path::Path;
 
     fn envelope(expects_reply: bool) -> HookEnvelope {
         HookEnvelope {
@@ -195,6 +271,16 @@ mod tests {
         (dir, path, rx)
     }
 
+    #[cfg(unix)]
+    async fn connect(path: &Path) -> tokio::net::UnixStream {
+        tokio::net::UnixStream::connect(path).await.unwrap()
+    }
+
+    #[cfg(windows)]
+    async fn connect(path: &Path) -> tokio::net::windows::named_pipe::NamedPipeClient {
+        tokio::net::windows::named_pipe::ClientOptions::new().open(awr_wire::pipe_name(path)).unwrap()
+    }
+
     async fn next(rx: &mut tokio::sync::mpsc::UnboundedReceiver<IncomingSignal>) -> IncomingSignal {
         tokio::time::timeout(Duration::from_secs(2), rx.recv()).await.unwrap().unwrap()
     }
@@ -203,9 +289,10 @@ mod tests {
     async fn delivers_envelopes_as_signals_even_from_old_bridges_without_newline() {
         let (_dir, path, mut rx) = server().await;
 
-        let mut client = UnixStream::connect(&path).await.unwrap();
+        let mut client = connect(&path).await;
         client.write_all(&serde_json::to_vec(&envelope(false)).unwrap()).await.unwrap();
-        client.shutdown().await.unwrap();
+        // Closing is the EOF (a named pipe's `shutdown` only flushes).
+        drop(client);
 
         let signal = next(&mut rx).await;
         assert_eq!(signal.received_at, Some(Timestamp(42)));
@@ -214,14 +301,14 @@ mod tests {
         assert_eq!(signal.host.tmux_socket.as_deref(), Some("/tmp/tmux-1000/default"));
         assert!(signal.reply.is_none());
 
-        assert_eq!(bind(&path).await.unwrap_err().kind(), io::ErrorKind::AddrInUse);
+        assert_eq!(bind(&path).await.err().map(|e| e.kind()), Some(io::ErrorKind::AddrInUse));
     }
 
     #[tokio::test]
     async fn a_waiting_bridge_receives_the_decision() {
         let (_dir, path, mut rx) = server().await;
 
-        let mut client = UnixStream::connect(&path).await.unwrap();
+        let mut client = connect(&path).await;
         let mut line = serde_json::to_vec(&envelope(true)).unwrap();
         line.push(b'\n');
         client.write_all(&line).await.unwrap();
@@ -241,7 +328,7 @@ mod tests {
     async fn a_bridge_killed_by_the_agent_is_detected_as_closed() {
         let (_dir, path, mut rx) = server().await;
 
-        let mut client = UnixStream::connect(&path).await.unwrap();
+        let mut client = connect(&path).await;
         let mut line = serde_json::to_vec(&envelope(true)).unwrap();
         line.push(b'\n');
         client.write_all(&line).await.unwrap();

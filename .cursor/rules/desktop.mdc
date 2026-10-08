@@ -6,14 +6,24 @@ alwaysApply: false
 
 # Desktop integration
 
-Linux first, KDE Plasma (Wayland and X11). Everything here touches the user's real desktop: tests use
-private tmux sockets and temp dirs; live checks (`kwin_live`) need the user's OK.
+Linux (KDE Plasma, Wayland and X11), macOS and Windows. Everything here touches the user's real
+desktop: tests use private tmux sockets and temp dirs; live checks (`kwin_live`) need the user's OK.
+macOS and Windows code is only type-checked locally (`scripts/cross_check.sh`) and tested in CI.
 
 ## "Go to" (desktop/mod.rs::DesktopNavigator)
 
-Order: **Warp** (`WARP_FOCUS_URL` → exact pane, then KWin raises the window) → **tmux** (select pane,
-find/switch the attached client, raise its terminal via KWin) → **KWin** by PID chain. No KWin → the
-reason is shown instead ("escritorio no soportado").
+Order: **Warp** (`WARP_FOCUS_URL` → exact pane, then the raiser brings the window up) → **tmux**
+(select pane, find/switch the attached client, raise its terminal) → the **window raiser** by PID
+chain. One `WindowRaiser` per OS, picked with `#[cfg]` in `desktop/mod.rs`; `via` names it:
+
+| OS | Raiser | How | Limits |
+|---|---|---|---|
+| Linux | `kwin.rs` | KWin script over DBus (`busctl`) | KDE only; elsewhere the reason is shown ("unsupported desktop") |
+| macOS | `macos.rs` | `NSRunningApplication.activate` on the first regular app in the chain | whole app comes forward; can't choose among its windows (no Accessibility API) |
+| Windows | `windows.rs` | `EnumWindows` + `pick_window` + `SetForegroundWindow` | Windows only lets the foreground app hand focus over (a click in the war room is) |
+
+`open_url`: `xdg-open` / `open` / `rundll32 url.dll,FileProtocolHandler` (not `cmd start`: it splits
+at `&`).
 
 ## Trigger table
 
@@ -24,7 +34,8 @@ reason is shown instead ("escritorio no soportado").
 
 ## Other pieces
 
-- `system.rs`: `ProcProbe` (alive = `/proc/<pid>/stat` exists and not zombie), `SystemClock`.
+- `system.rs`: `ProcProbe` (alive = `awr_procs::is_alive`: exists and not a zombie), `SystemClock`.
+- `desktop/proc.rs`: PID chains for focus, from `awr_procs::ancestry`.
 - `git.rs`: `GitRepoResolver` (room = `git common dir`, so worktrees share the repo's room; branch via
   `symbolic-ref`, detached → `@<sha>`; works in repos without commits) and `GitCli` (commits in a time
   window with shortstat; `git show` capped at 400 KB).

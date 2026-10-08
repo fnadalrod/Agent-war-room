@@ -263,7 +263,7 @@ pub struct FocusTarget {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FocusOutcome {
-    /// Focus was requested; `via` says how ("tmux + kwin", "kwin"…).
+    /// Focus was requested; `via` says how ("tmux + kwin", "kwin", "macos", "windows"…).
     Focused { via: String },
     /// No known way to get there (no locatable window or unsupported desktop).
     Unreachable { reason: String },

@@ -1,7 +1,7 @@
 # Approving permissions and answering questions from the app
 
 > Leaf of `hooks-ingest.mdc`. Read it before touching `PermissionRequest` handling, the reply path
-> (`HookReply`, `SocketResponder`) or `WarRoomService::approve/deny/decide/answer_question`.
+> (`HookReply`, `StreamResponder`) or `WarRoomService::approve/deny/decide/answer_question`.
 
 ## What Claude Code actually does (verified with a real session, Claude Code 2.1.283)
 
@@ -25,10 +25,10 @@ hold `PreToolUse` instead: Claude draws nothing until it returns, so the termina
   for one line (`HookReply::Allow` / `Deny { message }` / `Answer { answers }`), then prints Claude's
   JSON. Default deny text:
   `DEFAULT_DENY_MESSAGE` (user-facing).
-- Ingress: `SocketResponder::watch` keeps the std stream to reply and spawns a tokio task on a clone
-  that sets `closed` on EOF — that EOF is Claude killing the bridge because the terminal answered.
-  (`UnixStream::peek` is unstable, hence the watcher.) The socket is non-blocking (shared with tokio):
-  the reply write retries on `WouldBlock`.
+- Ingress: `StreamResponder::watch` hands the connection (Unix socket or Windows pipe) to a tokio
+  task that sets `closed` on EOF — that EOF is Claude killing the bridge because the terminal
+  answered — or writes the reply line `respond` sends it over a oneshot. `respond` blocks until the
+  write is done (≤ 2 s), so it is called off the runtime (spawn_blocking, commands, notice thread).
 - Mapping: a `PermissionRequest` whose tool is a question tool with parseable `questions` becomes
   `AwaitingYou{Question}` + `Translated::question` (prompts, options, multi-select), not a permission:
   approving it would send no answers, and "yes to all" must not touch it.

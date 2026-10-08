@@ -19,6 +19,8 @@ Konsole too), so the caption decides:
 - hints in priority order: session title, worktree folder, repo name (lower-cased);
 - a **whole-word** match weighs 10× a substring match — otherwise `Harbor` wins inside `Harbor3Repo`;
 - closer ancestors win ties; minimized windows are restored; the desktop is switched if needed.
+- The same rule exists in Rust (`desktop/mod.rs::pick_window`, unit-tested) for Windows, which
+  enumerates top-level windows itself. Change both together.
 
 ## Verifying
 

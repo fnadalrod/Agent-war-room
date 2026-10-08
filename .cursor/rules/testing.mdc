@@ -1,6 +1,6 @@
 ---
 description: How Agent War Room is tested — unit tests per crate and front, ignored live/e2e tests with a real Claude or Codex, screenshots of the demo UI, and the scoped check script. Read before adding tests or claiming something works.
-globs: scripts/check.sh, scripts/shot.mjs, crates/infrastructure/tests/**, src/**/*.test.ts, src/test/**
+globs: scripts/check.sh, scripts/cross_check.sh, scripts/shot.mjs, .github/workflows/**, crates/infrastructure/tests/**, src/**/*.test.ts, src/test/**
 alwaysApply: false
 ---
 
@@ -10,7 +10,7 @@ alwaysApply: false
 |---|---|---|
 | Domain | pure unit tests over event sequences | `crates/domain/src/room.rs` |
 | Application | service tests with in-file fakes for every port | bottom of `crates/application/src/service.rs` |
-| Adapters | real temp dirs, private tmux socket, temp git repos, real `/proc`, Node for the KWin script | each file in `crates/infrastructure/src` |
+| Adapters | real temp dirs, private tmux socket, temp git repos, the real process table (`awr-procs`), Node for the KWin script | each file in `crates/infrastructure/src` |
 | Front | Vitest next to the code; fixtures in `src/test/fixtures.ts`; the store tested against the demo gateway | `src/**/*.test.ts` |
 | UI look | screenshots of the demo UI | `npm run shot -- <dir>` |
 | End to end | real `claude`/`codex` + real bridge + real socket, isolated; shared harness in `tests/e2e/mod.rs` | `claude_e2e.rs`, `codex_e2e.rs` in `crates/infrastructure/tests` (ignored) |
@@ -22,6 +22,13 @@ alwaysApply: false
 - `scripts/check.sh` — scoped to what changed vs HEAD; one line per step, details only on failure
   (clippy `-D warnings`, cargo tests, tsc, vitest; docs check when docs changed).
 - `scripts/check.sh all|rust|front|docs`.
+- `scripts/cross_check.sh [windows|macos]` — clippy for `x86_64-pc-windows-gnu` and
+  `aarch64-apple-darwin` from Linux, with zig as the C cross compiler (`pip install ziglang`) and
+  stand-ins for Objective-C sources and Windows resources. Type-checks every `cfg` branch; links and
+  runs nothing. Run it after touching anything `#[cfg]`-gated or OS-specific.
+- CI (`.github/workflows/ci.yml`): clippy + tests + front on Linux, macOS and Windows runners; the
+  `bundle` job (manual or `v*` tag) builds every installer. The only place macOS/Windows tests run.
+- Unit tests that need Unix (`/bin/sh`, sockets) are `#[cfg(unix)]`; keep new ones portable or gate them.
 - Ignored tests: run only when asked or when touching that integration; tell the user (they cost a
   Claude call or touch the desktop).
 

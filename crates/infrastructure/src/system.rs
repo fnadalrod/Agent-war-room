@@ -15,26 +15,25 @@ impl Clock for SystemClock {
     }
 }
 
-/// Checks in `/proc` that the PID still exists and is not a zombie.
+/// A command for a console program that must not flash a console window on Windows (the app is a
+/// GUI program there, so every child would get its own).
+pub fn quiet_command(program: &str) -> std::process::Command {
+    #[allow(unused_mut)]
+    let mut command = std::process::Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    command
+}
+
+/// Asks the OS process table (`awr-procs`) whether the PID still exists and is not a zombie.
 pub struct ProcProbe;
 
 impl ProcessProbe for ProcProbe {
     fn is_alive(&self, pid: u32) -> bool {
-        let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
-            return false;
-        };
-        let state = stat.rfind(')').and_then(|i| stat[i + 1..].split_whitespace().next());
-        state != Some("Z")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn own_process_is_alive_and_absurd_pid_is_not() {
-        assert!(ProcProbe.is_alive(std::process::id()));
-        assert!(!ProcProbe.is_alive(u32::MAX - 1));
+        awr_procs::is_alive(pid)
     }
 }

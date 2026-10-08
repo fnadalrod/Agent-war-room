@@ -1,0 +1,10 @@
+[package]
+name = "awr-procs"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+# Linux reads /proc directly (fast, nothing to link); the other systems go through sysinfo.
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }

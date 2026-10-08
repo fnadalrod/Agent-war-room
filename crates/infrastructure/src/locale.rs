@@ -38,6 +38,12 @@ pub fn unknown_session_terminal() -> &'static str {
 pub fn no_candidate_processes() -> &'static str {
     t("desktop.no_candidate_processes")
 }
+pub fn no_window_for_session() -> &'static str {
+    t("desktop.no_window_for_session")
+}
+pub fn window_refused() -> &'static str {
+    t("desktop.window_refused")
+}
 
 pub fn tmux_no_client(pane: &str) -> String {
     tf("desktop.tmux_no_client", &[("pane", &pane)])

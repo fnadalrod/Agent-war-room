@@ -6,6 +6,7 @@ members = [
     "crates/infrastructure",
     "crates/wire",
     "crates/i18n",
+    "crates/procs",
     "crates/hook-bridge",
     "src-tauri",
 ]
@@ -22,6 +23,7 @@ awr-application = { path = "crates/application" }
 awr-infrastructure = { path = "crates/infrastructure" }
 awr-wire = { path = "crates/wire" }
 awr-i18n = { path = "crates/i18n" }
+awr-procs = { path = "crates/procs" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

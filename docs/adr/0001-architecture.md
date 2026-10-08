@@ -109,12 +109,12 @@ Pending or out of scope for now:
 
 - Killing an agent's process from the app.
 - Providers other than Claude (the `AgentProvider` port is ready).
-- Desktops other than KDE for "go to".
-- macOS.
+- Desktops other than KDE for "go to" (macOS and Windows: done, ADR 0002).
+- macOS (done, ADR 0002).
 
 ## Consequences
 
-- Initial target platform: Linux (KDE Wayland). macOS later.
+- Initial target platform: Linux (KDE Wayland). macOS and Windows since ADR 0002.
 - The read-model types are generated from Rust (`ts-rs`) into `src/domain/generated`: the front does
   not duplicate contracts by hand.
 - Outside Tauri, the front uses demo adapters that implement the same ports.

@@ -12,6 +12,8 @@ pub struct Kwin {
 }
 
 impl Kwin {
+    pub const VIA: &str = "kwin";
+
     pub fn detect() -> Option<Self> {
         let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default();
         if !desktop.to_uppercase().contains("KDE") {

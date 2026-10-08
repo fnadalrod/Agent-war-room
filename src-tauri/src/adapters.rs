@@ -1,9 +1,9 @@
 //! Outbound adapters that depend on Tauri.
 
-use crate::{locale, tray};
+use crate::tray;
 use awr_application::ports::{Notice, Notifier, ViewPublisher};
 use awr_application::view::WarRoomView;
-use awr_domain::{Attention, SessionId};
+use awr_domain::SessionId;
 use awr_infrastructure::pty::{PtyEvent, PtySink};
 use std::sync::Arc;
 use std::sync::mpsc::Sender;
@@ -56,6 +56,8 @@ impl ViewPublisher for TauriPublisher {
 
 /// What the user clicked on a notification.
 #[derive(Debug, Clone, PartialEq, Eq)]
+// Only freedesktop notifications have buttons to pick these.
+#[cfg_attr(any(target_os = "macos", windows), allow(dead_code))]
 pub enum NoticeAction {
     /// Click on the notification or its "open" button: show the preview.
     Open(SessionId),
@@ -65,7 +67,10 @@ pub enum NoticeAction {
     Reply(SessionId),
 }
 
-/// Desktop notifications with buttons (freedesktop). Each session replaces its previous notification.
+/// Desktop notifications. Freedesktop (Linux): with buttons, and each session replaces its previous
+/// notification. macOS and Windows: plain notices for now (notify-rust has actions there too, not
+/// wired yet); the tray and the window carry the actions. They show under the system's default
+/// sender (PowerShell's id on Windows): the app's own id only exists once installed.
 pub struct DesktopNotifier {
     actions: Sender<NoticeAction>,
 }
@@ -76,8 +81,29 @@ impl DesktopNotifier {
     }
 }
 
+#[cfg(any(target_os = "macos", windows))]
 impl Notifier for DesktopNotifier {
     fn notify(&self, notice: &Notice) {
+        let notice = notice.clone();
+        let _ = &self.actions;
+        std::thread::spawn(move || {
+            let shown = notify_rust::Notification::new()
+                .appname("Agent War Room")
+                .summary(&notice.title)
+                .body(&notice.body)
+                .show();
+            if let Err(e) = shown {
+                eprintln!("[notices] {e}");
+            }
+        });
+    }
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+impl Notifier for DesktopNotifier {
+    fn notify(&self, notice: &Notice) {
+        use crate::locale;
+        use awr_domain::Attention;
         use notify_rust::{Notification, Timeout, Urgency};
         let notice = notice.clone();
         let actions = self.actions.clone();
@@ -121,6 +147,7 @@ impl Notifier for DesktopNotifier {
 }
 
 /// Stable non-zero id per session: a new notification replaces the previous one of the same session.
+#[cfg(not(any(target_os = "macos", windows)))]
 fn notification_id(session: &SessionId) -> u32 {
     let mut h: u32 = 2_166_136_261;
     for b in session.0.bytes() {

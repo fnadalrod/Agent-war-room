@@ -21,7 +21,8 @@ impl AntigravityProvider {
     fn transcript_of(&self, conversation: &str) -> Option<String> {
         let safe = conversation.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
         safe.then(|| {
-            self.brain.join(conversation).join(".system_generated/logs/transcript.jsonl").display().to_string()
+            // `/` joins on every OS: Windows accepts it, and the path stays the same string everywhere.
+            format!("{}/{conversation}/.system_generated/logs/transcript.jsonl", self.brain.display())
         })
     }
 }

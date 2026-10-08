@@ -13,7 +13,8 @@ scrollback for re-attaching. Closing the window keeps PTYs alive (app lives in t
 ## Launching (launch.rs::DesktopLauncher)
 
 - App target: `$SHELL -l -c "exec claude [--resume <id>]"` — a login shell because desktop-launched
-  apps don't have `~/.local/bin` in `PATH`. Inherited Claude session markers are scrubbed
+  apps don't have `~/.local/bin` in `PATH`. On Windows: `%ComSpec% /D /C claude …` (cmd finds both
+  `claude.exe` and npm's `claude.cmd`). Inherited Claude session markers are scrubbed
   (`hooks-claude-reference.md`).
 - Resume runs in the session's **exact cwd** (`Session::launch_dir`): Claude stores sessions per
   directory. The id is validated (`[A-Za-z0-9-]`) before reaching a shell.
