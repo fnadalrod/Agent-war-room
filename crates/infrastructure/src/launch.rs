@@ -27,7 +27,7 @@ impl DesktopLauncher {
     }
 
     fn launch_in_warp(&self, request: &LaunchRequest, command: &str) -> PortResult<LaunchOutcome> {
-        let stem = self.write_warp_config(request, command)?;
+        let stem = self.write_warp_config(request, &command_with_language(command))?;
         open_url(&format!("warp://tab_config/{stem}"));
         Ok(LaunchOutcome::External { via: "warp".into() })
     }
@@ -86,7 +86,7 @@ impl AgentLauncher for DesktopLauncher {
                         args,
                         cwd: request.cwd.clone(),
                         label: request.label.clone(),
-                        env: vec![],
+                        env: agent_environment(),
                         env_remove: inherited_agent_markers(),
                     })
                     .map_err(PortError::Failed)?;
@@ -144,6 +144,21 @@ fn agent_command(request: &LaunchRequest) -> PortResult<String> {
         }
         Some(id) => Err(PortError::Failed(locale::invalid_session_id(id))),
     }
+}
+
+fn agent_environment() -> Vec<(String, String)> {
+    vec![("AWR_LANG".into(), awr_i18n::language().into())]
+}
+
+/// Warp starts the command itself, so unlike an app PTY its environment must be part of the shell line.
+#[cfg(not(windows))]
+fn command_with_language(command: &str) -> String {
+    format!("AWR_LANG={} {command}", awr_i18n::language())
+}
+
+#[cfg(windows)]
+fn command_with_language(command: &str) -> String {
+    format!(r#"cmd.exe /D /C "set AWR_LANG={}&& {command}""#, awr_i18n::language())
 }
 
 /// Types into sessions living in an app terminal or in tmux. The rest only support "go to".
@@ -228,15 +243,26 @@ mod tests {
         let launcher = DesktopLauncher::new(PtyManager::new(Arc::new(|_| {})), dir.path().join("tab_configs"));
         let req = request(Some("d96c47e0-0e79-4c98"), LaunchTarget::Warp);
 
-        let stem = launcher.write_warp_config(&req, &agent_command(&req).unwrap()).unwrap();
+        let command = command_with_language(&agent_command(&req).unwrap());
+        let stem = launcher.write_warp_config(&req, &command).unwrap();
         assert_eq!(stem, "awr-d96c47e0");
         let toml = std::fs::read_to_string(dir.path().join("tab_configs/awr-d96c47e0.toml")).unwrap();
         assert!(toml.contains(r#"name = "War Room · Fix the login""#));
         assert!(toml.contains(r#"directory = "/code/My \"app\"""#));
-        assert!(toml.contains(r#"commands = ["claude --resume d96c47e0-0e79-4c98"]"#));
+        assert!(toml.contains(&format!("AWR_LANG={}", awr_i18n::language())));
+        assert!(toml.contains("claude --resume d96c47e0-0e79-4c98"));
 
         let new = request(None, LaunchTarget::Warp);
         assert_eq!(launcher.write_warp_config(&new, "claude").unwrap(), "awr-fix-the-login");
+    }
+
+    #[test]
+    fn launched_agents_receive_the_selected_language() {
+        let language = awr_i18n::language();
+        assert_eq!(agent_environment(), vec![("AWR_LANG".into(), language.into())]);
+        let warp = command_with_language("codex");
+        assert!(warp.contains(&format!("AWR_LANG={language}")));
+        assert!(warp.contains("codex"));
     }
 
     #[test]

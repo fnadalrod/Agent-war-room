@@ -2,13 +2,13 @@
 //! code only names keys. Rust keys are namespaced by who shows them: `core.*` (application),
 //! `desktop.*` (infrastructure), `shell.*` (Tauri), `bridge.*` (hook bridge); `ui.*` is the front's.
 //!
-//! Placeholders are `{name}`; plurals are two keys, `<key>_one` and `<key>_other`. The language is
-//! resolved once from the environment (`AWR_LANG`, then `LC_ALL`, `LC_MESSAGES`, `LANG`) and falls
-//! back to English, key by key.
+//! Placeholders are `{name}`; plurals are two keys, `<key>_one` and `<key>_other`. The language starts
+//! from the environment (`AWR_LANG`, then `LC_ALL`, `LC_MESSAGES`, `LANG`), can be changed at runtime,
+//! and falls back to English, key by key.
 
 use std::collections::HashMap;
 use std::fmt::Display;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 
 /// Languages with a catalog. English is the reference: every other catalog has exactly its keys.
 pub const LANGUAGES: &[(&str, &str)] =
@@ -50,17 +50,30 @@ pub fn supported(locale: &str) -> Option<&'static str> {
     LANGUAGES.iter().map(|(c, _)| *c).find(|c| *c == code)
 }
 
-/// The language in use, resolved once from the environment.
+fn detected_language() -> &'static str {
+    ["AWR_LANG", "LC_ALL", "LC_MESSAGES", "LANG"]
+        .iter()
+        .filter_map(|var| std::env::var(var).ok())
+        .find(|v| !v.is_empty())
+        .and_then(|v| supported(&v))
+        .unwrap_or(FALLBACK)
+}
+
+fn selected_language() -> &'static RwLock<&'static str> {
+    static LANGUAGE: OnceLock<RwLock<&'static str>> = OnceLock::new();
+    LANGUAGE.get_or_init(|| RwLock::new(detected_language()))
+}
+
+/// The language in use, initially resolved from the environment.
 pub fn language() -> &'static str {
-    static LANGUAGE: OnceLock<&'static str> = OnceLock::new();
-    LANGUAGE.get_or_init(|| {
-        ["AWR_LANG", "LC_ALL", "LC_MESSAGES", "LANG"]
-            .iter()
-            .filter_map(|var| std::env::var(var).ok())
-            .find(|v| !v.is_empty())
-            .and_then(|v| supported(&v))
-            .unwrap_or(FALLBACK)
-    })
+    *selected_language().read().unwrap()
+}
+
+/// Selects a supported language at runtime. Unsupported values fall back to English.
+pub fn set_language(locale: &str) -> &'static str {
+    let language = supported(locale).unwrap_or(FALLBACK);
+    *selected_language().write().unwrap() = language;
+    language
 }
 
 fn lookup(lang: &str, key: &str) -> Option<&'static str> {
@@ -117,6 +130,14 @@ mod tests {
         assert_eq!(supported("en-US"), Some("en"));
         assert_eq!(supported("fr_FR.UTF-8"), None);
         assert_eq!(supported("C"), None);
+    }
+
+    #[test]
+    fn a_runtime_selection_uses_english_for_unknown_languages() {
+        let previous = language();
+        assert_eq!(set_language("es-ES"), "es");
+        assert_eq!(set_language("fr-FR"), "en");
+        set_language(previous);
     }
 
     #[test]

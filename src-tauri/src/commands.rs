@@ -56,10 +56,18 @@ fn done(result: PortResult<()>) -> Result<(), String> {
     result.map_err(|e| e.to_string())
 }
 
-/// The language the core speaks (from the environment), so the front renders in the same one.
+/// The language the core speaks, so the front renders in the same one.
 #[tauri::command]
 pub fn ui_language() -> &'static str {
     awr_i18n::language()
+}
+
+/// Changes the language shared by the window, tray, notices and subsequently launched agents.
+#[tauri::command]
+pub fn set_ui_language(app: tauri::AppHandle, language: String) -> Result<&'static str, String> {
+    let language = awr_i18n::set_language(&language);
+    crate::tray::refresh_language(&app).map_err(|e| e.to_string())?;
+    Ok(language)
 }
 
 #[tauri::command]

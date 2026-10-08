@@ -2,18 +2,15 @@
 
 use crate::locale;
 use awr_application::view::{AttentionView, WarRoomView};
-use tauri::AppHandle;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
+use tauri::{AppHandle, Manager};
 
 const SIZE: u32 = 32;
 
 pub fn create(app: &AppHandle) -> tauri::Result<TrayIcon> {
-    let next = MenuItem::with_id(app, "next", locale::tray_next(), true, None::<&str>)?;
-    let open = MenuItem::with_id(app, "open", locale::tray_open(), true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", locale::tray_quit(), true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&next, &open, &quit])?;
+    let menu = menu(app)?;
 
     TrayIconBuilder::with_id("war-room")
         .icon(lamp(AttentionView::Offline))
@@ -26,6 +23,23 @@ pub fn create(app: &AppHandle) -> tauri::Result<TrayIcon> {
             _ => {}
         })
         .build(app)
+}
+
+fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let next = MenuItem::with_id(app, "next", locale::tray_next(), true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", locale::tray_open(), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", locale::tray_quit(), true, None::<&str>)?;
+    Menu::with_items(app, &[&next, &open, &quit])
+}
+
+/// Rebuilds every translated tray string after the user changes language.
+pub fn refresh_language(app: &AppHandle) -> tauri::Result<()> {
+    let Some(tray) = app.tray_by_id("war-room") else { return Ok(()) };
+    tray.set_menu(Some(menu(app)?))?;
+    if let Some(service) = app.try_state::<std::sync::Arc<awr_application::WarRoomService>>() {
+        paint(&tray, &service.view());
+    }
+    Ok(())
 }
 
 pub fn paint(tray: &TrayIcon, view: &WarRoomView) {

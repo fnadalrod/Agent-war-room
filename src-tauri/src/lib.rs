@@ -56,6 +56,7 @@ pub fn run() {
         ))
         .invoke_handler(tauri::generate_handler![
             commands::ui_language,
+            commands::set_ui_language,
             commands::get_view,
             commands::session_detail,
             commands::subagent_detail,
