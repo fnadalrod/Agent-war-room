@@ -540,9 +540,10 @@ tab config without restarting has not been verified live yet.
 
 ## Languages
 
-The app speaks English and Spanish, and follows your system language (`LANG`/`LC_*`); anything else
-falls back to English. To force one, start it with `AWR_LANG=es` (or `en`). The window, tray and
-notifications always use the same language.
+The app speaks English and Spanish. Choose one under **Options → Language**; the choice is remembered
+for the window, tray and notifications, and passed as `AWR_LANG` to agents launched or resumed from the war room.
+Without a saved choice it follows your system language (`LANG`/`LC_*`), and anything other than
+Spanish falls back to English. To force the initial choice, start it with `AWR_LANG=es` (or `en`).
 
 All text lives in the catalogs `locales/<lang>.json`, shared by the Rust core and the front. To add a
 language, copy `locales/en.json`, translate the values and register the code (see

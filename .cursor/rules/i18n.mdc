@@ -15,11 +15,15 @@ reference catalog and the fallback.
 | Piece | Role |
 |---|---|
 | `locales/<lang>.json` | the text. Namespaces: `core.*` (application), `desktop.*` (infrastructure), `shell.*` (Tauri), `bridge.*` (hook bridge), `ui.*` (front) |
-| `crates/i18n` (`awr-i18n`) | embeds the catalogs (`include_str!`); `t(key)`, `tf(key, &[("name", &v)])`, `tn(key, n, …)`; language from `AWR_LANG` → `LC_ALL` → `LC_MESSAGES` → `LANG`, else `en` |
+| `crates/i18n` (`awr-i18n`) | embeds the catalogs (`include_str!`); `t(key)`, `tf(key, &[("name", &v)])`, `tn(key, n, …)`; initial language from `AWR_LANG` → `LC_ALL` → `LC_MESSAGES` → `LANG`, else `en`; `set_language` changes it at runtime |
 | `crates/*/src/locale.rs`, `src-tauri/src/locale.rs` | typed wrappers (`locale::status_idle()`), one per string: call sites never spell keys |
 | `src/domain/i18n.ts` | front lookup; keys are typed from `en.json` (`Key`, `PluralKey`), relative to `ui.` |
 | `src/domain/copy.ts` | typed API the components use (`copy.detail.close`, `copy.detail.files(n)`); no text of its own |
-| `src/main.tsx` | sets the language **before** loading the app (`copy` reads plain strings at import): Tauri asks the core (`ui_language` command) so UI, tray and notices agree; the browser demo uses `?lang=` or the browser's |
+| `src/main.tsx` | sets the language **before** loading the app (`copy` reads plain strings at import): a saved option is applied to the core (`set_ui_language`) so UI, tray and notices agree; without one Tauri asks the core (`ui_language`); the browser demo uses `?lang=`, its saved choice or the browser's |
+
+The header's **Options → Language** selector stores `awr.language` in the webview's local storage,
+updates the Rust core, then reloads once so static front copy never mixes languages. Agents opened in
+an app terminal or Warp receive the selected code through `AWR_LANG`.
 
 ## Format
 

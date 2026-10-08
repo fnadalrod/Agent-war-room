@@ -2137,6 +2137,31 @@ pre.diff [data-line="file"] {
   position: relative;
 }
 
+.settings-menu {
+  position: relative;
+}
+
+.settings-popover {
+  width: 280px;
+  display: grid;
+  gap: 10px;
+}
+
+.settings-popover label {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-popover select {
+  min-width: 120px;
+}
+
+.settings-popover p {
+  margin: 0;
+}
+
 .agent-dots {
   display: inline-flex;
   gap: 3px;

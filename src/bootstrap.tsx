@@ -5,7 +5,9 @@ import { createRoot } from "react-dom/client";
 import { WarRoomStore } from "./application/warRoomStore";
 import { createDemo } from "./infrastructure/demoGateway";
 import { localFilterStorage } from "./infrastructure/localFilterStorage";
+import { selectLanguage } from "./infrastructure/languagePreference";
 import { tauriIntegrationGateway, tauriTerminalGateway, tauriWarRoomGateway } from "./infrastructure/tauriGateway";
+import { language } from "./domain/i18n";
 import { App } from "./ui/App";
 
 const insideTauri = "__TAURI_INTERNALS__" in window;
@@ -17,6 +19,6 @@ void store.start();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App store={store} />
+    <App store={store} language={language()} onLanguageChange={selectLanguage} />
   </StrictMode>,
 );

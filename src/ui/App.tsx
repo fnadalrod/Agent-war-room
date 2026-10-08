@@ -14,6 +14,7 @@ import { AgentsMenu, IntegrationBar } from "./IntegrationBar";
 import { WarRoomScene } from "./pixel/WarRoomScene";
 import { RoomPanel } from "./RoomPanel";
 import { ShortcutHelp } from "./ShortcutHelp";
+import { SettingsMenu } from "./SettingsMenu";
 import { useShortcuts } from "./useShortcuts";
 import { useNow, usePreference, useWarRoom } from "./useStore";
 
@@ -22,7 +23,9 @@ const TerminalPanel = lazy(() => import("./TerminalPanel").then((m) => ({ defaul
 
 const VIEWS = ["classic", "pixel"] as const;
 
-export function App({ store }: { store: WarRoomStore }) {
+type Props = { store: WarRoomStore; language: string; onLanguageChange: (language: string) => Promise<void> };
+
+export function App({ store, language, onLanguageChange }: Props) {
   const state = useWarRoom(store);
   const now = useNow();
   const [showArchived, setShowArchived] = useState(false);
@@ -92,6 +95,7 @@ export function App({ store }: { store: WarRoomStore }) {
             onToggle={() => store.setAutoApprove(!state.autoApprove)}
           />
           <AgentsMenu integrations={state.integrations} busy={state.busy} store={store} autostart={state.autostart} />
+          <SettingsMenu language={language} busy={state.busy} onLanguageChange={onLanguageChange} />
           <button className="icon help" onClick={toggleHelp} title={copy.shortcuts.button} aria-label={copy.shortcuts.button}>
             ?
           </button>

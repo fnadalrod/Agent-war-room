@@ -156,6 +156,13 @@
       "empty_room": "Empty room.",
       "empty_room_hint": "When an agent starts or does something, its card will show up here."
     },
+    "settings": {
+      "title": "Options",
+      "language": "Language",
+      "english": "English",
+      "spanish": "Español",
+      "language_hint": "Used by the app and agents opened from it."
+    },
     "actions": {
       "approve": "Approve",
       "deny": "Deny",

@@ -114,6 +114,14 @@ export const copy = {
     emptyRoomHint: t("app.empty_room_hint"),
   },
 
+  settings: {
+    title: t("settings.title"),
+    language: t("settings.language"),
+    english: t("settings.english"),
+    spanish: t("settings.spanish"),
+    languageHint: t("settings.language_hint"),
+  },
+
   actions: {
     approve: t("actions.approve"),
     deny: t("actions.deny"),

@@ -156,6 +156,13 @@
       "empty_room": "Sala vacía.",
       "empty_room_hint": "Cuando un agente arranque o haga algo, aparecerá aquí su tarjeta."
     },
+    "settings": {
+      "title": "Opciones",
+      "language": "Idioma",
+      "english": "English",
+      "spanish": "Español",
+      "language_hint": "Lo usan la app y los agentes que abras desde ella."
+    },
     "actions": {
       "approve": "Aprobar",
       "deny": "Denegar",
