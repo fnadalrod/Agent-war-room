@@ -119,6 +119,13 @@ remembered.
 
 ![Room filtered by where its skills come from](docs/screenshots/filtered.png)
 
+### Answering from the room
+
+When an agent asks you something, the preview shows the question with its options. Pick one or
+write your own answer; you can still answer in the terminal, and the first answer wins.
+
+![A session asking a question, answered from its preview](docs/screenshots/question.png)
+
 ### Session preview
 
 Clicking a screen opens its detail, read from the transcript:
@@ -134,6 +141,11 @@ Clicking a screen opens its detail, read from the transcript:
   project, yours, a plugin or built in).
 
 ![Session detail with usage, skills and subagents](docs/screenshots/detail.png)
+
+**Read the answer** opens a finished session's last answer at reading size, with tables, code and
+lists rendered:
+
+![A finished session's answer in the reader](docs/screenshots/reader.png)
 
 ### Subagents
 
