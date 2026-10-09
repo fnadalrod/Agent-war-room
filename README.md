@@ -568,6 +568,8 @@ for the window, tray and notifications, and passed as `AWR_LANG` to agents launc
 Without a saved choice it follows your system language (`LANG`/`LC_*`), and anything other than
 Spanish falls back to English. To force the initial choice, start it with `AWR_LANG=es` (or `en`).
 
+![The Options menu with the language choice](docs/screenshots/settings.png)
+
 All text lives in the catalogs `locales/<lang>.json`, shared by the Rust core and the front. To add a
 language, copy `locales/en.json`, translate the values and register the code (see
 [`.cursor/rules/i18n.mdc`](.cursor/rules/i18n.mdc)); `cargo test -p awr-i18n` checks it has every key
