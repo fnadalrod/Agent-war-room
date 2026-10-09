@@ -10,7 +10,7 @@ jump straight back into the right session.
 
 </div>
 
-![Pixel-art War Room: each coding agent works at its repository console or rests in the crew lounge](docs/screenshots/pixel.png)
+![Pixel-art War Room: each coding agent works at its repository console under a mission-control screen wall](docs/screenshots/pixel.png)
 
 Running several coding agents in parallel quickly turns attention—not compute—into the bottleneck.
 Agent War Room gives every session a screen, groups it under its repository and lights it up only
@@ -114,9 +114,10 @@ urgent one in the whole room.
 ### The "Needs your attention" queue
 
 At the very top: everything waiting for you across all repos, ordered by urgency and age. It can be
-filtered by repo, by skill and by where the skill comes from; filters are remembered.
+filtered by repo, by model and effort, by skill and by where the skill comes from; filters are
+remembered.
 
-![Room filtered by repo and skill](docs/screenshots/filtered.png)
+![Room filtered by where its skills come from](docs/screenshots/filtered.png)
 
 ### Session preview
 
@@ -132,7 +133,7 @@ Clicking a screen opens its detail, read from the transcript:
 - **Skills** used, tagged by who launched them (you or the agent) and where they come from (the
   project, yours, a plugin or built in).
 
-![Session detail](docs/screenshots/detail.png)
+![Session detail with usage, skills and subagents](docs/screenshots/detail.png)
 
 ### Subagents
 
