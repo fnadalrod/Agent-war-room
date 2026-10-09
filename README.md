@@ -167,6 +167,16 @@ one may be overwriting the other's work. A worktree per session avoids it. (Clau
 
 ![A commit's diff](docs/screenshots/diff.png)
 
+### The pixel-art War Room
+
+The same state as a mission control. Each repo is a console ring with its sessions seated around it;
+an agent raises its hand when it needs you, and the screen wall shows today's usage and what is
+waiting. Idle agents walk through the door into the **lobby**, split into a team room and a
+principals club, where they rest and chat until their next turn. Click an agent to open its preview;
+in a busy repo, the cabinet of closed sessions opens the classic view filtered to that repo.
+
+![The lobby: idle agents rest in the team room and the principals club](docs/screenshots/lobby.png)
+
 ## Daily workflow
 
 A typical loop is deliberately short: glance at the queue, open the oldest item that needs you,
@@ -210,7 +220,7 @@ the correct terminal first.
 - **Today.** The header adds up the day's tokens and estimated cost across all sessions.
 - **Two views of the same state:** the classic one (cards) and the pixel-art **War Room**, a mission
   control where each agent walks to its console when it works, raises its hand when it needs you and
-  goes to the crew lounge when it is idle; its shirt says which agent it is (Claude orange, Codex
+  goes down to the lobby when it is idle; its shirt says which agent it is (Claude orange, Codex
   white, Cursor charcoal, Antigravity blue). Usage is drawn: context fill on each monitor, token and
   cost bars on each console, totals per repo and for today on the screen wall; running subagents show
   what they are doing. Busy repos fold their closed sessions into a cabinet. Switch from the header.
