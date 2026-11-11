@@ -26,7 +26,7 @@ export type Desk = {
   desk: Rect;
   /** Where its agent sits (tile). */
   seat: Point;
-  /** A ring of tiles around the chair where running subagents stand, in walking order. */
+  /** Fixed tiles beside the chair where its running subagents stand (more show as "+N"). */
   slots: Point[];
   /** Clickable area of the whole cell (pixels). */
   cell: Rect;
@@ -36,6 +36,8 @@ export type Zone = {
   room: RoomView;
   rect: Rect;
   desks: Desk[];
+  /** Cells of free consoles (pixels, like `Desk.cell`): a spare, so a new session does not reshape the deck. */
+  spares: Rect[];
   /** Closed sessions kept in the cabinet, and where it stands (tile), if any. */
   folded: SessionView[];
   cabinet: Point | null;
@@ -99,9 +101,12 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
     const sessions = crowded ? visible.filter((s) => !folded.includes(s)) : visible;
     idle += sessions.filter((s) => !s.archived && s.attention !== "offline")
       .reduce((n, s) => n + Number(s.attention === "idle") + s.subagents.filter((a) => !a.running).length, 0);
-    const cellH = Math.max(CELL_H, 1 + Math.ceil(Math.max(0, ...sessions.map((s) => s.subagents.length)) / 2));
-    const perRow = Math.max(1, Math.min(sessions.length, maxCells));
-    const rowsOfCells = Math.ceil(sessions.length / perRow);
+    // Fixed cell height (subagents stand at fixed spots, they never stretch a deck) and consoles in
+    // pairs: a new session sits at the free one instead of widening the deck and pushing the others.
+    const cellH = CELL_H;
+    const consoles = Math.max(2, Math.ceil(sessions.length / 2) * 2);
+    const perRow = Math.max(1, Math.min(consoles, maxCells));
+    const rowsOfCells = Math.ceil(consoles / perRow);
     const w = Math.max(perRow * CELL_W + 1, 5);
     const h = ZONE_LABEL_ROWS + Math.max(1, rowsOfCells * cellH);
     if (x > 1 && x + w > cols - 1) {
@@ -110,12 +115,16 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
       shelfH = 0;
       shelves.push([]);
     }
+    const cellAt = (i: number) => ({ cx: x + 1 + (i % perRow) * CELL_W, cy: y + ZONE_LABEL_ROWS + Math.floor(i / perRow) * cellH });
     const desks = sessions.map((session, i) => {
-      const cx = x + 1 + (i % perRow) * CELL_W;
-      const cy = y + ZONE_LABEL_ROWS + Math.floor(i / perRow) * cellH;
-      return deskAt(session, cx, cy, cellH);
+      const { cx, cy } = cellAt(i);
+      return deskAt(session, cx, cy);
     });
-    const zone = { room, rect: { x, y, w, h }, desks, folded, cabinet: folded.length ? { x: x + w - 2, y } : null };
+    const spares = Array.from({ length: consoles - sessions.length }, (_, k) => {
+      const { cx, cy } = cellAt(sessions.length + k);
+      return { x: cx * TILE, y: cy * TILE - 6, w: CELL_W * TILE, h: CELL_H * TILE + 6 };
+    });
+    const zone = { room, rect: { x, y, w, h }, desks, spares, folded, cabinet: folded.length ? { x: x + w - 2, y } : null };
     zones.push(zone);
     shelves[shelves.length - 1].push(zone);
     x += w + 1;
@@ -219,18 +228,20 @@ const byRepo = (a: RoomView, b: RoomView) => a.repo_name.localeCompare(b.repo_na
 /** Oldest first, so a new session takes the next free console instead of pushing others along. */
 const bySeat = (a: SessionView, b: SessionView) => a.started_at - b.started_at || a.id.localeCompare(b.id);
 
-function deskAt(session: SessionView, cx: number, cy: number, cellH: number): Desk {
+function deskAt(session: SessionView, cx: number, cy: number): Desk {
   const seat = { x: cx + 1, y: cy + 1 };
   return {
     session,
     desk: { x: cx * TILE + 6, y: cy * TILE + 2, w: 3 * TILE - 12, h: TILE - 2 },
     seat,
-    // A ring around the chair: left of it, the aisle corners (the name sits in between), right.
+    // Where its running subagents stand, still: beside the chair, then the aisle corners.
     slots: [
-      ...Array.from({ length: cellH - 1 }, (_, i) => ({ x: cx, y: cy + 1 + i })),
-      ...Array.from({ length: cellH - 1 }, (_, i) => ({ x: cx + 2, y: cy + cellH - 1 - i })),
+      { x: cx, y: cy + 1 },
+      { x: cx + 2, y: cy + 1 },
+      { x: cx, y: cy + 2 },
+      { x: cx + 2, y: cy + 2 },
     ],
-    cell: { x: cx * TILE, y: cy * TILE - 6, w: CELL_W * TILE, h: cellH * TILE + 6 },
+    cell: { x: cx * TILE, y: cy * TILE - 6, w: CELL_W * TILE, h: CELL_H * TILE + 6 },
   };
 }
 
@@ -239,6 +250,7 @@ function moveZone(zone: Zone, dc: number, dr: number) {
   const px = (p: Point) => ({ x: p.x + dc, y: p.y + dr });
   const rx = (r: Rect, unit: number) => ({ ...r, x: r.x + dc * unit, y: r.y + dr * unit });
   zone.rect = rx(zone.rect, 1);
+  zone.spares = zone.spares.map((r) => rx(r, TILE));
   if (zone.cabinet) zone.cabinet = px(zone.cabinet);
   for (const d of zone.desks) {
     d.seat = px(d.seat);

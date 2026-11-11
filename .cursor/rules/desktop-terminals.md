@@ -22,7 +22,8 @@ scrollback for re-attaching. Closing the window keeps PTYs alive (app lives in t
   `--permission-mode`; Codex `-m`, `-c model_reasoning_effort=…`; Cursor `--model`; then `-- '<first
   prompt>'`. Option values are names (`[A-Za-z0-9._:-[]/=]`, else refused) and every value is quoted
   (`shell_quote`: single quotes on Unix; on Windows `cmd` cannot neutralise `"`, `%` or `!`, so text
-  with them is refused).
+  with them, or ending in a backslash, is refused). For Warp the prompt's newlines become spaces: Warp types the
+  command line and a newline would be Enter.
 - Warp target: writes a Tab Config `awr-<id>.toml` in `~/.local/share/warp-terminal/tab_configs/`
   (swept after 24 h) and opens `warp://tab_config/<stem>`. Warp URIs can't run commands; tab configs can.
   Its shell command is prefixed with the selected `AWR_LANG` because Warp does not inherit a PTY spec.

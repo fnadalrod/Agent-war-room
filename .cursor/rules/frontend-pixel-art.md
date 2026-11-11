@@ -33,24 +33,27 @@ console and the lobby next door. Classic and pixel views show the same state; th
 - **`office.ts` is pure and tested**: 16 px tiles, a taller `WAR_WALL_ROWS` command wall and `WALL_ROWS` lobby wall, zones packed
   in shelves and centered, in a stable order (repos by name, desks by session start: never the core's urgency
   order, or agents would swap consoles whenever one needs you), and centred vertically when the window
-  leaves spare floor, each desk cell is three tiles wide, with extra aisle rows for larger teams. Repositories
+  leaves spare floor, each desk cell is three tiles wide and three tall (always: subagents never stretch a deck), and a deck
+  has consoles in pairs (`spares`: a powered-off console with its chair) so a new session sits at a free
+  one instead of reshaping the floor. Repositories
   without any live, unarchived session have no module (history remains in the classic view). A repo with more than
   `FOLD_AFTER` sessions keeps consoles only for live ones; closed ones go into a cabinet ("+N",
   click → classic view filtered to that repo). The lobby has repeated seating nooks on either side of a central aisle: sofas,
   coffee tables, plants/lamps and refreshment, reading or arcade corners. Furniture (including sofas) blocks
   transit; sofa tiles remain reachable as goals. Chatting pairs occupy separate rows at the bottom,
   and capacity grows until every idle principal and finished teammate has a spot. Door at the top left, `walkable` grid and 4-way BFS `findPath`. Chairs are not walkable
-  (only a goal), so nobody walks through a seated agent. Each desk has a ring of `slots` round the
-  chair (left, aisle corners, right) for its subagents.
+  (only a goal), so nobody walks through a seated agent. Each desk has four fixed `slots` for its
+  running subagents: beside the chair, then the aisle corners; more show as "+N" by the monitor.
 - **`sim.ts` is pure and tested**: `goals()` says where each agent wants to be (working / needs you /
   finished / stuck → its seat; idle → a lounge spot that changes every ~15–23 s; closed → no agent),
   `step()` walks actors there at 3 tiles/s. New agents come in through the door, gone ones walk out.
   **Running subagents are actors too** (`subagentKey`, `owner` = their session): they stand up from
-  their agent's chair, stand spread over the ring and take a step round it every 5–8 s; finished ones
+  their agent's chair and stand still at their own slot (no orbiting); finished ones
   walk to the lobby and remain clickable for their results while their principal is alive. Closed
   sessions and their teammates leave. Lobby occupants alternate rest and facing conversation pairs
   every 18 seconds, changing partners each social round; bubbles take turns only with a nearby partner. On the first frame and on a new width the scene re-seats everyone
-  instead (no parade).
+  instead (no parade); when the floor is laid out again (a session arrives or closes), an agent whose
+  desk or slot moved appears there at once (`step`) rather than getting up and marching.
 - **`sprites.ts`**: 12×17 chibi agents as pixel maps (front, back, side, walk frames), seated from
   behind with a headset, waving (hand up beside the head, part of the sprite), lounging. Principals and subagents use the same full-size bodies; hit targets match. Arms hang inside the silhouette: nothing may stick out of the torso's outline
   (`sprites.test.ts` checks it). Never draw limbs as separate overlays. **The shirt is the agent**:

@@ -256,19 +256,19 @@ describe("subagents", () => {
     expect(g.get(subagentKey("s2"))!.tile.y).toBeGreaterThan(office.bands.lobby.y);
   });
 
-  it("they stand up from the chair, then walk the ring as time goes by", () => {
+  it("they stand up from the chair, step to their spot and stay there", () => {
     const office = withSubagents([true]);
     const desk = office.zones[0].desks[0];
     const actors = new Map<string, Actor>();
     step(actors, office, goals(office, 0), 0, true);
     const mini = actors.get(subagentKey("s0"))!;
     expect([mini.x, mini.y]).toEqual([feetOf(desk.seat).x, feetOf(desk.seat).y]);
-    const seen = new Set<string>();
+    walk(actors, office, 0, 3_000);
+    const spot = feetOf(desk.slots[0]);
     for (let at = 0; at < 60_000; at += 2_000) {
       walk(actors, office, at, 2_000);
-      seen.add(`${Math.round(mini.x)},${Math.round(mini.y)}`);
+      expect([mini.x, mini.y], "no walking round the chair").toEqual([spot.x, spot.y]);
     }
-    expect(seen.size, "it moves round the chair").toBeGreaterThan(2);
   });
 
   it("when they finish they walk to the lobby and remain inspectable", () => {
@@ -284,12 +284,33 @@ describe("subagents", () => {
     expect(actors.has("w"), "their agent stays").toBe(true);
   });
 
-  it("gives every teammate space, including teams larger than the old four-person ring", () => {
+  it("a big team fills the spots by the chair and the rest count as +N, without stretching the deck", () => {
+    const small = withSubagents([true]);
     const office = withSubagents(Array(9).fill(true));
     const targets = goals(office, 0);
-    expect(targets.size).toBe(10);
-    expect(new Set([...targets.values()].map((g) => `${g.tile.x},${g.tile.y}`)).size).toBe(10);
+    expect(targets.size).toBe(1 + office.zones[0].desks[0].slots.length);
+    expect(new Set([...targets.values()].map((g) => `${g.tile.x},${g.tile.y}`)).size).toBe(targets.size);
     for (const goal of targets.values()) expect(findPath(office, office.door, goal.tile).length).toBeGreaterThan(0);
+    expect(office.zones[0].rect, "subagents never reshape the deck").toEqual(small.zones[0].rect);
+  });
+
+  it("a new session takes a free console without moving anyone, and moved agents do not march", () => {
+    const one = layoutOffice(aView([aRoom("a", sessions("a", 1, "working")), aRoom("b", sessions("b", 1, "working"))]), 480, false);
+    const two = layoutOffice(aView([aRoom("a", sessions("a", 2, "working")), aRoom("b", sessions("b", 1, "working"))]), 480, false);
+    const seats = (o: typeof one) => Object.fromEntries(o.zones.flatMap((z) => z.desks.map((d) => [d.session.id, d.seat])));
+    expect(seats(two)).toMatchObject(seats(one));
+    expect(one.zones[0].spares).toHaveLength(1);
+    expect(two.zones[0].spares).toHaveLength(0);
+
+    // Three sessions need a wider deck: the other repo's agent reappears at its moved seat at once.
+    const three = layoutOffice(aView([aRoom("a", sessions("a", 3, "working")), aRoom("b", sessions("b", 1, "working"))]), 480, false);
+    const actors = new Map<string, Actor>();
+    step(actors, one, goals(one, 0), 0, false);
+    step(actors, three, goals(three, 0), 100, true);
+    const b = actors.get("b0")!;
+    expect(three.zones[1].desks[0].seat, "its console did move").not.toEqual(one.zones[1].desks[0].seat);
+    const seat = feetOf(three.zones[1].desks[0].seat);
+    expect([b.x, b.y, b.pose]).toEqual([seat.x, seat.y, "desk"]);
   });
 
   it("pairs resting teammates face to face and reserves enough lobby space", () => {

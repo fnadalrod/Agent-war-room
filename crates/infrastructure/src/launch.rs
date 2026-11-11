@@ -144,7 +144,7 @@ fn agent_command(request: &LaunchRequest) -> PortResult<String> {
         }
         Some(id) => return Err(PortError::Failed(locale::invalid_session_id(id))),
     };
-    for arg in option_args(request.provider, &request.options)? {
+    for arg in option_args(request.provider, &request.options, request.target)? {
         command.push(' ');
         command.push_str(&arg);
     }
@@ -152,7 +152,7 @@ fn agent_command(request: &LaunchRequest) -> PortResult<String> {
 }
 
 /// The flags for the chosen model, effort, permission mode and first prompt, ready for a shell line.
-fn option_args(provider: ProviderKind, options: &LaunchOptions) -> PortResult<Vec<String>> {
+fn option_args(provider: ProviderKind, options: &LaunchOptions, target: LaunchTarget) -> PortResult<Vec<String>> {
     let set = |v: &Option<String>| v.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_owned);
     let mut args: Vec<String> = Vec::new();
     let mut flag = |name: &str, value: Option<String>| -> PortResult<()> {
@@ -180,6 +180,11 @@ fn option_args(provider: ProviderKind, options: &LaunchOptions) -> PortResult<Ve
         ProviderKind::Antigravity => {}
     }
     if let Some(prompt) = set(&options.prompt) {
+        // Warp types its tab command line: a newline there would be Enter, cutting the prompt short.
+        let prompt = match target {
+            LaunchTarget::Warp => prompt.split_whitespace().collect::<Vec<_>>().join(" "),
+            LaunchTarget::App => prompt,
+        };
         // `--` so a prompt starting with a dash is never read as a flag.
         args.push("--".into());
         args.push(shell_quote(&prompt)?);
@@ -196,7 +201,8 @@ fn shell_quote(text: &str) -> PortResult<String> {
 /// `cmd` has no quoting that neutralises `%` or `"`: text with them is refused rather than mangled.
 #[cfg(windows)]
 fn shell_quote(text: &str) -> PortResult<String> {
-    if text.chars().any(|c| matches!(c, '"' | '%' | '!' | '\n' | '\r')) {
+    // A trailing backslash would escape the closing quote for the agent's own argument parsing.
+    if text.ends_with('\\') || text.chars().any(|c| matches!(c, '"' | '%' | '!' | '\n' | '\r')) {
         return Err(PortError::Failed(locale::invalid_launch_option(text)));
     }
     Ok(format!("\"{text}\""))
@@ -301,6 +307,9 @@ mod tests {
             ..request(None, LaunchTarget::App)
         };
         assert_eq!(agent_command(&codex).unwrap().replace('"', "'"), "codex -m 'opus' -c 'model_reasoning_effort=high'");
+        let lines = LaunchOptions { prompt: Some("one\ntwo".into()), ..LaunchOptions::default() };
+        let warp = LaunchRequest { options: lines, ..request(None, LaunchTarget::Warp) };
+        assert!(!agent_command(&warp).unwrap().contains('\n'), "Warp would type the newline as Enter");
         let blank = LaunchOptions { model: Some("  ".into()), ..LaunchOptions::default() };
         assert_eq!(agent_command(&LaunchRequest { options: blank, ..request(None, LaunchTarget::App) }).unwrap(), "claude");
         let evil = LaunchOptions { model: Some("opus; rm -rf ~".into()), ..LaunchOptions::default() };

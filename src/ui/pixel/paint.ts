@@ -108,6 +108,7 @@ export function paintOffice(ctx: CanvasRenderingContext2D, office: Office, st: P
     }
   }
   for (const zone of office.zones) {
+    for (const spare of zone.spares) drawables.push({ y: spare.y + 8 + TILE - 2, draw: () => spareConsole(ctx, spare) });
     if (zone.cabinet) drawables.push({ y: zone.cabinet.y * TILE + TILE - 1, draw: () => cabinet(ctx, zone, st) });
   }
   for (const prop of office.props) {
@@ -359,15 +360,16 @@ function lobbyWall(ctx: CanvasRenderingContext2D, office: Office, st: PaintState
 /** Each repo is a bank of armored command decks, shaped by its occupied console rows. */
 function rug(ctx: CanvasRenderingContext2D, zone: Zone, accent: string, scale: number) {
   const r: Rect = zone.rect;
-  const rows = new Map<number, Desk[]>();
-  for (const desk of zone.desks) {
-    const row = rows.get(desk.cell.y) ?? [];
-    row.push(desk);
-    rows.set(desk.cell.y, row);
+  // Its consoles, the free ones included, row by row.
+  const rows = new Map<number, Rect[]>();
+  for (const cell of [...zone.desks.map((d) => d.cell), ...zone.spares].sort((a, b) => a.x - b.x)) {
+    const row = rows.get(cell.y) ?? [];
+    row.push(cell);
+    rows.set(cell.y, row);
   }
-  for (const desks of rows.values()) {
-    const first = desks[0].cell;
-    const last = desks[desks.length - 1].cell;
+  for (const cells of rows.values()) {
+    const first = cells[0];
+    const last = cells[cells.length - 1];
     const x = first.x - 12;
     const y = first.y - 4;
     const w = last.x + last.w + 2 - x;
@@ -385,12 +387,12 @@ function rug(ctx: CanvasRenderingContext2D, zone: Zone, accent: string, scale: n
     for (let step = 0; step < 3; step++) {
       rect(ctx, centre - 7 - step, y + h - 6 + step * 2, 14 + step * 2, 1, "#58677a");
     }
-    for (const desk of desks) {
-      const feet = feetOf(desk.seat);
-      // Floor sockets under each operator; subtle enough to preserve name readability.
+    for (const cell of cells) {
+      // Floor sockets under each operator's chair; subtle enough to preserve name readability.
+      const feet = { x: cell.x + cell.w / 2, y: cell.y + 6 + TILE + 13 };
       rect(ctx, feet.x - 8, feet.y - 3, 16, 2, "#0b1526");
-      rect(ctx, desk.cell.x + 3, y + h - 11, 5, 1, "#354a61");
-      rect(ctx, desk.cell.x + desk.cell.w - 6, y + h - 11, 3, 1, "#354a61");
+      rect(ctx, cell.x + 3, y + h - 11, 5, 1, "#354a61");
+      rect(ctx, cell.x + cell.w - 6, y + h - 11, 3, 1, "#354a61");
     }
     // Flush side panels: bolts, vents and the sector's colour strip.
     rect(ctx, x + 3, y + 12, 4, h - 30, "#0a1423");
@@ -503,6 +505,20 @@ function loungeRug(ctx: CanvasRenderingContext2D, office: Office) {
 // ---------- Furniture ----------
 
 /** A console: one per seat, cell-wide, so a row of them reads as one continuous bank. */
+/** A free console, powered off: where the repo's next session will sit. */
+function spareConsole(ctx: CanvasRenderingContext2D, r: Rect) {
+  const { x, w } = r;
+  const top = r.y + 8;
+  withAlpha(ctx, 0.55, () => {
+    armor(ctx, x + 1, top - 1, w - 2, 16, 3, UI.metalDark);
+    armor(ctx, x + 2, top + 3, w - 4, 9, 2, "#1a2536");
+    armor(ctx, x + Math.floor(w / 2) - 8, top - 9, 16, 11, 1, "#101927");
+    rect(ctx, x + Math.floor(w / 2) - 7, top - 8, 14, 8, "#05080f");
+    withAlpha(ctx, 0.3, () => rect(ctx, x + 1, top + 10, w - 2, 1, UI.cyanDim));
+  });
+  chair(ctx, x + Math.floor(w / 2), top + TILE + 11);
+}
+
 function desk(ctx: CanvasRenderingContext2D, d: Desk, st: PaintState) {
   const { x, w } = d.cell;
   const s = d.session;
@@ -886,6 +902,15 @@ function bubble(ctx: CanvasRenderingContext2D, actor: Actor, s: SessionView, fra
 
 function marks(ctx: CanvasRenderingContext2D, d: Desk, st: PaintState) {
   const id = d.session.id;
+  // Running subagents beyond the spots by the chair.
+  const more = d.session.subagents.filter((a) => a.running).length - d.slots.length;
+  if (more > 0) {
+    const label = `+${more}`;
+    const lx = d.cell.x + d.cell.w - textWidth(label) - 3;
+    const ly = d.desk.y - 9;
+    rect(ctx, lx - 2, ly - 1, textWidth(label) + 4, 7, "#0b1220");
+    drawText(ctx, label, lx, ly, "#e5e7eb");
+  }
   if (st.selected !== id && st.hovered !== id) return;
   const { x, y, w, h } = d.cell;
   const color = st.selected === id ? (st.frame % 8 < 5 ? "#facc15" : "#fde68a") : "#ffffff99";
@@ -898,6 +923,4 @@ function marks(ctx: CanvasRenderingContext2D, d: Desk, st: PaintState) {
     rect(ctx, cx + (dx < 0 ? -3 : 0), cy, 4, 1, color);
     rect(ctx, cx, cy + (dy < 0 ? -3 : 0), 1, 4, color);
   }
-  const more = d.session.subagents.filter((a) => a.running).length - d.slots.length;
-  if (more > 0) drawText(ctx, `+${more}`, x + w - 12, y + h - 7, "#e5e7eb");
 }

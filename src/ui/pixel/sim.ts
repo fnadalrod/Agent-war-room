@@ -50,15 +50,9 @@ function wanderTurn(id: string, now: number): number {
   return Math.floor((now + (hash(id) % period)) / period);
 }
 
-/** Subagents take a step round their agent's chair every few seconds (each desk on its own beat). */
-function orbitTurn(id: string, now: number): number {
-  const period = 5_000 + (hash(id) % 3_000);
-  return Math.floor((now + (hash(id) % period)) / period);
-}
-
 /**
  * Where every visible agent wants to be now. Closed sessions have no agent. Running subagents stand
- * spread round their agent's chair and walk the ring; finished ones join their teammates in the lobby.
+ * still beside their agent's chair; finished ones join their teammates in the lobby.
  */
 export function goals(office: Office, now: number): Map<string, Goal> {
   const out = new Map<string, Goal>();
@@ -72,11 +66,10 @@ export function goals(office: Office, now: number): Map<string, Goal> {
       for (const a of s.subagents.filter((a) => !a.running)) {
         idle.push({ id: subagentKey(a.id), owner: s.id, from: d.seat });
       }
-      const running = s.subagents.filter((a) => a.running);
-      const turn = orbitTurn(s.id, now);
+      // Running ones stand still at their own spot by the chair; beyond the spots, "+N" on the desk.
+      const running = s.subagents.filter((a) => a.running).slice(0, d.slots.length);
       running.forEach((a, i) => {
-        const slot = (turn + Math.round((i * d.slots.length) / running.length)) % d.slots.length;
-        const tile = d.slots[slot];
+        const tile = d.slots[i];
         out.set(subagentKey(a.id), {
           key: `slot:${tile.x},${tile.y}`,
           tile,
@@ -148,6 +141,13 @@ export function step(actors: Map<string, Actor>, office: Office, targets: Map<st
     const target = goal ?? doorGoal;
     actor.leaving = goal === null;
     if (actor.goal !== target.key) {
+      // Its desk (or its spot by the desk) moved because the room was laid out again: be there at
+      // once, instead of everybody getting up and marching to their new consoles.
+      const kind = (key: string) => key.split(":")[0];
+      if (goal && (kind(actor.goal) === "desk" || kind(actor.goal) === "slot") && kind(actor.goal) === kind(target.key)) {
+        Object.assign(actor, place(id, target.tile, target, actor.owner));
+        continue;
+      }
       actor.goal = target.key;
       const from = tileOf(actor);
       actor.path = findPath(office, from, target.tile);
