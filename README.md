@@ -172,7 +172,8 @@ one may be overwriting the other's work. A worktree per session avoids it. (Clau
 The same state as a mission control. Each repo is a console ring with its sessions seated around it;
 an agent raises its hand when it needs you, and the screen wall shows today's usage and what is
 waiting. Idle agents walk through the door into the **lobby**, split into a team room and a
-principals club, where they rest and chat until their next turn. Click an agent to open its preview;
+principals club, where they rest and chat until their next turn. Its **Closed** tab remembers every session that ended (a closed terminal, a reboot) and resumes it
+where it left off, with its model and effort. Click an agent to open its preview;
 in a busy repo, the cabinet of closed sessions opens the classic view filtered to that repo.
 
 ![The lobby: idle agents rest in the team room and the principals club](docs/screenshots/lobby.png)

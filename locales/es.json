@@ -374,7 +374,11 @@
       "to_war_tip": "Puerta a la sala de guerra · clic para volver",
       "menu_label": "Acciones de {title}",
       "answer": "Responder la pregunta…",
-      "write_prompt": "Escribe un prompt a la sesión"
+      "write_prompt": "Escribe un prompt a la sesión",
+      "closed": "Cerradas",
+      "closed_title": "Sesiones cerradas: reanúdalas donde las dejaste",
+      "closed_empty": "No hay sesiones cerradas: todo lo que iniciaste sigue en marcha.",
+      "closed_at": "cerrada {when}"
     },
     "provider": {
       "claude": "Claude Code",

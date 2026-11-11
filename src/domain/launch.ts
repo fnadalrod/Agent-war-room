@@ -40,6 +40,15 @@ export function launchFolders(view: WarRoomView | null): string[] {
   return [...new Set(homes.filter((h): h is string => !!h))].sort((a, b) => a.localeCompare(b));
 }
 
+/** A model or effort name the launcher accepts (it refuses anything else rather than quoting it). */
+const PLAIN = /^[A-Za-z0-9._:\-[\]/=]+$/;
+
+/** Resuming keeps the session's model and effort, so it goes on as it was. */
+export function resumeOptions(s: { provider: string; model: string | null; effort: string | null }): LaunchOptions {
+  const plain = (v: string | null) => (v && PLAIN.test(v) ? v : undefined);
+  return cleanOptions(s.provider, { model: plain(s.model), effort: plain(s.effort) });
+}
+
 /** Only what was actually chosen, trimmed; options the agent does not have are dropped. */
 export function cleanOptions(provider: string, options: LaunchOptions): LaunchOptions {
   const choices = CHOICES[provider] ?? { models: [], efforts: [], modes: [] };

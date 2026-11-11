@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { aRoom, aSession, aView } from "../test/fixtures";
 import { copy } from "./copy";
-import { activity, contextLabel, extraActivity, isWritable, modelName, neighbourSession, plainText, roomHome, toolDigest } from "./attention";
+import { activity, closedSessions, contextLabel, extraActivity, isWritable, modelName, neighbourSession, plainText, roomHome, toolDigest } from "./attention";
 
 describe("presentation rules", () => {
   it("summarises model and context", () => {
@@ -64,5 +64,17 @@ describe("moving between sessions from the keyboard", () => {
     expect([ids(null, 1), ids(null, -1)]).toEqual(["a1", "b2"]);
     expect(ids("a1", 1, true)).toBe("a2");
     expect(neighbourSession(aView([]), null, 1, false)).toBeNull();
+  });
+
+  it("lists closed sessions to resume, by repo, the latest closed first, without the dismissed ones", () => {
+    const closed = (id: string, status_since: number, extra = {}) => aSession({ id, alive: false, attention: "offline", status_since, ...extra });
+    const view = aView([
+      aRoom("old", [closed("o1", 10)]),
+      aRoom("new", [closed("n1", 20), closed("n2", 30), aSession({ id: "live" }), closed("gone", 40, { archived: true })]),
+    ]);
+    expect(closedSessions(view).map((g) => [g.room.repo_name, g.sessions.map((s) => s.id)])).toEqual([
+      ["new", ["n2", "n1"]],
+      ["old", ["o1"]],
+    ]);
   });
 });

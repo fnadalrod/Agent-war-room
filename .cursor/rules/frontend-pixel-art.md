@@ -10,7 +10,9 @@ console and the lobby next door. Classic and pixel views show the same state; th
   wall, the lobby (`bands.lobby`, its own wall, then the crew lounge); each fills the window. The only
   way between them is `lobbyDoor`, a walkable tile of the war room's bottom wall. The scene shows one
   band at a time (tabs "War room | Lobby n", remembered in `awr.pixelRoom`; clicking the doorway,
-  `doorwayAtPoint`, switches): the canvas is the band's height and the transform shifts it up, so the
+  `doorwayAtPoint`, switches). A third tab, **Closed n**, lays `ClosedShelf` over the room (the canvas
+  keeps its size): every closed, undismissed session by repo (`closedSessions`, latest closed first)
+  with resume (app or Warp, keeping its model and effort: `resumeOptions`), preview and dismiss: the canvas is the band's height and the transform shifts it up, so the
   sim and hit tests keep working in office coordinates. Idle agents walk down through the doorway. Inside the lobby, a partition separates a restrained
   slate team room from a premium wood/brass principals club. Their goals and conversation pairs
   stay in their own room. On narrow layouts the rooms stack; both have reachable doorways.

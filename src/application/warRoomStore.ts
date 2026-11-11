@@ -11,7 +11,7 @@ import {
   type WarRoomView,
 } from "../domain/attention";
 import { copy } from "../domain/copy";
-import type { LaunchOptions } from "../domain/launch";
+import { type LaunchOptions, resumeOptions } from "../domain/launch";
 import type {
   FilterStorage,
   IntegrationGateway,
@@ -214,7 +214,7 @@ export class WarRoomStore {
   }
 
   resume(s: SessionView, target: LaunchTarget) {
-    void this.rooms.resume(s.id, target).then(
+    void this.rooms.resume(s.id, target, resumeOptions(s)).then(
       (launched) => this.afterLaunch(launched, s.title ?? s.worktree_path),
       (e) => this.notify({ text: String(e), tone: "warn" }),
     );

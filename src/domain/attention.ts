@@ -128,6 +128,17 @@ export function roomHome(room: RoomView): string | null {
   return main?.worktree_path ?? null;
 }
 
+/** Closed sessions not dismissed, by repo (the repo closed most recently first), newest first in each. */
+export function closedSessions(view: WarRoomView): { room: RoomView; sessions: SessionView[] }[] {
+  return view.rooms
+    .map((room) => ({
+      room,
+      sessions: room.sessions.filter((s) => !s.alive && !s.archived).sort((a, b) => b.status_since - a.status_since),
+    }))
+    .filter((g) => g.sessions.length > 0)
+    .sort((a, b) => b.sessions[0].status_since - a.sessions[0].status_since);
+}
+
 /** Plain text from Markdown, for one- to three-line excerpts. */
 export function plainText(markdown: string): string {
   return markdown

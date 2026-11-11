@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WarRoomStore } from "../../application/warRoomStore";
-import { agentName, deskName, money, providerName, roomHome, tokenCount, unpriced, usageLabel, type WarRoomView } from "../../domain/attention";
+import { agentName, closedSessions, deskName, money, providerName, roomHome, tokenCount, unpriced, usageLabel, type WarRoomView } from "../../domain/attention";
 import { copy } from "../../domain/copy";
 import { usePreference } from "../useStore";
+import { ClosedShelf } from "./ClosedShelf";
 import { DeskMenu } from "./DeskMenu";
 import {
   type Hit,
@@ -80,6 +81,8 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
   const hoveredZone = hoveredAt?.kind === "cabinet" ? hoveredAt.zone : null;
   const actors = useRef(new Map<string, Actor>());
   const [room, setRoom] = usePreference<RoomName>("awr.pixelRoom", "war", ROOMS);
+  // The list of closed sessions, over the room (the canvas keeps its size and nobody is re-seated).
+  const [showClosed, setShowClosed] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; hit: Hit } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
 
@@ -192,23 +195,29 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
   const at = (e: React.MouseEvent) => sceneHit(office, room, actors.current, pointOf(e));
   const zoneAt = (e: React.MouseEvent) => (room === "war" ? zoneAtPoint(office, pointOf(e)) : null);
   const switchRoom = (to: RoomName) => {
+    setShowClosed(false);
     setRoom(to);
     setHovered(null);
     setMenu(null);
   };
   const resting = lobbyCount(office);
+  const closedCount = closedSessions(view).reduce((n, g) => n + g.sessions.length, 0);
 
   return (
     <div className="pixel-room">
       <div className="pixel-stage" ref={box}>
         <div className="segmented pixel-rooms" role="group" aria-label={copy.pixel.rooms}>
-          <button aria-pressed={room === "war"} onClick={() => switchRoom("war")}>
+          <button aria-pressed={!showClosed && room === "war"} onClick={() => switchRoom("war")}>
             {copy.pixel.warRoom}
           </button>
-          <button aria-pressed={room === "lobby"} onClick={() => switchRoom("lobby")} title={copy.pixel.lobbyTitle}>
+          <button aria-pressed={!showClosed && room === "lobby"} onClick={() => switchRoom("lobby")} title={copy.pixel.lobbyTitle}>
             {copy.pixel.lobby} <span className="muted">{resting}</span>
           </button>
+          <button aria-pressed={showClosed} onClick={() => setShowClosed(!showClosed)} title={copy.pixel.closedTitle}>
+            {copy.pixel.closed} <span className="muted">{closedCount}</span>
+          </button>
         </div>
+        {showClosed && <ClosedShelf view={view} store={store} />}
         <div className="pixel-viewport" ref={viewport}>
           <canvas
             ref={canvas}

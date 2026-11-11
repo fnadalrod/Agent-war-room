@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { aRoom, aSession, aView } from "../test/fixtures";
-import { cleanOptions, launchChoices, launchFolders } from "./launch";
+import { cleanOptions, launchChoices, launchFolders, resumeOptions } from "./launch";
 
 describe("launch", () => {
   const view = aView([
@@ -16,6 +16,14 @@ describe("launch", () => {
 
   it("offers every folder sessions ran in, sorted", () => {
     expect(launchFolders(view)).toEqual(["/code/a", "/code/b"]);
+  });
+
+  it("resumes with the session's own model and effort, never with odd names", () => {
+    expect(resumeOptions({ provider: "claude", model: "claude-opus-5-5[1m]", effort: "high" })).toEqual({
+      model: "claude-opus-5-5[1m]",
+      effort: "high",
+    });
+    expect(resumeOptions({ provider: "cursor", model: "a model", effort: "high" })).toEqual({});
   });
 
   it("sends only what was chosen and what the agent has", () => {

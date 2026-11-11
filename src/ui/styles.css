@@ -2373,3 +2373,75 @@ pre.diff [data-line="file"] {
   justify-content: flex-end;
   gap: 8px;
 }
+
+/* The War Room's closed sessions, over the room: resume where they left off. */
+.closed-shelf,
+.closed-empty {
+  position: absolute;
+  inset: 44px 0 0;
+  z-index: 4;
+  overflow: auto;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg, var(--surface));
+}
+
+.closed-empty {
+  color: var(--muted);
+  margin: 0;
+}
+
+.closed-shelf section + section {
+  margin-top: 18px;
+}
+
+.closed-shelf h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.closed-shelf ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.closed-shelf li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--agent, var(--border-strong));
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.closed-what {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.closed-what strong,
+.closed-what .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.closed-what .muted {
+  font-size: 12px;
+}
+
+.closed-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}

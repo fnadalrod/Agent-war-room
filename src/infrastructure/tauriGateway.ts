@@ -38,7 +38,7 @@ export const tauriWarRoomGateway: WarRoomGateway = {
   setAutoApprove: (enabled) => invoke<boolean>("set_auto_approve", { enabled }),
   sendInput: (id, text) => invoke("send_input", { id, text }),
   launch: (provider, cwd, target, options) => invoke<Launched>("launch", { provider, cwd, target, options: options ?? null }),
-  resume: (id, target) => invoke<Launched>("resume", { id, target }),
+  resume: (id, target, options) => invoke<Launched>("resume", { id, target, options: options ?? null }),
   detail: (id, fullHistory = false) => invoke<SessionDetail>("session_detail", { id, limit: 80, full: fullHistory }),
   subagentDetail: (id, agent) => invoke<SubagentPreview>("subagent_detail", { id, agent }),
   openExternal: (url) => invoke("open_external", { url }),

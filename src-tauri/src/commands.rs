@@ -179,8 +179,9 @@ pub async fn resume(
     service: State<'_, Arc<WarRoomService>>,
     id: String,
     target: LaunchTarget,
+    options: Option<LaunchOptions>,
 ) -> Result<Launched, String> {
-    blocking(&service, move |s| s.resume(SessionId(id), target)).await.map(Launched::from)
+    blocking(&service, move |s| s.resume(SessionId(id), target, options.unwrap_or_default())).await.map(Launched::from)
 }
 
 #[tauri::command]

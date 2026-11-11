@@ -475,7 +475,7 @@ impl WarRoomService {
     }
 
     /// Resumes a closed session (`claude --resume`, `codex resume`) in its original folder.
-    pub fn resume(&self, id: SessionId, target: LaunchTarget) -> PortResult<LaunchOutcome> {
+    pub fn resume(&self, id: SessionId, target: LaunchTarget, options: LaunchOptions) -> PortResult<LaunchOutcome> {
         let request = {
             let room = self.room();
             let session = known(&room, &id)?;
@@ -493,7 +493,8 @@ impl WarRoomService {
                 resume: Some(id.clone()),
                 target,
                 label,
-                options: LaunchOptions::default(),
+                // Its model and effort, so it goes on as it was; a first prompt makes no sense here.
+                options: LaunchOptions { prompt: None, ..options },
             }
         };
         self.ports.launcher.launch(&request)
@@ -1364,14 +1365,17 @@ mod tests {
         let h = harness_with(Arc::default(), false);
         h.transcript.0.lock().unwrap().title = Some("Fix login".into());
         h.svc.ingest(signal("a", "prompt")).unwrap();
-        assert!(h.svc.resume(id("a"), LaunchTarget::Warp).is_err(), "alive: go to it, don't resume it");
+        assert!(h.svc.resume(id("a"), LaunchTarget::Warp, LaunchOptions::default()).is_err(), "alive: go to it, don't resume it");
 
         h.svc.tick().unwrap();
-        h.svc.resume(id("a"), LaunchTarget::Warp).unwrap();
+        let options = LaunchOptions { model: Some("opus".into()), effort: Some("high".into()), prompt: Some("x".into()), ..LaunchOptions::default() };
+        h.svc.resume(id("a"), LaunchTarget::Warp, options).unwrap();
         let launched = h.rec.launched.lock().unwrap();
         assert_eq!(launched[0].resume, Some(id("a")));
         assert_eq!(launched[0].cwd, "/code/app");
         assert_eq!(launched[0].label, "Fix login");
+        assert_eq!(launched[0].options.model.as_deref(), Some("opus"), "it goes on with its own model");
+        assert_eq!(launched[0].options.prompt, None, "no first prompt when resuming");
     }
 
     #[test]

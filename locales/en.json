@@ -374,7 +374,11 @@
       "to_war_tip": "Door to the war room · click to go back",
       "menu_label": "Actions for {title}",
       "answer": "Answer the question…",
-      "write_prompt": "Write a prompt to the session"
+      "write_prompt": "Write a prompt to the session",
+      "closed": "Closed",
+      "closed_title": "Closed sessions: resume them where they left off",
+      "closed_empty": "No closed sessions: everything you started is still running.",
+      "closed_at": "closed {when}"
     },
     "provider": {
       "claude": "Claude Code",
