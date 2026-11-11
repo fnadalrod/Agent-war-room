@@ -67,7 +67,9 @@ console and the lobby next door. Classic and pixel views show the same state; th
   copy needs them.
 - 20 fps; the loop reads live state from a ref and is never restarted; a new width or a lobby pushed
   down re-seats everyone. Hit test: doorway, cabinet, subagent, then the agent wherever it is (both
-  where their actor is), then the desk cell. Right click on a desk or agent opens `DeskMenu` (preview,
-  go to / resume, read the answer, seen, mute, dismiss).
+  where their actor is), then the desk cell. Right click on a desk or agent opens `DeskMenu`: approve/deny
+  (never focused first, so a stray Enter cannot approve), answer a question (preview with the reply
+  box), a prompt box when the session is writable (`isWritable`), preview, its app terminal / go to /
+  resume, read the answer, seen, mute, dismiss.
 - Always check with screenshots (`npm run shot` takes `pixel` and, 2.5 s later, `pixel-later`):
   overlap, depth and colour bugs only show up there.

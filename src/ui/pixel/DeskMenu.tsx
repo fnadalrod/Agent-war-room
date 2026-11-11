@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
 import type { WarRoomStore } from "../../application/warRoomStore";
-import { agentName, deskName, whereItLives } from "../../domain/attention";
+import { agentName, deskName, isWritable, whereItLives } from "../../domain/attention";
 import { copy } from "../../domain/copy";
 import { ArchiveIcon, BellIcon, BellOffIcon, CheckIcon, EyeIcon, GoIcon, PlayIcon, ReadIcon, RestoreIcon } from "../icons";
+import { QuickInput } from "../QuickInput";
 import type { Hit } from "./office";
 
 type Props = { at: { x: number; y: number }; hit: Hit; store: WarRoomStore; onClose: () => void };
@@ -14,7 +15,8 @@ export function DeskMenu({ at, hit, store, onClose }: Props) {
   const title = s.title ?? deskName(s);
 
   useEffect(() => {
-    ref.current?.querySelector("button")?.focus();
+    // The prompt box if there is one; never the Approve button, so a stray Enter cannot approve.
+    ref.current?.querySelector<HTMLElement>("input, button:not(.primary)")?.focus();
     const onDown = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose();
     };
@@ -47,13 +49,40 @@ export function DeskMenu({ at, hit, store, onClose }: Props) {
         </button>
       ) : (
         <>
+          {s.can_approve && (
+            <div className="desk-menu-row">
+              <button className="primary danger" role="menuitem" onClick={act(() => store.approve(s))}>
+                <CheckIcon size={14} /> {copy.actions.approve}
+              </button>
+              <button role="menuitem" onClick={act(() => store.deny(s))}>
+                {copy.actions.deny}
+              </button>
+            </div>
+          )}
+          {s.awaiting_question && (
+            <button className="desk-menu-urgent" role="menuitem" onClick={act(() => store.openDetail(s.id, { reply: true }))}>
+              <ReadIcon size={14} /> {copy.pixel.answer}
+            </button>
+          )}
+          {isWritable(s) && !s.awaiting_question && (
+            <div className="desk-menu-prompt" aria-label={copy.pixel.writePrompt}>
+              <QuickInput session={s} store={store} onSent={onClose} />
+            </div>
+          )}
           <button role="menuitem" onClick={act(() => store.openDetail(s.id))}>
             <EyeIcon size={14} /> {copy.actions.openPreview}
           </button>
-          {s.alive ? (
-            <button role="menuitem" onClick={act(() => store.goTo(s))}>
-              <GoIcon size={14} /> {copy.actions.goToWindowVia(whereItLives(s))}
+          {s.alive && s.pty_id && (
+            <button role="menuitem" onClick={act(() => store.openTerminal(s.pty_id!, title))}>
+              <GoIcon size={14} /> {copy.actions.openTerminal}
             </button>
+          )}
+          {s.alive ? (
+            !s.pty_id && (
+              <button role="menuitem" onClick={act(() => store.goTo(s))}>
+                <GoIcon size={14} /> {copy.actions.goToWindowVia(whereItLives(s))}
+              </button>
+            )
           ) : (
             <button role="menuitem" onClick={act(() => store.resume(s, "app"))}>
               <PlayIcon size={13} /> {copy.actions.resume}

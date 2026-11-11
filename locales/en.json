@@ -370,7 +370,9 @@
       "lobby_title": "Idle agents rest here",
       "to_lobby_tip": "Door to the lobby · click to go in",
       "to_war_tip": "Door to the war room · click to go back",
-      "menu_label": "Actions for {title}"
+      "menu_label": "Actions for {title}",
+      "answer": "Answer the question…",
+      "write_prompt": "Write a prompt to the session"
     },
     "provider": {
       "claude": "Claude Code",

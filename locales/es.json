@@ -370,7 +370,9 @@
       "lobby_title": "Aquí descansan los agentes desocupados",
       "to_lobby_tip": "Puerta al lobby · clic para entrar",
       "to_war_tip": "Puerta a la sala de guerra · clic para volver",
-      "menu_label": "Acciones de {title}"
+      "menu_label": "Acciones de {title}",
+      "answer": "Responder la pregunta…",
+      "write_prompt": "Escribe un prompt a la sesión"
     },
     "provider": {
       "claude": "Claude Code",

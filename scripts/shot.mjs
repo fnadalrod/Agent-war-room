@@ -97,7 +97,7 @@ try {
   // Right click on a desk: its quick menu.
   const stage = page.locator(".pixel-stage canvas");
   const box = await stage.boundingBox();
-  await page.mouse.click(box.x + box.width * 0.28, box.y + box.height * 0.3, { button: "right" });
+  await page.mouse.click(box.x + box.width * 0.255, box.y + box.height * 0.4, { button: "right" });
   await shot("pixel-menu");
   await page.keyboard.press("Escape");
   // Through the door: the lobby, where idle agents rest.

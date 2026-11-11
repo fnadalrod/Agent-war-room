@@ -361,6 +361,8 @@ export const copy = {
     toLobbyTip: t("pixel.to_lobby_tip"),
     toWarTip: t("pixel.to_war_tip"),
     menuLabel: (title: string) => t("pixel.menu_label", { title }),
+    answer: t("pixel.answer"),
+    writePrompt: t("pixel.write_prompt"),
     warSign: t("pixel.war_sign"),
   },
 };

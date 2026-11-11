@@ -1827,6 +1827,38 @@ button.icon.help {
   text-align: left;
 }
 
+.desk-menu-row {
+  display: flex;
+  gap: 4px;
+  padding: 2px 0 4px;
+}
+
+.desk-menu-row button {
+  flex: 1;
+  justify-content: center;
+}
+
+.desk-menu .desk-menu-row .primary {
+  border-color: var(--needs-you, #f25555);
+  background: var(--needs-you, #f25555);
+  color: #fff;
+}
+
+.desk-menu .desk-menu-urgent {
+  color: var(--needs-you, #f25555);
+  font-weight: 600;
+}
+
+.desk-menu-prompt {
+  padding: 2px 2px 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.desk-menu-prompt .quick-input {
+  min-width: 300px;
+}
+
 .desk-menu button:hover:not(:disabled),
 .desk-menu button:focus-visible {
   background: var(--surface-3);
