@@ -22,6 +22,9 @@ import type {
 import { coreStatus } from "../domain/i18n";
 
 const minutes = (m: number) => Date.now() - m * 60_000;
+/** When the demo opened: starts are fixed to it, like real ones, so seats do not reshuffle on each refresh. */
+const OPENED = Date.now();
+const startedAgo = (m: number) => OPENED - m * 60_000;
 
 /** Status labels come from the core (`core.status.*` in the catalogs); fake them the same way. */
 const STATUS = {
@@ -125,7 +128,7 @@ function session(p: Partial<SessionView> & Pick<SessionView, "id" | "attention" 
     subagents: [],
     skills: [],
     turns: 3,
-    started_at: minutes(90),
+    started_at: startedAgo(90),
     last_activity_at: minutes(1),
     status_since: minutes(1),
     archived: false,
@@ -156,7 +159,7 @@ function agent(id: string, kind: string, description: string, tool: string | nul
     model,
     effort: model.includes("haiku") ? null : "medium",
     running,
-    started_at: minutes(running ? 4 : 20),
+    started_at: startedAgo(running ? 4 : 20),
     finished_at: running ? null : minutes(12),
   };
 }
