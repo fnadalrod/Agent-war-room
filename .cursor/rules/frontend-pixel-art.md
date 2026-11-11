@@ -54,9 +54,9 @@ console and the lobby next door. Classic and pixel views show the same state; th
   behind with a headset, waving (hand up beside the head, part of the sprite), lounging. Principals and subagents use the same full-size bodies; hit targets match. Arms hang inside the silhouette: nothing may stick out of the torso's outline
   (`sprites.test.ts` checks it). Never draw limbs as separate overlays. **The shirt is the agent**:
   Claude orange, Codex white, Cursor charcoal, Antigravity blue; hair and skin from `hash(id)`.
-- **`paint.ts`**: dark panel floor with a faint grid; screen wall (telemetry with today's usage, main
-  screen with counters, a radar map keyed to repository colours and the ticker of what needs you,
-  MET clock), chamfered decks following the occupied console rows (short final rows make a stepped
+- **`paint.ts`**: dark panel floor with a faint grid; the screen wall is one wide board listing what
+  waits for you in order (`boardEntries`: ! needs you pulsing, ? stuck, OK finished; repo · title, "+N"
+  when it overflows, ALL QUIET when empty) — no counters or clocks, the header already has them), chamfered decks following the occupied console rows (short final rows make a stepped
   outline), with recessed floor sockets, entry ramps, sector lighting and a sign ("REPO n · tokens"), then everything standing sorted by its feet `y` (console →
   operator → chair back, sofa back → agent → sofa front), then bubbles ("!", "?", OK, ZZ, "..." when
   chatting) and selection corners. **Usage is drawn, not written**: context fill on each monitor's

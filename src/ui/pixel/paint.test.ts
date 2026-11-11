@@ -19,7 +19,7 @@ it("keeps animated terminal lines inside the monitor with a one-pixel margin", (
   for (let frame = 0; frame < 120; frame++) {
     paintOffice(ctx as unknown as CanvasRenderingContext2D, office, {
       frame, scale: 3, now: new Date(0), selected: null, selectedAgent: null,
-      hovered: null, hoveredAgent: null, alerts: [], today: null,
+      hovered: null, hoveredAgent: null,
       hoveredCabinet: null, hoveredDoor: false, actors: new Map(),
     });
   }

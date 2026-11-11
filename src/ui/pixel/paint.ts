@@ -44,10 +44,6 @@ export type PaintState = {
   selectedAgent: string | null;
   hovered: string | null;
   hoveredAgent: string | null;
-  /** Titles of what needs you, for the wall board ticker. */
-  alerts: string[];
-  /** Today's tokens and cost, already formatted ("324M $135"), for the board. */
-  today: string | null;
   /** The cabinet under the cursor, to highlight it. */
   hoveredCabinet: string | null;
   /** The doorway between the rooms is under the cursor. */
@@ -207,18 +203,12 @@ function wall(ctx: CanvasRenderingContext2D, office: Office, st: PaintState) {
   rect(ctx, 4, 3, office.width - 8, 2, UI.metalTop);
   for (let x = 8; x < office.width - 8; x += 16) rect(ctx, x, 3, 6, 1, UI.metalEdge);
 
-  // The screen wall: telemetry on the left, the main screen, mission clock on the right.
-  const main = Math.min(240, Math.floor(office.width * 0.52));
-  const mainX = Math.floor((office.width - main) / 2);
-  const side = Math.min(90, mainX - 30);
-  armor(ctx, mainX - 5, 7, main + 10, h - 15, 5, UI.metalEdge);
-  mainScreen(ctx, office, mainX, 11, main, h - 25, st);
-  if (side >= 44) {
-    // The entrance occupies the left wall: keep the screen frame clear at narrow widths.
-    const leftSide = Math.min(side, mainX - 6 - ((office.door.x + 1) * TILE + 4));
-    if (leftSide >= 32) telemetry(ctx, mainX - leftSide - 6, 16, leftSide, h - 36, st);
-    missionClock(ctx, mainX + main + 6, 16, side, h - 36, st.now);
-  }
+  // The screen wall: one wide board with what waits for you (the header already has the counters).
+  const main = Math.min(400, Math.floor(office.width * 0.62));
+  const mainX = Math.max((office.door.x + 1) * TILE + 10, Math.floor((office.width - main) / 2));
+  const boardW = Math.min(main, office.width - mainX - 10);
+  armor(ctx, mainX - 5, 7, boardW + 10, h - 15, 5, UI.metalEdge);
+  mainScreen(ctx, office, mainX, 11, boardW, h - 25, st);
   // A continuous equipment plinth anchors the display wall.
   for (let x = 40; x < office.width - 16; x += 24) {
     rect(ctx, x, h - 12, 21, 7, UI.metalTop);
@@ -241,88 +231,44 @@ function screenFrame(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
   });
 }
 
+/** What the board lists: who needs you, then who looks stuck, then who finished. */
+export function boardEntries(office: Office): Array<{ mark: string; color: string; text: string }> {
+  const sessions = office.zones.flatMap((z) => z.desks.map((d) => ({ s: d.session, repo: z.room.repo_name })))
+    .filter(({ s }) => !s.archived && !s.muted);
+  const line = (mark: string, color: string) => ({ s, repo }: { s: SessionView; repo: string }) =>
+    ({ mark, color, text: `${repo} · ${s.title ?? deskName(s)}`.toUpperCase() });
+  return [
+    ...sessions.filter(({ s }) => s.attention === "needs_you").map(line("!", COLOR.needs_you)),
+    ...sessions.filter(({ s }) => stalled(s)).map(line("?", STALLED)),
+    ...sessions.filter(({ s }) => s.attention === "finished").map(line(copy.pixel.finishedBubble, COLOR.finished)),
+  ];
+}
+
 function mainScreen(ctx: CanvasRenderingContext2D, office: Office, x: number, y: number, w: number, h: number, st: PaintState) {
   screenFrame(ctx, x, y, w, h);
-  // Tactical map: concentric pixel rings with repository nodes and a slow sweep.
-  const cx = x + Math.floor(w / 2);
-  const cy = y + 31;
-  const radius = Math.max(4, Math.floor((h - 28) / 2));
-  withAlpha(ctx, 0.45, () => {
-    for (let gx = x + 4; gx < x + w - 2; gx += 8) {
-      for (let gy = y + 20; gy < y + h - 11; gy += 5) rect(ctx, gx, gy, 1, 1, UI.cyanDim);
-    }
-    for (const r of [radius, Math.max(2, radius - 5)]) {
-      for (let angle = 0; angle < 360; angle += 5) {
-        const rad = angle * Math.PI / 180;
-        rect(ctx, cx + Math.round(Math.cos(rad) * r * 2), cy + Math.round(Math.sin(rad) * r * 0.65), 1, 1, UI.cyanDim);
-      }
-    }
-    rect(ctx, cx - radius * 2 - 5, cy, radius * 4 + 10, 1, UI.cyanDim);
-  });
-  const sweep = (st.frame % 80) / 80 * Math.PI * 2;
-  for (let i = 0; i <= radius; i++) rect(ctx, cx + Math.round(Math.cos(sweep) * i * 2), cy + Math.round(Math.sin(sweep) * i * 0.65), 1, 1, "#55b5bf");
-  office.zones.forEach((zone, i) => {
-    const angle = (i / Math.max(1, office.zones.length)) * Math.PI * 2;
-    const nx = cx + Math.round(Math.cos(angle) * radius * 1.7);
-    const ny = cy + Math.round(Math.sin(angle) * radius * 0.55);
-    rect(ctx, nx - 1, ny - 1, 3, 3, TIERS[hash(zone.room.repo_id) % TIERS.length]);
-    rect(ctx, nx, ny, 1, 1, "#dffaff");
-  });
-  // Edge telemetry makes the display read as one integrated command wall.
-  for (let i = 0; i < 5; i++) {
-    const len = 5 + Math.floor(rand(i + 8) * Math.max(5, w / 5 - 12));
-    rect(ctx, x + 7, y + 21 + i * 3, len, 1, i % 2 ? UI.cyanDim : "#41617b");
-    rect(ctx, x + w - 7 - len, y + 21 + i * 3, len, 1, i % 2 ? "#41617b" : UI.cyanDim);
+  drawText(ctx, copy.pixel.title, x + Math.floor((w - textWidth(copy.pixel.title)) / 2), y + 3, UI.cyanDim);
+  rect(ctx, x + 4, y + 10, w - 8, 1, "#12324a");
+  const entries = boardEntries(office);
+  if (entries.length === 0) {
+    const quiet = copy.pixel.allQuiet;
+    drawText(ctx, quiet, x + Math.floor((w - textWidth(quiet)) / 2), y + Math.floor(h / 2) + 1, "#3b8aa0");
+    return;
   }
-  drawText(ctx, copy.pixel.title, x + Math.floor((w - textWidth(copy.pixel.title)) / 2), y + 3, UI.text);
-  const counts = { needs_you: 0, finished: 0, working: 0 } as Record<string, number>;
-  for (const zone of office.zones) for (const d of zone.desks) if (!d.session.archived && d.session.attention in counts) counts[d.session.attention]++;
-  const parts: Array<[string, string]> = [
-    [`! ${counts.needs_you}`, COLOR.needs_you],
-    [`OK ${counts.finished}`, COLOR.finished],
-    [`>> ${counts.working}`, COLOR.working],
-  ];
-  const total = parts.reduce((sum, [t]) => sum + textWidth(t), 0) + 12 * (parts.length - 1);
-  let tx = x + Math.floor((w - total) / 2);
-  for (const [text, color] of parts) {
-    drawText(ctx, text, tx, y + 11, color);
-    tx += textWidth(text) + 12;
+  const rows = Math.max(1, Math.floor((h - 14) / 7));
+  const shown = entries.length > rows ? entries.slice(0, rows - 1) : entries;
+  shown.forEach((e, i) => {
+    const ly = y + 13 + i * 7;
+    const urgent = e.mark === "!";
+    // What needs you pulses; the rest is steady.
+    if (urgent) withAlpha(ctx, st.frame % 10 < 6 ? 0.22 : 0.08, () => rect(ctx, x + 2, ly - 1, w - 4, 7, COLOR.needs_you));
+    drawText(ctx, e.mark, x + 5, ly, e.color);
+    drawText(ctx, fit(e.text, w - 22), x + 17, ly, urgent ? "#fde2e2" : UI.text);
+  });
+  if (shown.length < entries.length) {
+    const more = `+${entries.length - shown.length}`;
+    drawText(ctx, more, x + 5, y + 13 + shown.length * 7, UI.cyanDim);
   }
-  // Ticker of what needs you, or all quiet.
-  const ticker = st.alerts.length ? st.alerts.join("  ·  ") : copy.pixel.allQuiet;
-  const color = st.alerts.length ? (st.frame % 10 < 6 ? COLOR.needs_you : "#fca5a5") : "#3b8aa0";
-  if (st.alerts.length) withAlpha(ctx, st.frame % 10 < 6 ? 0.25 : 0.1, () => rect(ctx, x, y + h - 9, w, 9, COLOR.needs_you));
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(x + 2, y + h - 8, w - 4, 7);
-  ctx.clip();
-  const tw = textWidth(ticker);
-  const tx0 = st.alerts.length && tw > w - 8 ? x + w - ((st.frame * 1.5) % (tw + w)) : x + Math.floor((w - tw) / 2);
-  drawText(ctx, ticker, tx0, y + h - 7, color);
-  ctx.restore();
   withAlpha(ctx, 0.12, () => rect(ctx, x - 6, y + h + 2, w + 12, 3, UI.cyan));
-}
-
-/** Left screen: today's usage and a live-looking bar graph. */
-function telemetry(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, st: PaintState) {
-  screenFrame(ctx, x, y, w, h);
-  drawText(ctx, copy.pixel.today, x + 3, y + 3, UI.cyanDim);
-  if (st.today) drawText(ctx, fit(st.today, w - 6), x + 3, y + 10, "#fcd34d");
-  for (let i = 0; i < Math.floor((w - 6) / 4); i++) {
-    const bh = 2 + Math.floor(rand(i * 7 + Math.floor(st.frame / 4)) * (h - 20));
-    rect(ctx, x + 3 + i * 4, y + h - 2 - bh, 3, bh, i % 5 === 0 ? "#fcd34d" : UI.cyanDim);
-  }
-}
-
-/** Right screen: the time, like a mission clock. */
-function missionClock(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, now: Date) {
-  screenFrame(ctx, x, y, w, h);
-  drawText(ctx, "MET", x + 3, y + 3, UI.cyanDim);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const time = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-  drawText(ctx, time, x + Math.floor((w - textWidth(time)) / 2), y + Math.floor(h / 2) - 2, "#34d399");
-  // Blinking status lights.
-  for (let i = 0; i < 6; i++) rect(ctx, x + 4 + i * 6, y + h - 5, 3, 2, rand(i + now.getSeconds()) > 0.4 ? "#34d399" : "#064e3b");
 }
 
 function door(ctx: CanvasRenderingContext2D, x: number, wallBottom: number, frame: number) {

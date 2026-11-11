@@ -380,7 +380,6 @@ export const copy = {
     subagentOf: (session: string | null) =>
       session ? t("pixel.subagent_of", { session }) : t("pixel.subagent_of_unknown"),
     empty: t("pixel.empty"),
-    today: t("pixel.today"),
     cabinetTip: (n: number) => t("pixel.cabinet_tip", { n }),
     lobbySign: t("pixel.lobby_sign"),
     teamLounge: t("pixel.team_lounge"),

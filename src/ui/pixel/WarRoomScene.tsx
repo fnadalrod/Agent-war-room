@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WarRoomStore } from "../../application/warRoomStore";
-import { agentName, closedSessions, deskName, money, providerName, roomHome, tokenCount, unpriced, usageLabel, type WarRoomView } from "../../domain/attention";
+import { agentName, closedSessions, providerName, roomHome, usageLabel, type WarRoomView } from "../../domain/attention";
 import { copy } from "../../domain/copy";
 import { usePreference } from "../useStore";
 import { ClosedShelf } from "./ClosedShelf";
@@ -91,30 +91,16 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
     () => fitOffice(view, cssWidth, cssHeight, showArchived),
     [view, cssWidth, cssHeight, showArchived],
   );
-  const alerts = useMemo(
-    () =>
-      view.rooms
-        .flatMap((r) => r.sessions)
-        .filter((s) => s.attention === "needs_you" && !s.muted && !s.archived)
-        .map((s) => s.title ?? deskName(s)),
-    [view],
-  );
-
-  const today = view.today.total_tokens > 0
-    ? `${tokenCount(view.today.total_tokens).toUpperCase()}${unpriced(view.today) ? "" : ` ${money(view.today.cost_usd)}`}`
-    : null;
   // Live state for the paint loop, so it is not restarted on every render.
   const band = office.bands[room];
   const fitted = fitViewport(office.width * scale, band.h * TILE * scale, available.width, available.height);
-  const live = useRef({ office, scale, band, selectedId, selectedAgent, alerts, today, hovered: null as Hit | null, cabinet: null as string | null, door: false });
+  const live = useRef({ office, scale, band, selectedId, selectedAgent, hovered: null as Hit | null, cabinet: null as string | null, door: false });
   live.current = {
     office,
     scale,
     band,
     selectedId,
     selectedAgent,
-    alerts,
-    today,
     hovered,
     cabinet: hoveredZone?.room.repo_id ?? null,
     door: hoveredAt?.kind === "door",
@@ -152,7 +138,7 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
       const c = canvas.current;
       const ctx = c?.getContext("2d");
       if (!c || !ctx) return;
-      const { office, scale, band, selectedId, selectedAgent, hovered, alerts, today, cabinet, door } = live.current;
+      const { office, scale, band, selectedId, selectedAgent, hovered, cabinet, door } = live.current;
       // Agents already there when the room opens are in place; later ones come through the door.
       // A new width (or a lobby pushed down by a new shelf of desks) moves everything: re-seat
       // everyone rather than have them all walk.
@@ -177,8 +163,6 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
         selectedAgent,
         hovered: hovered?.session.id ?? null,
         hoveredAgent: hovered?.agent?.id ?? null,
-        alerts,
-        today,
         hoveredCabinet: cabinet,
         hoveredDoor: door,
         actors: actors.current,
