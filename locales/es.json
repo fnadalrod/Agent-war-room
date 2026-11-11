@@ -374,6 +374,7 @@
       "menu_label": "Acciones de {title}",
       "answer": "Responder la pregunta…",
       "write_prompt": "Escribe un prompt a la sesión",
+      "prompt_placeholder": "Escribe un prompt… (Intro envía)",
       "closed": "Cerradas",
       "closed_title": "Sesiones cerradas: reanúdalas donde las dejaste",
       "closed_empty": "No hay sesiones cerradas: todo lo que iniciaste sigue en marcha.",

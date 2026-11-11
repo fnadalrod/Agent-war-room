@@ -66,7 +66,7 @@ export function DeskMenu({ at, hit, store, onClose }: Props) {
           )}
           {isWritable(s) && !s.awaiting_question && (
             <div className="desk-menu-prompt" aria-label={copy.pixel.writePrompt}>
-              <QuickInput session={s} store={store} onSent={onClose} />
+              <QuickInput session={s} store={store} onSent={onClose} placeholder={copy.pixel.promptPlaceholder} />
             </div>
           )}
           <button role="menuitem" onClick={act(() => store.openDetail(s.id))}>

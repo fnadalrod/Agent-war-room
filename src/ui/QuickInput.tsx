@@ -9,6 +9,7 @@ export function QuickInput({
   store,
   autoFocus,
   onSent,
+  placeholder,
 }: {
   session: SessionView;
   store: WarRoomStore;
@@ -16,6 +17,8 @@ export function QuickInput({
   autoFocus?: boolean;
   /** After a message is delivered (e.g. to close the menu holding it). */
   onSent?: () => void;
+  /** A shorter hint where the field is narrow. */
+  placeholder?: string;
 }) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -37,7 +40,7 @@ export function QuickInput({
         autoFocus={autoFocus}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder={session.awaiting_question ? copy.quickInput.answerPlaceholder : copy.quickInput.placeholder}
+        placeholder={session.awaiting_question ? copy.quickInput.answerPlaceholder : (placeholder ?? copy.quickInput.placeholder)}
         disabled={sending}
         aria-label={session.awaiting_question ? copy.quickInput.answerLabel : copy.quickInput.label}
       />

@@ -374,6 +374,7 @@
       "menu_label": "Actions for {title}",
       "answer": "Answer the question…",
       "write_prompt": "Write a prompt to the session",
+      "prompt_placeholder": "Write a prompt… (Enter sends)",
       "closed": "Closed",
       "closed_title": "Closed sessions: resume them where they left off",
       "closed_empty": "No closed sessions: everything you started is still running.",

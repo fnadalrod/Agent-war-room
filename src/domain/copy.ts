@@ -397,6 +397,7 @@ export const copy = {
     closedEmpty: t("pixel.closed_empty"),
     closedAt: (when: string) => t("pixel.closed_at", { when }),
     writePrompt: t("pixel.write_prompt"),
+    promptPlaceholder: t("pixel.prompt_placeholder"),
     warSign: t("pixel.war_sign"),
   },
 };
