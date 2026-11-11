@@ -109,7 +109,6 @@ export function paintOffice(ctx: CanvasRenderingContext2D, office: Office, st: P
       drawables.push({ y: d.desk.y + d.desk.h, draw: () => desk(ctx, d, st) });
       const seatFeet = feetOf(d.seat);
       drawables.push({ y: seatFeet.y + 0.5, draw: () => chair(ctx, seatFeet.x, seatFeet.y) });
-      drawables.push({ y: seatFeet.y + 0.6, draw: () => nameplate(ctx, d, st.scale) });
     }
   }
   for (const zone of office.zones) {
@@ -133,6 +132,9 @@ export function paintOffice(ctx: CanvasRenderingContext2D, office: Office, st: P
   }
   drawables.sort((a, b) => a.y - b.y);
   for (const d of drawables) d.draw();
+
+  // Names over whoever stands in the aisle, so a subagent never hides whose console it is.
+  for (const zone of office.zones) for (const d of zone.desks) nameplate(ctx, d, st.scale);
 
   // On top of everything: what each agent is saying, and selection marks.
   const seats = new Map(office.zones.flatMap((z) => z.desks.map((d) => [d.session.id, feetOf(d.seat)] as const)));
@@ -657,9 +659,8 @@ export const nameDot = (scale: number) => Math.min(1, 2 / scale);
 function nameplate(ctx: CanvasRenderingContext2D, d: Desk, scale: number) {
   const s = d.session;
   const px = nameDot(scale);
-  // Subagents walk round the chair and through the aisle corners: leave them room.
-  const crowded = s.subagents.some((a) => a.running);
-  const name = fit((s.title ?? deskName(s)).toUpperCase(), d.cell.w - (crowded ? 20 : 10), px);
+  // Drawn over the actors, so it can use the whole cell even with subagents in the aisle.
+  const name = fit((s.title ?? deskName(s)).toUpperCase(), d.cell.w - 6, px);
   const feet = feetOf(d.seat);
   const w = textWidth(name, px);
   const x = feet.x - Math.floor(w / 2);
@@ -886,12 +887,12 @@ function toolBubble(ctx: CanvasRenderingContext2D, agent: SubagentView, fx: numb
   const bob = (frame + hash(agent.id)) % 6 < 3 ? -1 : 0;
   const x = Math.round(side === "right" ? fx + 4 : side === "left" ? fx - 11 : fx - 3);
   const y = Math.round((side ? fy - 21 : fy - 26) + bob);
-  rect(ctx, x, y, 7, 7, "#1b1523");
-  rect(ctx, x + 1, y + 1, 5, 5, "#fdfcf7");
-  if (side === "right") rect(ctx, x - 1, y + 4, 1, 1, "#1b1523");
-  else if (side === "left") rect(ctx, x + 7, y + 4, 1, 1, "#1b1523");
-  else rect(ctx, x + 3, y + 7, 1, 1, "#1b1523");
-  drawText(ctx, glyph, x + 2, y + 1, glyph === "$" ? "#15803d" : "#1b1523");
+  // Secondary information: a dim chip, never as loud as the attention bubbles.
+  withAlpha(ctx, 0.85, () => {
+    rect(ctx, x, y, 7, 7, "#0b1220");
+    frameRect(ctx, x, y, 7, 7, "#334155");
+    drawText(ctx, glyph, x + 2, y + 1, glyph === "$" ? "#4ade80" : "#94a3b8");
+  });
 }
 
 /** What the agent is saying, above its head. */
