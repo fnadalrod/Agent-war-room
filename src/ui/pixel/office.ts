@@ -14,6 +14,8 @@ const CELL_H = 3;
 const ZONE_LABEL_ROWS = 1;
 /** One row of seating nooks, circulation and a margin; a taller lobby fits more rows of nooks. */
 const LOUNGE_ROWS = 7;
+/** How long a repo keeps its deck after its last session closed. */
+export const LINGER_MS = 15 * 60_000;
 /** From this many sessions in a repo, the closed ones go into a cabinet instead of keeping a desk. */
 export const FOLD_AFTER = 4;
 
@@ -78,9 +80,10 @@ export type Office = {
 /**
  * Lays out the office for `width` logical pixels: the war room (repo zones packed in shelves under
  * the wall, in a stable order: repos by name, desks by when their session started) and, through a door in its bottom wall, the
- * lobby with the crew lounge. Each fills at least `minHeight`.
+ * lobby with the crew lounge. Each fills at least `minHeight`. `now` (ms) keeps a repo whose last session
+ * closed less than `LINGER_MS` ago on the floor.
  */
-export function layoutOffice(view: WarRoomView, width: number, showArchived: boolean, minHeight = 0): Office {
+export function layoutOffice(view: WarRoomView, width: number, showArchived: boolean, minHeight = 0, now = 0): Office {
   const cols = Math.max(CELL_W + 2, Math.floor(width / TILE));
   const maxCells = Math.max(1, Math.floor((cols - 2 - 1) / CELL_W));
   const zones: Zone[] = [];
@@ -90,7 +93,11 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
   // and swap consoles whenever one of them needs you.
   for (const room of [...view.rooms].sort(byRepo)) {
     const visible = room.sessions.filter((s) => showArchived || !s.archived).sort(bySeat);
-    if (!visible.some((s) => !s.archived && s.attention !== "offline")) continue;
+    // A repo leaves the floor once nothing in it is alive, but only a while after its last session
+    // closed: closing a terminal does not reshuffle the room at once.
+    const live = visible.some((s) => !s.archived && s.attention !== "offline");
+    const justClosed = visible.some((s) => !s.archived && !s.alive && now > 0 && now - s.status_since < LINGER_MS);
+    if (!live && !justClosed) continue;
     // A busy repo keeps desks for what is alive; the closed ones go into a cabinet.
     const crowded = visible.length > FOLD_AFTER;
     const folded = crowded ? visible.filter((s) => s.attention === "offline" || s.archived) : [];
@@ -417,9 +424,9 @@ export function pixelScale(cssWidth: number): number {
  * with both rooms fitting in that height, so a short window draws smaller art instead of shrinking a
  * wide room into a square. If not even the smallest fits, its layout is used and the view shrinks.
  */
-export function fitOffice(view: WarRoomView, cssWidth: number, cssHeight: number, showArchived: boolean) {
+export function fitOffice(view: WarRoomView, cssWidth: number, cssHeight: number, showArchived: boolean, now = 0) {
   for (let scale = pixelScale(cssWidth); ; scale--) {
-    const office = layoutOffice(view, Math.floor(cssWidth / scale), showArchived, cssHeight / scale);
+    const office = layoutOffice(view, Math.floor(cssWidth / scale), showArchived, cssHeight / scale, now);
     const tallest = Math.max(office.bands.war.h, office.bands.lobby.h) * TILE * scale;
     if (scale === 2 || tallest <= cssHeight) return { scale, office };
   }

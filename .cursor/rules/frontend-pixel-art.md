@@ -37,7 +37,8 @@ console and the lobby next door. Classic and pixel views show the same state; th
   floor; several on a squarer one), and the spare rows and columns go evenly between them. Each desk cell is three tiles wide and three tall (always: subagents never stretch a deck), and a deck
   has consoles in pairs (`spares`: a powered-off console with its chair) so a new session sits at a free
   one instead of reshaping the floor. Repositories
-  without any live, unarchived session have no module (history remains in the classic view). A repo with more than
+  without any live, unarchived session have no module once `LINGER_MS` (15 min) have passed since
+  their last one closed (`now` given to `layoutOffice`; history remains in the Closed tab and the classic view). A repo with more than
   `FOLD_AFTER` sessions keeps consoles only for live ones; closed ones go into a cabinet ("+N",
   click → classic view filtered to that repo). The lobby has repeated seating nooks on either side of a central aisle: sofas,
   coffee tables, plants/lamps and refreshment, reading or arcade corners. Furniture (including sofas) blocks

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { aRoom, aSession, aSubagent, aView } from "../../test/fixtures";
 import type { SessionView } from "../../domain/attention";
-import { cabinetAtPoint, deskAtPoint, doorwayAtPoint, FOLD_AFTER, feetOf, findPath, fitOffice, fitViewport, layoutOffice, pixelScale, TILE, WALL_ROWS, WAR_WALL_ROWS } from "./office";
+import { cabinetAtPoint, deskAtPoint, doorwayAtPoint, FOLD_AFTER, LINGER_MS, feetOf, findPath, fitOffice, fitViewport, layoutOffice, pixelScale, TILE, WALL_ROWS, WAR_WALL_ROWS } from "./office";
 import { type Actor, goals, step, subagentKey } from "./sim";
 import { lobbyCount } from "./paint";
 
@@ -108,6 +108,18 @@ describe("layoutOffice", () => {
     for (const archived of [false, true]) {
       expect(layoutOffice(view, 400, archived).zones.map((z) => z.room.repo_name)).toEqual(["resting"]);
     }
+  });
+
+  it("keeps a repo's deck a while after its last session closed, so closing a terminal does not reshuffle the room", () => {
+    const closedAt = 1_000_000;
+    const view = aView([
+      aRoom("a", [aSession({ id: "a", attention: "offline", alive: false, status_since: closedAt })]),
+      aRoom("b", [aSession({ id: "b", attention: "working" })]),
+    ]);
+    const names = (now: number) => layoutOffice(view, 480, false, 0, now).zones.map((z) => z.room.repo_name);
+    expect(names(closedAt + 60_000)).toEqual(["a", "b"]);
+    expect(names(closedAt + LINGER_MS + 1)).toEqual(["b"]);
+    expect(goals(layoutOffice(view, 480, false, 0, closedAt + 60_000), 0).has("a"), "nobody sits at it").toBe(false);
   });
 
   it("the lounge grows until every idle agent has a spot of its own", () => {
