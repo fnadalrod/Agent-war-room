@@ -226,7 +226,7 @@ the correct terminal first.
   control where each agent walks to its console when it works, raises its hand when it needs you and
   goes down to the lobby when it is idle; its shirt says which agent it is (Claude orange, Codex
   white, Cursor charcoal, Antigravity blue). Usage is drawn: context fill on each monitor, token and
-  cost bars on each console, totals per repo on each deck's sign; running subagents show
+  cost bars on each console, a red sign on the repo's deck while one of its sessions needs you; running subagents show
   what they are doing. Busy repos fold their closed sessions into a cabinet. Switch from the header.
 
 On Linux, desktop notifications come with buttons: **View**, **Go to**, **Approve** and **Reply**.

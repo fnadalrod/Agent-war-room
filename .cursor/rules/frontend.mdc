@@ -36,7 +36,7 @@ alwaysApply: false
   from the header "+", a room's "More options…" and a right click on a repo's deck in the War Room. Unpriced usage
   shows tokens only (`usageLabel`).
 - Filters start folded to one line (remembered in localStorage); the header must fit on two lines at
-  1500 px with the preview open.
+  1500 px with the preview open (it tightens and the Agents button drops its label then).
 - New data from the core: add it in `view.rs`, regenerate, then fixtures (`src/test/fixtures.ts`) and
   the demo (`demoGateway.ts`) — the demo is what screenshots show.
 - Styling: one `ui/styles.css` on tokens. `--c` = attention color via `data-attention`; `--k` = skill

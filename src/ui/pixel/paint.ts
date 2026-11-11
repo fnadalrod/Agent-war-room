@@ -1,6 +1,6 @@
 // Pixel-art painting of the office. Logical coordinates; the canvas is scaled with `pixelated`.
 import type { AttentionView, SessionView, SubagentView } from "../../domain/attention";
-import { contextLevel, contextRatio, deskName, tokenCount } from "../../domain/attention";
+import { contextLevel, contextRatio, deskName } from "../../domain/attention";
 import { copy } from "../../domain/copy";
 import { drawText, fit, textWidth } from "./font";
 import { type Desk, type Office, type Prop, type Rect, type Zone, TILE, WALL_ROWS, WAR_WALL_ROWS, feetOf } from "./office";
@@ -96,7 +96,7 @@ export function paintOffice(ctx: CanvasRenderingContext2D, office: Office, st: P
   warRoomBottom(ctx, office, st);
   loungeRug(ctx, office);
   lobbyWall(ctx, office, st);
-  for (const zone of office.zones) rug(ctx, zone, TIERS[hash(zone.room.repo_id) % TIERS.length]);
+  for (const zone of office.zones) rug(ctx, zone, TIERS[hash(zone.room.repo_id) % TIERS.length], st.scale);
 
   // Everything that stands on the floor, back to front.
   const drawables: Array<{ y: number; draw: () => void }> = [];
@@ -357,9 +357,8 @@ function lobbyWall(ctx: CanvasRenderingContext2D, office: Office, st: PaintState
 }
 
 /** Each repo is a bank of armored command decks, shaped by its occupied console rows. */
-function rug(ctx: CanvasRenderingContext2D, zone: Zone, accent: string) {
+function rug(ctx: CanvasRenderingContext2D, zone: Zone, accent: string, scale: number) {
   const r: Rect = zone.rect;
-  const tokens = zone.room.sessions.reduce((n, s) => n + s.usage.total_tokens, 0);
   const rows = new Map<number, Desk[]>();
   for (const desk of zone.desks) {
     const row = rows.get(desk.cell.y) ?? [];
@@ -406,12 +405,22 @@ function rug(ctx: CanvasRenderingContext2D, zone: Zone, accent: string) {
   if (!rows.size) armor(ctx, r.x * TILE + 3, r.y * TILE + 5, r.w * TILE - 6, r.h * TILE - 9, 7, "#1a2a3e");
   const x = r.x * TILE + 5;
   const y = r.y * TILE - 5;
-  const label = fit(`${zone.room.repo_name.toUpperCase()} ${zone.desks.length + zone.folded.length}${tokens > 0 ? ` · ${tokenCount(tokens).toUpperCase()}` : ""}`, r.w * TILE - 23);
-  const width = textWidth(label) + 16;
-  armor(ctx, x, y, width, 11, 3, "#3a4b61");
+  // The sign: the repo's name in full where it fits (finer letters on big scales), and how many
+  // sessions it has; red while one of them needs you. Usage is drawn on the consoles, not written.
+  const px = nameDot(scale);
+  const urgent = zone.desks.some((d) => d.session.attention === "needs_you" && !d.session.muted && !d.session.archived);
+  const color = urgent ? COLOR.needs_you : accent;
+  const count = ` ${zone.desks.length + zone.folded.length}`;
+  // It may use the aisle up to the next deck (a tile), never reach that deck's own sign.
+  const room = (r.w + 1) * TILE - 30;
+  const name = fit(zone.room.repo_name.toUpperCase(), room - textWidth(count, px), px);
+  const width = Math.round(textWidth(name + count, px)) + 16;
+  armor(ctx, x, y, width, 11, 3, urgent ? COLOR.needs_you : "#3a4b61");
   armor(ctx, x + 1, y + 1, width - 2, 9, 2, "#080f1d");
-  rect(ctx, x + 3, y + 3, 2, 5, accent);
-  drawText(ctx, label, x + 9, y + 3, accent);
+  rect(ctx, x + 3, y + 3, 2, 5, color);
+  const ty = y + 3 + (5 - 5 * px) / 2;
+  drawText(ctx, name, x + 9, ty, color, px);
+  drawText(ctx, count, x + 9 + textWidth(name, px), ty, UI.cyanDim, px);
 }
 
 function loungeRug(ctx: CanvasRenderingContext2D, office: Office) {

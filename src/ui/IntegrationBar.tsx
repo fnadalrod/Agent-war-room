@@ -64,7 +64,7 @@ export function AgentsMenu({ integrations, busy, store, autostart }: Props) {
             <span key={i.provider} className="agent-dot" data-provider={i.provider} data-health={health(i)} />
           ))}
         </span>
-        {copy.topbar.agents}
+        <span className="agents-label">{copy.topbar.agents}</span>
       </button>
       {open && (
         <div className="popover agents-popover" role="dialog" aria-label={copy.topbar.agentsTitle}>

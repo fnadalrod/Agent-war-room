@@ -57,7 +57,7 @@ console and the lobby next door. Classic and pixel views show the same state; th
 - **`paint.ts`**: dark panel floor with a faint grid; the screen wall is one wide board listing what
   waits for you in order (`boardEntries`: ! needs you pulsing, ? stuck, OK finished; repo · title, "+N"
   when it overflows, ALL QUIET when empty) — no counters or clocks, the header already has them), chamfered decks following the occupied console rows (short final rows make a stepped
-  outline), with recessed floor sockets, entry ramps, sector lighting and a sign ("REPO n · tokens"), then everything standing sorted by its feet `y` (console →
+  outline), with recessed floor sockets, entry ramps, sector lighting and a sign ("REPO n": the full name in the finer `nameDot` letters, using the aisle up to the next deck; red while a session there needs you), then everything standing sorted by its feet `y` (console →
   operator → chair back, sofa back → agent → sofa front), then bubbles ("!", "?", OK, ZZ, "..." when
   chatting) and selection corners. **Usage is drawn, not written**: context fill on each monitor's
   bottom bezel (amber, then blinking red before compaction), tokens as cyan bars and cost as amber

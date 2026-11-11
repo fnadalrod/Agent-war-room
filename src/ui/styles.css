@@ -265,6 +265,15 @@ button.linkish:hover:not(:disabled) {
   margin-left: auto;
 }
 
+/* With the preview open the header keeps to two lines: tighter, and the agents' dots speak alone. */
+.app[data-detail="true"] .topbar-tools {
+  gap: 6px;
+}
+
+.app[data-detail="true"] .agents-label {
+  display: none;
+}
+
 /* Lives in the sticky top bar: always visible, never over the rooms. */
 .drinking-bird {
   --bird-active: var(--working);
