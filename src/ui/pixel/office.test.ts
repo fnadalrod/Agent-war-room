@@ -167,6 +167,18 @@ describe("layoutOffice", () => {
     expect(doorwayAtPoint(office, "war", { x: doorway.x + 3 * TILE, y: doorway.y })).toBe(false);
   });
 
+  it("centres the decks in a tall war room instead of leaving its lower half empty", () => {
+    const view = aView([aRoom("a", sessions("a", 2))]);
+    const short = layoutOffice(view, 480, false);
+    const tall = layoutOffice(view, 480, false, 40 * TILE);
+    const [zs, zt] = [short.zones[0].rect, tall.zones[0].rect];
+    const above = zt.y - WAR_WALL_ROWS;
+    const below = tall.bands.war.h - 1 - (zt.y + zt.h);
+    expect(zt.y).toBeGreaterThan(zs.y);
+    expect(Math.abs(above - below)).toBeLessThanOrEqual(2);
+    for (const d of tall.zones[0].desks) expect(findPath(tall, tall.door, d.seat).length).toBeGreaterThan(0);
+  });
+
   it("picks a comfortable scale", () => {
     expect([pixelScale(600), pixelScale(1200), pixelScale(2000)]).toEqual([2, 3, 4]);
   });

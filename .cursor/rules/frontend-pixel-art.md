@@ -32,7 +32,8 @@ console and the lobby next door. Classic and pixel views show the same state; th
   (`nameDot`: two CSS pixels, so half the art's size at scale 4) to fit twice the letters.
 - **`office.ts` is pure and tested**: 16 px tiles, a taller `WAR_WALL_ROWS` command wall and `WALL_ROWS` lobby wall, zones packed
   in shelves and centered, in a stable order (repos by name, desks by session start: never the core's urgency
-  order, or agents would swap consoles whenever one needs you), each desk cell is three tiles wide, with extra aisle rows for larger teams. Repositories
+  order, or agents would swap consoles whenever one needs you), and centred vertically when the window
+  leaves spare floor, each desk cell is three tiles wide, with extra aisle rows for larger teams. Repositories
   without any live, unarchived session have no module (history remains in the classic view). A repo with more than
   `FOLD_AFTER` sessions keeps consoles only for live ones; closed ones go into a cabinet ("+N",
   click → classic view filtered to that repo). The lobby has repeated seating nooks on either side of a central aisle: sofas,

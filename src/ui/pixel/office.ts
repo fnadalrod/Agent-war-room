@@ -140,6 +140,9 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
   const minRows = Math.floor(minHeight / TILE);
   // The war room ends in a wall row; the lobby starts under it with its own wall.
   const war = { y: 0, h: Math.max(contentRows + 1, minRows) };
+  // A tall window leaves floor to spare: the decks sit in the middle of it, not crammed under the wall.
+  const spare = war.h - (contentRows + 1);
+  if (spare >= 2) for (const zone of zones) moveZone(zone, 0, Math.floor(spare / 2));
   // A free row under the lobby's wall, so the doorway always opens onto floor.
   const lobby = { y: war.h, h: Math.max(WALL_ROWS + 1 + loungeRows, minRows) };
   const rows = war.h + lobby.h;
@@ -232,6 +235,7 @@ function deskAt(session: SessionView, cx: number, cy: number, cellH: number): De
 }
 
 function moveZone(zone: Zone, dc: number, dr: number) {
+  if (dc === 0 && dr === 0) return;
   const px = (p: Point) => ({ x: p.x + dc, y: p.y + dr });
   const rx = (r: Rect, unit: number) => ({ ...r, x: r.x + dc * unit, y: r.y + dr * unit });
   zone.rect = rx(zone.rect, 1);
