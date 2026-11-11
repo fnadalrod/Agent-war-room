@@ -84,10 +84,6 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
   const cols = Math.max(CELL_W + 2, Math.floor(width / TILE));
   const maxCells = Math.max(1, Math.floor((cols - 2 - 1) / CELL_W));
   const zones: Zone[] = [];
-  const shelves: Zone[][] = [[]];
-  let x = 1;
-  let y = WAR_WALL_ROWS + 1;
-  let shelfH = 0;
 
   let idle = 0;
   // The core sorts by urgency, which changes all the time; a seat must not, or agents would get up
@@ -103,19 +99,13 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
       .reduce((n, s) => n + Number(s.attention === "idle") + s.subagents.filter((a) => !a.running).length, 0);
     // Fixed cell height (subagents stand at fixed spots, they never stretch a deck) and consoles in
     // pairs: a new session sits at the free one instead of widening the deck and pushing the others.
-    const cellH = CELL_H;
     const consoles = Math.max(2, Math.ceil(sessions.length / 2) * 2);
     const perRow = Math.max(1, Math.min(consoles, maxCells));
     const rowsOfCells = Math.ceil(consoles / perRow);
     const w = Math.max(perRow * CELL_W + 1, 5);
-    const h = ZONE_LABEL_ROWS + Math.max(1, rowsOfCells * cellH);
-    if (x > 1 && x + w > cols - 1) {
-      x = 1;
-      y += shelfH + 1;
-      shelfH = 0;
-      shelves.push([]);
-    }
-    const cellAt = (i: number) => ({ cx: x + 1 + (i % perRow) * CELL_W, cy: y + ZONE_LABEL_ROWS + Math.floor(i / perRow) * cellH });
+    const h = ZONE_LABEL_ROWS + Math.max(1, rowsOfCells * CELL_H);
+    // Built at the origin; `arrange` moves it to its place on the floor.
+    const cellAt = (i: number) => ({ cx: 1 + (i % perRow) * CELL_W, cy: ZONE_LABEL_ROWS + Math.floor(i / perRow) * CELL_H });
     const desks = sessions.map((session, i) => {
       const { cx, cy } = cellAt(i);
       return deskAt(session, cx, cy);
@@ -124,34 +114,38 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
       const { cx, cy } = cellAt(sessions.length + k);
       return { x: cx * TILE, y: cy * TILE - 6, w: CELL_W * TILE, h: CELL_H * TILE + 6 };
     });
-    const zone = { room, rect: { x, y, w, h }, desks, spares, folded, cabinet: folded.length ? { x: x + w - 2, y } : null };
-    zones.push(zone);
-    shelves[shelves.length - 1].push(zone);
-    x += w + 1;
-    shelfH = Math.max(shelfH, h);
+    zones.push({ room, rect: { x: 0, y: 0, w, h }, desks, spares, folded, cabinet: folded.length ? { x: w - 2, y: 0 } : null });
   }
 
-  // Center each shelf (whole tiles) so the floor looks composed.
-  for (const shelf of shelves) {
-    if (shelf.length === 0) continue;
-    const last = shelf[shelf.length - 1];
-    const shift = Math.floor((cols - 1 - (last.rect.x + last.rect.w)) / 2);
-    for (const zone of shelf) moveZone(zone, shift, 0);
-  }
-
-  const contentRows = (zones.length ? y + shelfH : WAR_WALL_ROWS + 1 + CELL_H) + 1;
+  const minRows = Math.floor(minHeight / TILE);
+  // Floor between the screen wall (plus a row) and the bottom wall (plus a free row by the doorway).
+  const top = WAR_WALL_ROWS + 1;
+  const floorRows = Math.max(0, minRows - top - 2);
+  const shelves = arrange(zones, cols - 2, floorRows);
+  const contentRows = (zones.length ? top + shelves.reduce((n, sh) => n + sh.h, 0) + shelves.length - 1 : top + CELL_H) + 1;
   // The lounge grows a mingling row at a time until every idle agent has a place.
   const sideBySide = cols >= 18;
   const roomWidth = sideBySide ? Math.floor((cols - 3) / 2) : cols - 2;
   const perMingleRow = Math.max(2, Math.floor((roomWidth - 2) / 3) * 2);
   const mingleRows = Math.max(1, Math.ceil(idle / Math.max(1, perMingleRow)));
   const loungeRows = (LOUNGE_ROWS + mingleRows + 2) * (sideBySide ? 1 : 2) + 1;
-  const minRows = Math.floor(minHeight / TILE);
   // The war room ends in a wall row; the lobby starts under it with its own wall.
   const war = { y: 0, h: Math.max(contentRows + 1, minRows) };
-  // A tall window leaves floor to spare: the decks sit in the middle of it, not crammed under the wall.
-  const spare = war.h - (contentRows + 1);
-  if (spare >= 2) for (const zone of zones) moveZone(zone, 0, Math.floor(spare / 2));
+  // Spread the shelves over the floor: the spare rows go evenly above, between and below them.
+  const spareRows = war.h - (contentRows + 1);
+  const rowGap = Math.floor(Math.max(0, spareRows) / (shelves.length + 1));
+  let shelfY = top + rowGap;
+  for (const shelf of shelves) {
+    const used = shelf.zones.reduce((n, z) => n + z.rect.w, 0);
+    const colGap = Math.floor((cols - 2 - used) / (shelf.zones.length + 1));
+    let shelfX = 1 + colGap;
+    for (const zone of shelf.zones) {
+      // Each deck sits at the top of its shelf; columns spread evenly across the width.
+      moveZone(zone, shelfX, shelfY);
+      shelfX += zone.rect.w + colGap;
+    }
+    shelfY += shelf.h + 1 + rowGap;
+  }
   // A free row under the lobby's wall, so the doorway always opens onto floor.
   const lobby = { y: war.h, h: Math.max(WALL_ROWS + 1 + loungeRows, minRows) };
   const rows = war.h + lobby.h;
@@ -227,6 +221,46 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
 const byRepo = (a: RoomView, b: RoomView) => a.repo_name.localeCompare(b.repo_name) || a.repo_id.localeCompare(b.repo_id);
 /** Oldest first, so a new session takes the next free console instead of pushing others along. */
 const bySeat = (a: SessionView, b: SessionView) => a.started_at - b.started_at || a.id.localeCompare(b.id);
+
+/**
+ * Groups the decks (in their stable order) into evenly filled shelves, as many as make each deck's
+ * share of the floor about the shape of a deck: a wide, short floor gets one long row, a squarer one
+ * several rows, so the decks spread over the room instead of lining up in one strip.
+ */
+function arrange(zones: Zone[], width: number, rows: number): { zones: Zone[]; h: number }[] {
+  const shelvesFor = (limit: number) => {
+    const out: { zones: Zone[]; h: number; w: number }[] = [];
+    for (const zone of zones) {
+      const last = out[out.length - 1];
+      if (last && last.w + 1 + zone.rect.w <= limit) {
+        last.zones.push(zone);
+        last.w += 1 + zone.rect.w;
+        last.h = Math.max(last.h, zone.rect.h);
+      } else out.push({ zones: [zone], h: zone.rect.h, w: zone.rect.w });
+    }
+    return out;
+  };
+  const widest = Math.max(0, ...zones.map((z) => z.rect.w));
+  let best = shelvesFor(width);
+  if (rows <= 0 || zones.length < 2) return best;
+  // Each deck should get a share of the floor about twice as wide as the deck's own shape: aisles
+  // between decks read better than tall empty bands above and below them.
+  const deckRatio = (2 * zones.reduce((n, z) => n + z.rect.w + 1, 0)) / zones.reduce((n, z) => n + z.rect.h + 1, 0);
+  let bestScore = Infinity;
+  for (let k = 1; k <= zones.length; k++) {
+    // The most even split into k shelves (in order): the narrowest limit that needs no more than k.
+    let limit = widest;
+    while (limit < width && shelvesFor(limit).length > k) limit++;
+    const shelves = shelvesFor(limit);
+    if (shelves.length !== k) continue;
+    if (shelves.reduce((n, sh) => n + sh.h, 0) + (k - 1) > rows) break;
+    const perShelf = Math.max(...shelves.map((sh) => sh.zones.length));
+    const share = width / perShelf / (rows / k);
+    const score = Math.abs(Math.log(share / deckRatio));
+    if (score < bestScore - 1e-9) [best, bestScore] = [shelves, score];
+  }
+  return best;
+}
 
 function deskAt(session: SessionView, cx: number, cy: number): Desk {
   const seat = { x: cx + 1, y: cy + 1 };

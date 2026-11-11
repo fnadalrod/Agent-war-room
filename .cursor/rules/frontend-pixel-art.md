@@ -30,10 +30,11 @@ console and the lobby next door. Classic and pixel views show the same state; th
   scale, scale 2–4: at most `pixelScale` for the width, lower if the height needs it); the canvas has one pixel per CSS pixel and `setTransform(scale)`
   blows the art up. Integer rects only; no smoothing. Names under the chairs use a finer font pixel
   (`nameDot`: two CSS pixels, so half the art's size at scale 4) to fit twice the letters.
-- **`office.ts` is pure and tested**: 16 px tiles, a taller `WAR_WALL_ROWS` command wall and `WALL_ROWS` lobby wall, zones packed
-  in shelves and centered, in a stable order (repos by name, desks by session start: never the core's urgency
-  order, or agents would swap consoles whenever one needs you), and centred vertically when the window
-  leaves spare floor, each desk cell is three tiles wide and three tall (always: subagents never stretch a deck), and a deck
+- **`office.ts` is pure and tested**: 16 px tiles, a taller `WAR_WALL_ROWS` command wall and `WALL_ROWS` lobby wall, zones in a stable
+  order (repos by name, desks by session start: never the core's urgency order, or agents would swap
+  consoles whenever one needs you) spread over the floor: `arrange` picks how many evenly filled shelves
+  give each deck a share of the floor about twice as wide as the deck (one long row on a wide, short
+  floor; several on a squarer one), and the spare rows and columns go evenly between them. Each desk cell is three tiles wide and three tall (always: subagents never stretch a deck), and a deck
   has consoles in pairs (`spares`: a powered-off console with its chair) so a new session sits at a free
   one instead of reshaping the floor. Repositories
   without any live, unarchived session have no module (history remains in the classic view). A repo with more than

@@ -167,6 +167,19 @@ describe("layoutOffice", () => {
     expect(doorwayAtPoint(office, "war", { x: doorway.x + 3 * TILE, y: doorway.y })).toBe(false);
   });
 
+  it("spreads the decks over the floor in balanced rows, not in one strip", () => {
+    const view = aView(["a", "b", "c", "d", "e"].map((n) => aRoom(n, sessions(n, 2))));
+    const tall = layoutOffice(view, 1400, false, 26 * TILE);
+    const rowsOf = (o: typeof tall) => [...new Set(o.zones.map((z) => z.rect.y))];
+    expect(rowsOf(tall).length).toBeGreaterThan(1);
+    const perRow = rowsOf(tall).map((y) => tall.zones.filter((z) => z.rect.y === y).length);
+    expect(Math.max(...perRow) - Math.min(...perRow), "balanced rows").toBeLessThanOrEqual(1);
+    // A wide, short floor keeps them in one row.
+    expect(rowsOf(layoutOffice(view, 1400, false, 14 * TILE))).toHaveLength(1);
+    for (const d of tall.zones.flatMap((z) => z.desks)) expect(findPath(tall, tall.door, d.seat).length).toBeGreaterThan(0);
+    expect(findPath(tall, tall.door, tall.lobbyDoor).length).toBeGreaterThan(0);
+  });
+
   it("centres the decks in a tall war room instead of leaving its lower half empty", () => {
     const view = aView([aRoom("a", sessions("a", 2))]);
     const short = layoutOffice(view, 480, false);
