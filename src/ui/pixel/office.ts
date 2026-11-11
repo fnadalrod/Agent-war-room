@@ -12,8 +12,8 @@ const CELL_W = 3;
 const CELL_H = 3;
 /** Label row on top of each zone. */
 const ZONE_LABEL_ROWS = 1;
-/** Two rows of seating nooks, circulation and a margin. */
-const LOUNGE_ROWS = 12;
+/** One row of seating nooks, circulation and a margin; a taller lobby fits more rows of nooks. */
+const LOUNGE_ROWS = 7;
 /** From this many sessions in a repo, the closed ones go into a cabinet instead of keeping a desk. */
 export const FOLD_AFTER = 4;
 
@@ -75,7 +75,7 @@ export type Office = {
 
 /**
  * Lays out the office for `width` logical pixels: the war room (repo zones packed in shelves under
- * the wall, keeping the core's order, most urgent first) and, through a door in its bottom wall, the
+ * the wall, in a stable order: repos by name, desks by when their session started) and, through a door in its bottom wall, the
  * lobby with the crew lounge. Each fills at least `minHeight`.
  */
 export function layoutOffice(view: WarRoomView, width: number, showArchived: boolean, minHeight = 0): Office {
@@ -88,8 +88,10 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
   let shelfH = 0;
 
   let idle = 0;
-  for (const room of view.rooms) {
-    const visible = room.sessions.filter((s) => showArchived || !s.archived);
+  // The core sorts by urgency, which changes all the time; a seat must not, or agents would get up
+  // and swap consoles whenever one of them needs you.
+  for (const room of [...view.rooms].sort(byRepo)) {
+    const visible = room.sessions.filter((s) => showArchived || !s.archived).sort(bySeat);
     if (!visible.some((s) => !s.archived && s.attention !== "offline")) continue;
     // A busy repo keeps desks for what is alive; the closed ones go into a cabinet.
     const crowded = visible.length > FOLD_AFTER;
@@ -209,6 +211,10 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
     lounges,
   };
 }
+
+const byRepo = (a: RoomView, b: RoomView) => a.repo_name.localeCompare(b.repo_name) || a.repo_id.localeCompare(b.repo_id);
+/** Oldest first, so a new session takes the next free console instead of pushing others along. */
+const bySeat = (a: SessionView, b: SessionView) => a.started_at - b.started_at || a.id.localeCompare(b.id);
 
 function deskAt(session: SessionView, cx: number, cy: number, cellH: number): Desk {
   const seat = { x: cx + 1, y: cy + 1 };
@@ -349,6 +355,19 @@ export function pixelScale(cssWidth: number): number {
   if (cssWidth >= 1700) return 4;
   if (cssWidth >= 820) return 3;
   return 2;
+}
+
+/**
+ * The largest scale (up to `pixelScale` for the width) whose layout fills `cssWidth` × `cssHeight`
+ * with both rooms fitting in that height, so a short window draws smaller art instead of shrinking a
+ * wide room into a square. If not even the smallest fits, its layout is used and the view shrinks.
+ */
+export function fitOffice(view: WarRoomView, cssWidth: number, cssHeight: number, showArchived: boolean) {
+  for (let scale = pixelScale(cssWidth); ; scale--) {
+    const office = layoutOffice(view, Math.floor(cssWidth / scale), showArchived, cssHeight / scale);
+    const tallest = Math.max(office.bands.war.h, office.bands.lobby.h) * TILE * scale;
+    if (scale === 2 || tallest <= cssHeight) return { scale, office };
+  }
 }
 
 /** Fit the complete canvas in the available space, including its one-pixel border on each side. */

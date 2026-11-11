@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { aRoom, aSession, aSubagent, aView } from "../../test/fixtures";
-import { cabinetAtPoint, deskAtPoint, doorwayAtPoint, FOLD_AFTER, feetOf, findPath, fitViewport, layoutOffice, pixelScale, TILE, WALL_ROWS, WAR_WALL_ROWS } from "./office";
+import type { SessionView } from "../../domain/attention";
+import { cabinetAtPoint, deskAtPoint, doorwayAtPoint, FOLD_AFTER, feetOf, findPath, fitOffice, fitViewport, layoutOffice, pixelScale, TILE, WALL_ROWS, WAR_WALL_ROWS } from "./office";
 import { type Actor, goals, step, subagentKey } from "./sim";
 import { lobbyCount } from "./paint";
 
@@ -31,6 +32,20 @@ describe("layoutOffice", () => {
       }
     }
     expect(office.zones[1].rect.x).toBeGreaterThan(office.zones[0].rect.x + office.zones[0].rect.w);
+  });
+
+  it("seats agents in a stable order, not by urgency, so nobody changes console", () => {
+    const at = (id: string, started_at: number, attention: SessionView["attention"]) => aSession({ id, started_at, attention });
+    const calm = aView([aRoom("zeta", [at("z1", 1, "idle")]), aRoom("alpha", [at("b", 2, "idle"), at("a", 1, "working")])]);
+    const urgent = aView([
+      aRoom("alpha", [at("b", 2, "needs_you"), at("a", 1, "working")], "needs_you"),
+      aRoom("zeta", [at("z1", 1, "idle")]),
+    ]);
+    const seats = (v: typeof calm) =>
+      layoutOffice(v, 480, false).zones.flatMap((z) => z.desks.map((d) => [d.session.id, d.seat.x, d.seat.y].join(":")));
+    expect(seats(calm)).toEqual(seats(urgent));
+    expect(layoutOffice(calm, 480, false).zones.map((z) => z.room.repo_name)).toEqual(["alpha", "zeta"]);
+    expect(layoutOffice(calm, 480, false).zones[0].desks.map((d) => d.session.id)).toEqual(["a", "b"]);
   });
 
   it("keeps the tall command wall out of the navigation grid without enlarging the lobby wall", () => {
@@ -104,7 +119,7 @@ describe("layoutOffice", () => {
   });
 
   it.each([160, 304, 480, 624])("keeps furnished lounge routes and seats usable at width %i", (width) => {
-    const office = layoutOffice(aView([aRoom("resting", sessions("i", 30, "idle"))]), width, false, 320);
+    const office = layoutOffice(aView([aRoom("resting", sessions("i", 30, "idle"))]), width, false, 480);
     const occupied = new Set<string>();
     for (const prop of office.props) {
       const size = prop.kind === "sofa" ? 2 : 1;
@@ -155,6 +170,16 @@ describe("layoutOffice", () => {
   it("picks a comfortable scale", () => {
     expect([pixelScale(600), pixelScale(1200), pixelScale(2000)]).toEqual([2, 3, 4]);
   });
+
+  it("fills a wide, short window with a wide room instead of a shrunk square", () => {
+    const view = aView([aRoom("a", sessions("a", 4)), aRoom("b", sessions("b", 2)), aRoom("c", sessions("c", 2))]);
+    const { office, scale } = fitOffice(view, 1920, 700, false);
+    expect(scale).toBeLessThan(pixelScale(1920));
+    expect(office.width * scale).toBeGreaterThan(1920 - TILE * scale);
+    for (const band of Object.values(office.bands)) expect(band.h * TILE * scale).toBeLessThanOrEqual(700);
+    // A tall window keeps the largest scale for its width.
+    expect(fitOffice(view, 1920, 1400, false).scale).toBe(pixelScale(1920));
+  });
 });
 
 describe("sim", () => {
@@ -181,7 +206,7 @@ describe("sim", () => {
     for (let t = 0; t < 200; t++) step(actors, office, g, 100, true);
     expect(w.pose).toBe("desk");
     expect(w.dir).toBe("up");
-    const seat = feetOf(office.zones[0].desks[0].seat);
+    const seat = feetOf(office.zones[0].desks.find((d) => d.session.id === "w")!.seat);
     expect([w.x, w.y]).toEqual([seat.x, seat.y]);
   });
 

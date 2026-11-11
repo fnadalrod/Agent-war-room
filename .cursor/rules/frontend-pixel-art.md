@@ -15,19 +15,22 @@ console and the lobby next door. Classic and pixel views show the same state; th
   slate team room from a premium wood/brass principals club. Their goals and conversation pairs
   stay in their own room. On narrow layouts the rooms stack; both have reachable doorways.
 
-- **Width.** The layout follows the room's width with no side panel open (`roomWidth`: window minus
-  the page margins), so opening the preview never reflows the room or re-seats anyone: the canvas
-  just shrinks keeping its aspect ratio (smoothed while shrunk, `data-shrunk`). Only a window resize
-  relays it out. The pixel view occupies the viewport height; a `ResizeObserver` measures the
-  remaining canvas area below the header, banners, filters and room tabs. `fitViewport` contains
-  the whole room in both axes (including the border), centring it without document scrolling.
-  Opening the terminal also reserves its height. Hit tests use the fitted canvas content bounds.
+- **Size.** The layout follows the room's size with no side panel or terminal open (`roomWidth`:
+  window minus the page margins; `roomHeight`: from the canvas area's top to the window's bottom),
+  so opening the preview or the terminal never reflows the room or re-seats anyone: the canvas just
+  shrinks keeping its aspect ratio (smoothed while shrunk, `data-shrunk`). A window resize or the
+  filters/banners changing height relays it out. `fitOffice` picks the largest scale whose layout
+  fits both rooms in that height, so a wide, short window gets a wide room with smaller art instead
+  of a shrunk square; only when even scale 2 is too tall does the view shrink. `fitViewport`
+  contains the whole room in both axes (including the border), centring it without document
+  scrolling. Hit tests use the fitted canvas content bounds.
 - **Logical pixels.** The art is drawn in low-resolution logical pixels (office width = that width /
-  scale, scale 2–4 from `pixelScale`); the canvas has one pixel per CSS pixel and `setTransform(scale)`
+  scale, scale 2–4: at most `pixelScale` for the width, lower if the height needs it); the canvas has one pixel per CSS pixel and `setTransform(scale)`
   blows the art up. Integer rects only; no smoothing. Names under the chairs use a finer font pixel
   (`nameDot`: two CSS pixels, so half the art's size at scale 4) to fit twice the letters.
 - **`office.ts` is pure and tested**: 16 px tiles, a taller `WAR_WALL_ROWS` command wall and `WALL_ROWS` lobby wall, zones packed
-  in shelves and centered, each desk cell is three tiles wide, with extra aisle rows for larger teams. Repositories
+  in shelves and centered, in a stable order (repos by name, desks by session start: never the core's urgency
+  order, or agents would swap consoles whenever one needs you), each desk cell is three tiles wide, with extra aisle rows for larger teams. Repositories
   without any live, unarchived session have no module (history remains in the classic view). A repo with more than
   `FOLD_AFTER` sessions keeps consoles only for live ones; closed ones go into a cabinet ("+N",
   click → classic view filtered to that repo). The lobby has repeated seating nooks on either side of a central aisle: sofas,

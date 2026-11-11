@@ -14,9 +14,8 @@ import {
   cabinetAtPoint,
   deskAtPoint,
   doorwayAtPoint,
+  fitOffice,
   fitViewport,
-  layoutOffice,
-  pixelScale,
 } from "./office";
 import { lobbyCount, paintOffice, subagentOf } from "./paint";
 import { type Actor, goals, step } from "./sim";
@@ -70,9 +69,10 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
   const box = useRef<HTMLDivElement>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
-  // The layout follows the room's width with no side panel open; the panel only scales the view
-  // down (see `roomWidth`), so opening it neither reflows the room nor moves anyone.
+  // The layout follows the room's size with no side panel or terminal open; they only scale the
+  // view down (see `roomWidth`, `roomHeight`), so opening them neither reflows the room nor moves anyone.
   const [cssWidth, setCssWidth] = useState(1200);
+  const [cssHeight, setCssHeight] = useState(() => window.innerHeight - 176);
   const [available, setAvailable] = useState({ width: 0, height: 0 });
   const [hoveredAt, setHovered] = useState<SceneHit | null>(null);
   const hovered = hoveredAt?.kind === "session" ? hoveredAt.hit : null;
@@ -82,18 +82,10 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
   const [menu, setMenu] = useState<{ x: number; y: number; hit: Hit } | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
 
-  const scale = pixelScale(cssWidth);
-  const [viewportH, setViewportH] = useState(() => window.innerHeight);
-  useEffect(() => {
-    const onResize = () => setViewportH(window.innerHeight);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-  // Fill the window below the header and the room tabs, not just the height of the zones.
-  const minHeight = Math.max(0, (viewportH - 176) / scale);
-  const office = useMemo(
-    () => layoutOffice(view, Math.floor(cssWidth / scale), showArchived, minHeight),
-    [view, cssWidth, scale, showArchived, minHeight],
+  // Fill the window below the header, filters and room tabs: a wide window gets a wide room.
+  const { office, scale } = useMemo(
+    () => fitOffice(view, cssWidth, cssHeight, showArchived),
+    [view, cssWidth, cssHeight, showArchived],
   );
   const alerts = useMemo(
     () =>
@@ -131,6 +123,7 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
     const measure = () => {
       setAvailable({ width: area.clientWidth, height: area.clientHeight });
       setCssWidth(Math.max(320, roomWidth(el)));
+      setCssHeight(Math.max(160, roomHeight(area)));
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -284,6 +277,14 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
       </div>
     </div>
   );
+}
+
+/** Bottom padding of `.content` in the pixel view with no terminal open (styles.css), plus the canvas border. */
+const ROOM_BOTTOM = 18 + 2;
+
+/** The viewport's height with no terminal taking room: from its top to the window's bottom. */
+function roomHeight(area: HTMLElement): number {
+  return document.documentElement.clientHeight - area.getBoundingClientRect().top - ROOM_BOTTOM;
 }
 
 /**
