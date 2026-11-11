@@ -5,6 +5,7 @@
 // Builds nothing: run `npm run build` first if the source changed (npm run shot does it for you).
 // Writes classic.png (full page), detail.png, reader.png, changes.png, diff.png, subagent.png, filtered.png,
 // agents.png, settings.png, shortcuts.png, question.png, pixel.png, pixel-later.png, pixel-menu.png, pixel-menu-asking.png,
+// pixel-menu-squad.png,
 // lobby.png, closed.png, auto-approve.png and launch.png to <out-dir>.
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
@@ -106,6 +107,10 @@ try {
   // And on a desk whose agent asks something: answer, approve or deny from the menu.
   await page.mouse.click(box.x + box.width * 0.167, box.y + box.height * 0.75, { button: "right" });
   await shot("pixel-menu-asking");
+  await page.keyboard.press("Escape");
+  // On a desk with a squad of subagents: every one of them, each opening its own preview.
+  await page.mouse.click(box.x + box.width * 0.545, box.y + box.height * 0.43, { button: "right" });
+  await shot("pixel-menu-squad");
   await page.keyboard.press("Escape");
   // Through the door: the lobby, where idle agents rest.
   await page.locator(".pixel-rooms button").nth(1).click();

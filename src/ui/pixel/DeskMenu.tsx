@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { WarRoomStore } from "../../application/warRoomStore";
-import { agentName, deskName, isWritable, whereItLives } from "../../domain/attention";
+import { agentName, deskName, isWritable, whereItLives, type SessionView } from "../../domain/attention";
 import { copy } from "../../domain/copy";
 import { ArchiveIcon, BellIcon, BellOffIcon, CheckIcon, EyeIcon, GoIcon, PlayIcon, ReadIcon, RestoreIcon } from "../icons";
 import { QuickInput } from "../QuickInput";
@@ -72,6 +72,7 @@ export function DeskMenu({ at, hit, store, onClose }: Props) {
           <button role="menuitem" onClick={act(() => store.openDetail(s.id))}>
             <EyeIcon size={14} /> {copy.actions.openPreview}
           </button>
+          <Squad session={s} store={store} act={act} />
           {s.alive && s.pty_id && (
             <button role="menuitem" onClick={act(() => store.openTerminal(s.pty_id!, title))}>
               <GoIcon size={14} /> {copy.actions.openTerminal}
@@ -105,6 +106,31 @@ export function DeskMenu({ at, hit, store, onClose }: Props) {
             {s.archived ? <RestoreIcon size={14} /> : <ArchiveIcon size={14} />} {s.archived ? copy.actions.unarchive : copy.actions.archive}
           </button>
         </>
+      )}
+    </div>
+  );
+}
+
+const SQUAD_ROWS = 5;
+
+/** Every running subagent of a desk, by when it started, each opening its own preview. */
+function Squad({ session, store, act }: { session: SessionView; store: WarRoomStore; act: (run: () => void) => () => void }) {
+  const running = session.subagents.filter((a) => a.running).sort((a, b) => a.started_at - b.started_at);
+  if (running.length === 0) return null;
+  const rest = running.length - SQUAD_ROWS;
+  return (
+    <div className="desk-menu-squad" role="group" aria-label={copy.pixel.squad(running.length)}>
+      <p>{copy.pixel.squad(running.length)}</p>
+      {running.slice(0, rest > 0 ? SQUAD_ROWS - 1 : SQUAD_ROWS).map((a) => (
+        <button key={a.id} role="menuitem" onClick={act(() => store.openSubagent(session.id, a.id))} title={agentName(a)}>
+          <span className="squad-name">{agentName(a)}</span>
+          {a.last_tool && <span className="muted">{a.last_tool}</span>}
+        </button>
+      ))}
+      {rest > 0 && (
+        <button role="menuitem" className="muted" onClick={act(() => store.openDetail(session.id))}>
+          {copy.pixel.squadMore(rest + 1)}
+        </button>
       )}
     </div>
   );

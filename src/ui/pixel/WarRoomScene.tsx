@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WarRoomStore } from "../../application/warRoomStore";
-import { agentName, closedSessions, providerName, roomHome, usageLabel, type WarRoomView } from "../../domain/attention";
+import { agentName, closedSessions, providerName, roomHome, usageLabel, type SessionView, type WarRoomView } from "../../domain/attention";
 import { copy } from "../../domain/copy";
 import { usePreference } from "../useStore";
 import { ClosedShelf } from "./ClosedShelf";
@@ -274,6 +274,7 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
                   {" · "}
                   {providerName(hovered.session.provider)}
                   {hovered.session.usage.total_tokens > 0 && ` · ${usageLabel(hovered.session.usage)}`}
+                  {squad(hovered.session) > 0 && ` · ${copy.pixel.squadTip(squad(hovered.session))}`}
                 </span>
               </>
             )}
@@ -284,6 +285,8 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
     </div>
   );
 }
+
+const squad = (s: SessionView) => s.subagents.filter((a) => a.running).length;
 
 /** Bottom padding of `.content` in the pixel view with no terminal open (styles.css), plus the canvas border. */
 const ROOM_BOTTOM = 18 + 2;

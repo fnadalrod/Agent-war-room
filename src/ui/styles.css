@@ -1868,6 +1868,41 @@ button.icon.help {
   min-width: 300px;
 }
 
+.desk-menu-squad {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 0 4px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin: 4px 0;
+}
+
+.desk-menu-squad p {
+  margin: 0;
+  padding: 4px 10px 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.desk-menu-squad button {
+  gap: 8px;
+  max-width: 320px;
+  font-size: 12px;
+}
+
+.desk-menu-squad .squad-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.desk-menu-squad .muted {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+}
+
 .desk-menu button:hover:not(:disabled),
 .desk-menu button:focus-visible {
   background: var(--surface-3);

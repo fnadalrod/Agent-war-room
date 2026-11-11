@@ -47,7 +47,10 @@ console and the lobby next door. Classic and pixel views show the same state; th
   transit; sofa tiles remain reachable as goals. Chatting pairs occupy separate rows at the bottom,
   and capacity grows until every idle principal and finished teammate has a spot. Door at the top left, `walkable` grid and 4-way BFS `findPath`. Chairs are not walkable
   (only a goal), so nobody walks through a seated agent. Each desk has two fixed `slots` for its
-  running subagents, either side of the chair (the aisle stays clear for the name); more show as "+N" by the monitor.
+  running subagents, either side of the chair (the aisle stays clear for the name); however many
+  there are, each running one is also a light on the console's front (`squadRack` in `paint.ts`; past what
+  the console holds, a "+N"), the hover tip counts them and the desk menu lists them all (up to five, then
+  "N more in the preview"), each opening its own preview.
 - **`sim.ts` is pure and tested**: `goals()` says where each agent wants to be (working / needs you /
   finished / stuck → its seat; idle → a lounge spot that changes every ~15–23 s; closed → no agent),
   `step()` walks actors there at 3 tiles/s. New agents come in through the door, gone ones walk out.

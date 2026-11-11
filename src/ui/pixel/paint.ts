@@ -905,17 +905,34 @@ function bubble(ctx: CanvasRenderingContext2D, actor: Actor, s: SessionView, fra
   drawText(ctx, text, bx + Math.floor((w - textWidth(text)) / 2) + 1, by + 2, color);
 }
 
+/**
+ * One light per running subagent on the console's front, however many there are: two of them
+ * stand by the chair, the rest are only lights, so a big squad never spills onto the floor. Past
+ * what the console holds, the last light becomes the count.
+ */
+function squadRack(ctx: CanvasRenderingContext2D, d: Desk, frame: number) {
+  const running = d.session.subagents.filter((a) => a.running);
+  if (running.length === 0) return;
+  const { x, w } = d.cell;
+  const y = d.desk.y + 11;
+  const room = Math.floor((w - 8) / 3);
+  const shown = running.length > room ? room - 3 : running.length;
+  rect(ctx, x + 3, y - 1, Math.min(shown, room) * 3 + 1, 4, "#050a14");
+  for (let i = 0; i < shown; i++) {
+    const on = (frame + i * 3 + hash(running[i].id)) % 12 < 9;
+    rect(ctx, x + 4 + i * 3, y, 2, 2, on ? "#34d399" : "#14532d");
+  }
+  if (shown < running.length) {
+    const label = `+${running.length - shown}`;
+    const lx = x + 4 + shown * 3;
+    rect(ctx, lx - 1, y - 2, textWidth(label) + 2, 7, "#050a14");
+    drawText(ctx, label, lx, y - 1, "#a7f3c9");
+  }
+}
+
 function marks(ctx: CanvasRenderingContext2D, d: Desk, st: PaintState) {
   const id = d.session.id;
-  // Running subagents beyond the spots by the chair.
-  const more = d.session.subagents.filter((a) => a.running).length - d.slots.length;
-  if (more > 0) {
-    const label = `+${more}`;
-    const lx = d.cell.x + d.cell.w - textWidth(label) - 3;
-    const ly = d.desk.y - 9;
-    rect(ctx, lx - 2, ly - 1, textWidth(label) + 4, 7, "#0b1220");
-    drawText(ctx, label, lx, ly, "#e5e7eb");
-  }
+  squadRack(ctx, d, st.frame);
   if (st.selected !== id && st.hovered !== id) return;
   const { x, y, w, h } = d.cell;
   const color = st.selected === id ? (st.frame % 8 < 5 ? "#facc15" : "#fde68a") : "#ffffff99";
