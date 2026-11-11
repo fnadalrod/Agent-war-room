@@ -89,8 +89,8 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
   // Fill the window below the header, filters and room tabs: a wide window gets a wide room.
   const { office, scale } = useMemo(
     // Laid out again on every change of the room, which is when a lingering repo may leave.
-    () => fitOffice(view, cssWidth, cssHeight, showArchived, Date.now()),
-    [view, cssWidth, cssHeight, showArchived],
+    () => fitOffice(view, cssWidth, cssHeight, showArchived, Date.now(), room),
+    [view, cssWidth, cssHeight, showArchived, room],
   );
   // Live state for the paint loop, so it is not restarted on every render.
   const band = office.bands[room];

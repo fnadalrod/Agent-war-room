@@ -22,19 +22,21 @@ console and the lobby next door. Classic and pixel views show the same state; th
   so opening the preview or the terminal never reflows the room or re-seats anyone: the canvas just
   shrinks keeping its aspect ratio (smoothed while shrunk, `data-shrunk`). A window resize or the
   filters/banners changing height relays it out. `fitOffice` picks the largest scale whose layout
-  fits both rooms in that height, so a wide, short window gets a wide room with smaller art instead
+  fits the room on show in that height (a tall lobby never shrinks the war room), so a wide, short window gets a wide room with smaller art instead
   of a shrunk square; only when even scale 2 is too tall does the view shrink. `fitViewport`
   contains the whole room in both axes (including the border), centring it without document
   scrolling. Hit tests use the fitted canvas content bounds.
 - **Logical pixels.** The art is drawn in low-resolution logical pixels (office width = that width /
   scale, scale 2–4: at most `pixelScale` for the width, lower if the height needs it); the canvas has one pixel per CSS pixel and `setTransform(scale)`
   blows the art up. Integer rects only; no smoothing. Names under the chairs use a finer font pixel
-  (`nameDot`: two CSS pixels, so half the art's size at scale 4) to fit twice the letters.
+  (`nameDot`: two CSS pixels, so half the art's size at scale 4) to fit twice the letters, on up to two
+  lines (`wrap` in `font.ts`: between words or after a hyphen, then truncated with a dot).
 - **`office.ts` is pure and tested**: 16 px tiles, a taller `WAR_WALL_ROWS` command wall and `WALL_ROWS` lobby wall, zones in a stable
   order (repos by name, desks by session start: never the core's urgency order, or agents would swap
   consoles whenever one needs you) spread over the floor: `arrange` picks how many evenly filled shelves
-  give each deck a share of the floor about twice as wide as the deck (one long row on a wide, short
-  floor; several on a squarer one), and the spare rows and columns go evenly between them. Each desk cell is three tiles wide and three tall (always: subagents never stretch a deck), and a deck
+  give each deck a share of the floor about 1.5 times as wide as the deck (one long row on a wide, short
+  floor; several on a squarer one). The shelves share one grid of columns (the n-th deck of every
+  shelf in the same column, centred in it), and the spare rows and columns go evenly between them. Each desk cell is three tiles wide and three tall (always: subagents never stretch a deck), and a deck
   has consoles in pairs (`spares`: a powered-off console with its chair) so a new session sits at a free
   one instead of reshaping the floor. Repositories
   without any live, unarchived session have no module once `LINGER_MS` (15 min) have passed since
@@ -44,8 +46,8 @@ console and the lobby next door. Classic and pixel views show the same state; th
   coffee tables, plants/lamps and refreshment, reading or arcade corners. Furniture (including sofas) blocks
   transit; sofa tiles remain reachable as goals. Chatting pairs occupy separate rows at the bottom,
   and capacity grows until every idle principal and finished teammate has a spot. Door at the top left, `walkable` grid and 4-way BFS `findPath`. Chairs are not walkable
-  (only a goal), so nobody walks through a seated agent. Each desk has four fixed `slots` for its
-  running subagents: beside the chair, then the aisle corners; more show as "+N" by the monitor.
+  (only a goal), so nobody walks through a seated agent. Each desk has two fixed `slots` for its
+  running subagents, either side of the chair (the aisle stays clear for the name); more show as "+N" by the monitor.
 - **`sim.ts` is pure and tested**: `goals()` says where each agent wants to be (working / needs you /
   finished / stuck → its seat; idle → a lounge spot that changes every ~15–23 s; closed → no agent),
   `step()` walks actors there at 3 tiles/s. New agents come in through the door, gone ones walk out.

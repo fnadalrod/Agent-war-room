@@ -28,7 +28,7 @@ export type Desk = {
   desk: Rect;
   /** Where its agent sits (tile). */
   seat: Point;
-  /** Fixed tiles beside the chair where its running subagents stand (more show as "+N"). */
+  /** The two tiles beside the chair where its running subagents stand (more show as "+N"). */
   slots: Point[];
   /** Clickable area of the whole cell (pixels). */
   cell: Rect;
@@ -141,16 +141,22 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
   // Spread the shelves over the floor: the spare rows go evenly above, between and below them.
   const spareRows = war.h - (contentRows + 1);
   const rowGap = Math.floor(Math.max(0, spareRows) / (shelves.length + 1));
+  // One grid for every shelf: the n-th deck of each shelf is in the same column (as wide as its
+  // widest deck), so the floor reads as rows and columns rather than a staircase.
+  const columns: number[] = [];
+  for (const shelf of shelves) shelf.zones.forEach((z, i) => (columns[i] = Math.max(columns[i] ?? 0, z.rect.w)));
+  const fits = columns.reduce((n, w) => n + w, 0) + columns.length - 1 <= cols - 2;
   let shelfY = top + rowGap;
   for (const shelf of shelves) {
-    const used = shelf.zones.reduce((n, z) => n + z.rect.w, 0);
-    const colGap = Math.floor((cols - 2 - used) / (shelf.zones.length + 1));
+    const widths = fits ? columns : shelf.zones.map((z) => z.rect.w);
+    const used = widths.reduce((n, w) => n + w, 0);
+    const colGap = Math.floor((cols - 2 - used) / (widths.length + 1));
     let shelfX = 1 + colGap;
-    for (const zone of shelf.zones) {
-      // Each deck sits at the top of its shelf; columns spread evenly across the width.
-      moveZone(zone, shelfX, shelfY);
-      shelfX += zone.rect.w + colGap;
-    }
+    shelf.zones.forEach((zone, i) => {
+      // Each deck sits at the top of its shelf, centred in its column.
+      moveZone(zone, shelfX + Math.floor((widths[i] - zone.rect.w) / 2), shelfY);
+      shelfX += widths[i] + colGap;
+    });
     shelfY += shelf.h + 1 + rowGap;
   }
   // A free row under the lobby's wall, so the doorway always opens onto floor.
@@ -250,9 +256,10 @@ function arrange(zones: Zone[], width: number, rows: number): { zones: Zone[]; h
   const widest = Math.max(0, ...zones.map((z) => z.rect.w));
   let best = shelvesFor(width);
   if (rows <= 0 || zones.length < 2) return best;
-  // Each deck should get a share of the floor about twice as wide as the deck's own shape: aisles
-  // between decks read better than tall empty bands above and below them.
-  const deckRatio = (2 * zones.reduce((n, z) => n + z.rect.w + 1, 0)) / zones.reduce((n, z) => n + z.rect.h + 1, 0);
+  // Each deck should get a share of the floor about one and a half times as wide as the deck's own
+  // shape: aisles between decks read better than tall empty bands above and below them, and a few
+  // well-spaced rows better than a stack of them pressed together.
+  const deckRatio = (1.5 * zones.reduce((n, z) => n + z.rect.w + 1, 0)) / zones.reduce((n, z) => n + z.rect.h + 1, 0);
   let bestScore = Infinity;
   for (let k = 1; k <= zones.length; k++) {
     // The most even split into k shelves (in order): the narrowest limit that needs no more than k.
@@ -275,12 +282,11 @@ function deskAt(session: SessionView, cx: number, cy: number): Desk {
     session,
     desk: { x: cx * TILE + 6, y: cy * TILE + 2, w: 3 * TILE - 12, h: TILE - 2 },
     seat,
-    // Where its running subagents stand, still: beside the chair, then the aisle corners.
+    // Where its running subagents stand, still: either side of the chair. The aisle below stays
+    // clear for the name; more of them show as "+N" on the console.
     slots: [
       { x: cx, y: cy + 1 },
       { x: cx + 2, y: cy + 1 },
-      { x: cx, y: cy + 2 },
-      { x: cx + 2, y: cy + 2 },
     ],
     cell: { x: cx * TILE, y: cy * TILE - 6, w: CELL_W * TILE, h: CELL_H * TILE + 6 },
   };
@@ -421,14 +427,14 @@ export function pixelScale(cssWidth: number): number {
 
 /**
  * The largest scale (up to `pixelScale` for the width) whose layout fills `cssWidth` × `cssHeight`
- * with both rooms fitting in that height, so a short window draws smaller art instead of shrinking a
- * wide room into a square. If not even the smallest fits, its layout is used and the view shrinks.
+ * with the room on show fitting in that height, so a short window draws smaller art instead of
+ * shrinking a wide room into a square (and a tall lobby never makes the war room's names smaller).
+ * If not even the smallest fits, its layout is used and the view shrinks.
  */
-export function fitOffice(view: WarRoomView, cssWidth: number, cssHeight: number, showArchived: boolean, now = 0) {
+export function fitOffice(view: WarRoomView, cssWidth: number, cssHeight: number, showArchived: boolean, now = 0, room: RoomName = "war") {
   for (let scale = pixelScale(cssWidth); ; scale--) {
     const office = layoutOffice(view, Math.floor(cssWidth / scale), showArchived, cssHeight / scale, now);
-    const tallest = Math.max(office.bands.war.h, office.bands.lobby.h) * TILE * scale;
-    if (scale === 2 || tallest <= cssHeight) return { scale, office };
+    if (scale === 2 || office.bands[room].h * TILE * scale <= cssHeight) return { scale, office };
   }
 }
 

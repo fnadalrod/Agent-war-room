@@ -88,7 +88,27 @@ export function fit(text: string, maxWidth: number, px = 1): string {
   const t = normalize(text);
   const max = Math.max(0, Math.floor((maxWidth / px + 1) / ADVANCE));
   if (max === 0) return "";
-  return t.length <= max ? t : `${t.slice(0, Math.max(0, max - 1))}.`;
+  return t.length <= max ? t : `${t.slice(0, Math.max(0, max - 1)).trimEnd()}.`;
+}
+
+/**
+ * Breaks text into at most `lines` lines of `maxWidth` pixels, between words where it can; what
+ * still does not fit is truncated on the last line with a trailing ".".
+ */
+export function wrap(text: string, maxWidth: number, lines: number, px = 1): string[] {
+  const max = Math.max(0, Math.floor((maxWidth / px + 1) / ADVANCE));
+  let rest = normalize(text).trim().replace(/ +/g, " ");
+  const out: string[] = [];
+  while (rest && out.length < lines - 1 && rest.length > max) {
+    // After the last space or hyphen that fits; a word longer than the line is cut where it ends.
+    const space = rest.lastIndexOf(" ", max);
+    const hyphen = rest.lastIndexOf("-", max - 1);
+    const cut = Math.max(space, hyphen + 1) > 0 ? Math.max(space, hyphen + 1) : max;
+    out.push(rest.slice(0, cut));
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest || out.length === 0) out.push(fit(rest, maxWidth, px));
+  return out.filter(Boolean);
 }
 
 /**

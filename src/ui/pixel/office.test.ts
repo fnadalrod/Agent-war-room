@@ -213,7 +213,10 @@ describe("layoutOffice", () => {
     const { office, scale } = fitOffice(view, 1920, 700, false);
     expect(scale).toBeLessThan(pixelScale(1920));
     expect(office.width * scale).toBeGreaterThan(1920 - TILE * scale);
-    for (const band of Object.values(office.bands)) expect(band.h * TILE * scale).toBeLessThanOrEqual(700);
+    expect(office.bands.war.h * TILE * scale).toBeLessThanOrEqual(700);
+    // Each room is fitted on its own: the lobby on show must fit too.
+    const lobby = fitOffice(view, 1920, 700, false, 0, "lobby");
+    expect(lobby.office.bands.lobby.h * TILE * lobby.scale).toBeLessThanOrEqual(700);
     // A tall window keeps the largest scale for its width.
     expect(fitOffice(view, 1920, 1400, false).scale).toBe(pixelScale(1920));
   });

@@ -4,7 +4,7 @@
 //
 // Builds nothing: run `npm run build` first if the source changed (npm run shot does it for you).
 // Writes classic.png (full page), detail.png, reader.png, changes.png, diff.png, subagent.png, filtered.png,
-// agents.png, settings.png, shortcuts.png, question.png, pixel.png, pixel-later.png, pixel-menu.png,
+// agents.png, settings.png, shortcuts.png, question.png, pixel.png, pixel-later.png, pixel-menu.png, pixel-menu-asking.png,
 // lobby.png, closed.png, auto-approve.png and launch.png to <out-dir>.
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
@@ -80,6 +80,9 @@ try {
     await shot("filtered");
     await chip.click();
   }
+  // Folded again, so the rooms below get the whole height.
+  const fold = page.locator('.filters button[aria-expanded="true"]');
+  if (await fold.count()) await fold.click();
   await page.locator(".agents-menu > button").click();
   await shot("agents");
   await page.locator(".agents-menu > button").click();
@@ -99,6 +102,10 @@ try {
   const box = await stage.boundingBox();
   await page.mouse.click(box.x + box.width * 0.255, box.y + box.height * 0.4, { button: "right" });
   await shot("pixel-menu");
+  await page.keyboard.press("Escape");
+  // And on a desk whose agent asks something: answer, approve or deny from the menu.
+  await page.mouse.click(box.x + box.width * 0.167, box.y + box.height * 0.75, { button: "right" });
+  await shot("pixel-menu-asking");
   await page.keyboard.press("Escape");
   // Through the door: the lobby, where idle agents rest.
   await page.locator(".pixel-rooms button").nth(1).click();

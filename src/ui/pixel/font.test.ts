@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fit, HOURGLASS, normalize, textWidth } from "./font";
+import { fit, HOURGLASS, normalize, textWidth, wrap } from "./font";
 
 describe("3×5 font", () => {
   it("uppercases, strips accents and marks what it cannot draw", () => {
@@ -34,5 +34,17 @@ describe("3×5 font", () => {
     expect(textWidth("ABC", 0.5)).toBe(5.5);
     expect(fit("Fix the login", 23, 0.5)).toBe("FIX THE LO.");
     expect(textWidth(fit("Fix the login", 23, 0.5), 0.5)).toBeLessThanOrEqual(23);
+  });
+
+  it("wraps between words onto a second line before truncating", () => {
+    // 10 letters per line.
+    expect(wrap("Fix offline sync", 39, 2)).toEqual(["FIX", "OFFLINE S."]);
+    expect(wrap("Migrate i18n keys", 39, 2)).toEqual(["MIGRATE", "I18N KEYS"]);
+    expect(wrap("Short", 39, 2)).toEqual(["SHORT"]);
+    expect(wrap("Supercalifragilistic", 39, 2)).toEqual(["SUPERCALIF", "RAGILISTIC"]);
+    expect(wrap("", 39, 2)).toEqual([]);
+    expect(wrap("Pixel-agents Tauri app", 39, 2)).toEqual(["PIXEL-", "AGENTS TA."]);
+    expect(fit("Document the test", 39)).toBe("DOCUMENT.");
+    for (const line of wrap("Epic: internationalise the whole app", 39, 2)) expect(textWidth(line)).toBeLessThanOrEqual(39);
   });
 });

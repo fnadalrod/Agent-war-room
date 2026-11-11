@@ -2,7 +2,7 @@
 import type { AttentionView, SessionView, SubagentView } from "../../domain/attention";
 import { contextLevel, contextRatio, deskName } from "../../domain/attention";
 import { copy } from "../../domain/copy";
-import { drawText, fit, HOURGLASS, textWidth } from "./font";
+import { drawText, fit, HOURGLASS, textWidth, wrap } from "./font";
 import { type Desk, type Office, type Prop, type Rect, type Zone, TILE, WALL_ROWS, WAR_WALL_ROWS, feetOf } from "./office";
 import { type Actor, hash, subagentKey } from "./sim";
 import { body, drawSprite, lounging, palette, seated, waving } from "./sprites";
@@ -373,7 +373,8 @@ function rug(ctx: CanvasRenderingContext2D, zone: Zone, accent: string, scale: n
     const x = first.x - 12;
     const y = first.y - 4;
     const w = last.x + last.w + 2 - x;
-    const h = first.h + 2;
+    // Deep enough for a two-line name above the front fascia.
+    const h = first.h + 6;
     // Stepped armor, a recessed deck and an exposed front fascia.
     armor(ctx, x + 2, y + 5, w, h, 8, "#050914");
     armor(ctx, x, y + 2, w, h, 8, "#283950");
@@ -626,20 +627,24 @@ export function subagentOf(session: SessionView, actor: Actor): SubagentView | n
  */
 export const nameDot = (scale: number) => Math.min(1, 2 / scale);
 
-/** The session's name on the floor, under its chair (the full title is in the hover tip). */
+/** The session's name on the floor, under its chair, on up to two lines (the full title is in the hover tip). */
 function nameplate(ctx: CanvasRenderingContext2D, d: Desk, scale: number) {
   const s = d.session;
   const px = nameDot(scale);
   // Drawn over the actors, so it can use the whole cell even with subagents in the aisle.
-  const name = fit((s.title ?? deskName(s)).toUpperCase(), d.cell.w - 6, px);
+  const lines = wrap(s.title ?? deskName(s), d.cell.w - 6, 2, px);
   const feet = feetOf(d.seat);
-  const w = textWidth(name, px);
-  const x = feet.x - Math.floor(w / 2);
-  withAlpha(ctx, 0.7, () => {
-    ctx.fillStyle = "#050a14";
-    ctx.fillRect(x - 2 * px, feet.y + 3, w + 4 * px, 2 + 5 * px);
+  const color = s.attention === "offline" ? "#475569" : UI.text;
+  lines.forEach((line, i) => {
+    const w = textWidth(line, px);
+    const x = feet.x - Math.floor(w / 2);
+    const y = feet.y + 4 + i * 6 * px;
+    withAlpha(ctx, 0.7, () => {
+      ctx.fillStyle = "#050a14";
+      ctx.fillRect(x - 2 * px, y - (i ? 0 : 1), w + 4 * px, 6 * px + (i ? 0 : 1));
+    });
+    drawText(ctx, line, x, y, color, px);
   });
-  drawText(ctx, name, x, feet.y + 4, s.attention === "offline" ? "#475569" : UI.text, px);
 }
 
 function chair(ctx: CanvasRenderingContext2D, fx: number, fy: number) {
