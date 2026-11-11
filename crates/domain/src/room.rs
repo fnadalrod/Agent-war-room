@@ -282,6 +282,31 @@ mod tests {
     }
 
     #[test]
+    fn a_question_stays_a_question_until_it_is_answered() {
+        let mut room = WarRoom::new();
+        let ask = SessionEventKind::AwaitingYou {
+            reason: WaitReason::Question,
+            tool: Some("AskUserQuestion".into()),
+            detail: Some("Which one?".into()),
+        };
+        room.apply(signal("s", 1, ask));
+        // Claude's notice for the open dialog, and background subagents still at work.
+        room.apply(signal("s", 2, SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: None, detail: None }));
+        room.apply(signal("s", 3, SessionEventKind::SubagentTool { id: "a1".into(), tool: "Grep".into() }));
+        let s = room.get(&SessionId("s".into())).unwrap();
+        assert_eq!(
+            s.status,
+            SessionStatus::AwaitingYou {
+                reason: WaitReason::Question,
+                tool: Some("AskUserQuestion".into()),
+                detail: Some("Which one?".into())
+            }
+        );
+        room.apply(signal("s", 4, SessionEventKind::ToolFinished { tool: "AskUserQuestion".into(), failed: false }));
+        assert_eq!(attention(&room, "s"), Attention::Working);
+    }
+
+    #[test]
     fn subagent_tools_do_not_hijack_the_main_status_but_resolve_a_pending_permission() {
         let mut room = WarRoom::new();
         room.apply(signal("s", 1, SessionEventKind::ToolStarted { tool: "Agent".into() }));

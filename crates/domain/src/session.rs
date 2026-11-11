@@ -159,6 +159,10 @@ impl Session {
             SessionEventKind::ToolFinished { .. } => {
                 self.set_status(SessionStatus::Working { tool: None }, at);
             }
+            // Claude sends a bare `permission_prompt` notice a few seconds after asking a question:
+            // it is the question's own dialog, which must stay a question.
+            SessionEventKind::AwaitingYou { reason: WaitReason::Permission, tool: None, .. }
+                if matches!(self.status, SessionStatus::AwaitingYou { reason: WaitReason::Question, .. }) => {}
             SessionEventKind::AwaitingYou { reason, tool, detail } => {
                 // A second signal for the same wait (without a tool) does not erase what we already knew.
                 let (tool, detail) = match &self.status {
@@ -214,8 +218,9 @@ impl Session {
                     finished_at: None,
                 });
                 subagent.current_tool = Some(tool.clone());
-                // If a subagent keeps working, the pending permission has already been resolved.
-                if matches!(self.status, SessionStatus::AwaitingYou { .. }) {
+                // If a subagent keeps working, the pending permission has already been resolved. A
+                // question is the main agent's: background subagents keep working while it waits.
+                if matches!(self.status, SessionStatus::AwaitingYou { reason: WaitReason::Permission, .. }) {
                     self.set_status(SessionStatus::Working { tool: None }, at);
                 }
             }

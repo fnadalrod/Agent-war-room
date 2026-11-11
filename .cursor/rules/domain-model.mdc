@@ -34,7 +34,10 @@ not muted). `deserves_notice()` = on watch + alerting + actually changed.
 - `PromptSubmitted` un-archives: writing to a dismissed session brings it back. That is the product
   definition of "archive" (dismiss without killing).
 - Subagent tool events (`SubagentTool`) never change the main session's tool — but they resolve a
-  pending permission (the agent moved on).
+  pending permission (the agent moved on), never a question: background subagents keep working while
+  the main agent waits for your answer.
+- A question stays a question until its tool finishes: Claude's bare `permission_prompt` notice a few
+  seconds after `AskUserQuestion` is the same dialog, not a permission.
 - Idle/awaiting-input sessions with running subagents stay `Working`; `Seen` only acknowledges a
   finished session, so reviewing ongoing work cannot swallow its eventual completion.
 - Finished subagents are kept (last 6) so their work can be inspected; `Ended` finishes the running ones.
