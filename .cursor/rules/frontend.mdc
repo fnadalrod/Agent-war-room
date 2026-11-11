@@ -28,7 +28,12 @@ alwaysApply: false
   an agent tag in its colour, `data-provider` → `--agent`, only when the room mixes them). One header
   button, `AgentsMenu`, lists every integration (dot per agent: connected, incomplete, off, not
   installed) with connect/reinstall/disconnect and the login toggle; banners only for found agents not
-  yet connected. "+ Agent" becomes a menu when more than one agent can be started. Unpriced usage
+  yet connected. "+ Agent" becomes a menu when more than one agent can be started.
+- New session dialog (`LaunchDialog`, `store.openLauncher(cwd?)` → `state.launching`): folder (any
+  path, suggestions from `launchFolders`), agent, model, effort, permission mode, app or Warp, first
+  prompt. Choices per agent come from `domain/launch.ts` (`launchChoices`, `cleanOptions` drops what
+  the agent has no flag for) and the last ones are remembered in localStorage (`awr.launch`). Opened
+  from the header "+", a room's "More options…" and a right click on a repo's deck in the War Room. Unpriced usage
   shows tokens only (`usageLabel`).
 - Filters start folded to one line (remembered in localStorage); the header must fit on two lines at
   1500 px with the preview open.

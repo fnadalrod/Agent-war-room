@@ -38,6 +38,7 @@
   "desktop": {
     "external_terminal_no_input": "this session lives in an external terminal: you can't write to it from here, use \"Go to\"",
     "invalid_session_id": "invalid session id: {id}",
+    "invalid_launch_option": "cannot start the agent with this value: {value}",
     "unknown_terminal": "unknown terminal: {id}",
     "warp_tab_name": "War Room · {label}",
     "unsupported_desktop": "unsupported desktop: \"Go to\" works on KDE Plasma, macOS and Windows",
@@ -98,7 +99,8 @@
       "medium": "medium",
       "high": "high",
       "xhigh": "extra high",
-      "max": "max"
+      "max": "max",
+      "minimal": "minimal"
     },
     "stalled": {
       "label": "Stuck? {minutes} min",
@@ -397,6 +399,33 @@
       "help": "Show or hide this help",
       "key_enter": "Enter",
       "key_esc": "Esc"
+    },
+    "launch": {
+      "button": "New session",
+      "button_title": "Start an agent in a repository or folder, with its model and effort",
+      "title": "New session",
+      "folder": "Folder",
+      "folder_placeholder": "Repository or folder path",
+      "agent": "Agent",
+      "model": "Model",
+      "model_default": "Agent's default",
+      "effort": "Effort",
+      "effort_default": "Default",
+      "mode": "Permissions",
+      "mode_default": "Ask as usual",
+      "mode_plan": "Plan first",
+      "mode_accept_edits": "Accept edits",
+      "mode_auto": "Automatic",
+      "mode_bypass": "Skip all checks (careful)",
+      "where": "Open in",
+      "in_app": "App terminal",
+      "in_warp": "Warp tab",
+      "prompt": "First prompt",
+      "prompt_placeholder": "Optional: what should it do? (Ctrl+Enter starts)",
+      "start": "Start",
+      "cancel": "Cancel",
+      "here": "New session here…",
+      "more": "More options…"
     }
   }
 }

@@ -52,6 +52,9 @@ function LaunchButtons({ home, label, agents, store }: LaunchProps) {
         <button className="ghost" onClick={() => store.launch(agent, home, label, "warp")} title={copy.room.newAgentInWarpTitle(home)}>
           <PlusIcon size={14} /> {copy.actions.inWarp}
         </button>
+        <button className="ghost" onClick={() => store.openLauncher(home)} title={copy.launch.buttonTitle}>
+          {copy.launch.more}
+        </button>
       </span>
     );
   }
@@ -76,6 +79,9 @@ function LaunchButtons({ home, label, agents, store }: LaunchProps) {
               </button>
             </div>
           ))}
+          <button role="menuitem" onClick={() => (setOpen(false), store.openLauncher(home))}>
+            {copy.launch.more}
+          </button>
         </div>
       )}
     </span>

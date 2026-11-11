@@ -9,7 +9,8 @@ import { AttentionQueue } from "./AttentionQueue";
 import { DetailPanel } from "./DetailPanel";
 import { DrinkingBird } from "./DrinkingBird";
 import { FilterBar } from "./FilterBar";
-import { GoIcon } from "./icons";
+import { GoIcon, PlusIcon } from "./icons";
+import { LaunchDialog } from "./LaunchDialog";
 import { AgentsMenu, IntegrationBar } from "./IntegrationBar";
 import { WarRoomScene } from "./pixel/WarRoomScene";
 import { RoomPanel } from "./RoomPanel";
@@ -66,6 +67,9 @@ export function App({ store, language, onLanguageChange }: Props) {
               {copy.topbar.today(tokenCount(fullView.today.total_tokens), money(fullView.today.cost_usd))}
             </span>
           )}
+          <button className="icon new-session" onClick={() => store.openLauncher()} title={copy.launch.buttonTitle} aria-label={copy.launch.button}>
+            <PlusIcon size={16} />
+          </button>
           <button className="primary next" onClick={() => store.goNext()} title={copy.topbar.nextTitle}>
             <GoIcon size={14} /> {copy.topbar.next}
           </button>
@@ -171,6 +175,9 @@ export function App({ store, language, onLanguageChange }: Props) {
 
       {state.detail && <DetailPanel detail={state.detail} fallback={detailFallback} store={store} now={now} />}
 
+      {state.launching && (
+        <LaunchDialog store={store} view={fullView} agents={launchableAgents(state.integrations)} cwd={state.launching.cwd} />
+      )}
       {reader && (
         <AnswerReader
           heading={reader.heading}

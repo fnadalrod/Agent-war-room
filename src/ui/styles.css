@@ -2300,3 +2300,76 @@ pre.diff [data-line="file"] {
   content: ", ";
   color: var(--muted);
 }
+
+/* "New session": folder, agent, model, effort, permissions and first prompt. */
+.launch-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(620px, 100%);
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  padding: 0 20px 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 0.55);
+}
+
+.launch-dialog > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 -20px;
+  padding: 14px 16px 12px 20px;
+  border-bottom: 1px solid var(--border);
+  font-size: 16px;
+}
+
+.launch-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.launch-dialog label > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.launch-dialog input,
+.launch-dialog select,
+.launch-dialog textarea {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.launch-dialog textarea {
+  resize: vertical;
+}
+
+.launch-dialog input:focus-visible,
+.launch-dialog select:focus-visible,
+.launch-dialog textarea:focus-visible {
+  border-color: var(--accent, var(--border-strong));
+  outline: none;
+}
+
+.launch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+}
+
+.launch-dialog > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

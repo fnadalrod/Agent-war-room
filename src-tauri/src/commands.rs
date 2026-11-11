@@ -2,7 +2,7 @@
 
 use crate::locale;
 use awr_application::WarRoomService;
-use awr_application::ports::{FocusOutcome, IntegrationInstaller, LaunchOutcome, LaunchTarget, PortResult};
+use awr_application::ports::{FocusOutcome, IntegrationInstaller, LaunchOptions, LaunchOutcome, LaunchTarget, PortResult};
 use awr_application::view::{IntegrationStatus, SessionChanges, SessionDetail, SubagentPreview, WarRoomView};
 use awr_domain::{ProviderKind, SessionId};
 use awr_infrastructure::pty::{PtyInfo, PtyManager};
@@ -169,8 +169,9 @@ pub async fn launch(
     provider: ProviderKind,
     cwd: String,
     target: LaunchTarget,
+    options: Option<LaunchOptions>,
 ) -> Result<Launched, String> {
-    blocking(&service, move |s| s.launch(provider, cwd, target)).await.map(Launched::from)
+    blocking(&service, move |s| s.launch(provider, cwd, target, options.unwrap_or_default())).await.map(Launched::from)
 }
 
 #[tauri::command]

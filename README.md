@@ -213,7 +213,10 @@ the correct terminal first.
 ### Session management
 
 - **Launch and resume.** Start an agent in a repo, or resume a closed session, in a built-in terminal
-  or in a Warp tab (see [Terminals and IDEs](#terminals-and-ides)).
+  or in a Warp tab (see [Terminals and IDEs](#terminals-and-ides)). **New session** (the header's
+  "+", a repo's "More options…", or a right click on a repo's deck in the War Room) starts one in any
+  folder with the model, effort, permission mode (Claude) and first prompt you choose; it remembers
+  your last choices per agent.
 - **Dismiss** (archive) a session even if it is still open: it stops notifying and leaves the room. It
   comes back on its own if you write to it, and can be restored for 3 days.
 - **Mute**: still visible, but without notifications.

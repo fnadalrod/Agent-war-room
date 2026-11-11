@@ -14,6 +14,10 @@ pub fn invalid_session_id(id: impl Display) -> String {
     tf("desktop.invalid_session_id", &[("id", &id)])
 }
 
+pub fn invalid_launch_option(value: &str) -> String {
+    tf("desktop.invalid_launch_option", &[("value", &value)])
+}
+
 pub fn unknown_terminal(id: &str) -> String {
     tf("desktop.unknown_terminal", &[("id", &id)])
 }

@@ -18,6 +18,11 @@ scrollback for re-attaching. Closing the window keeps PTYs alive (app lives in t
   (`hooks-claude-reference.md`).
 - Resume runs in the session's **exact cwd** (`Session::launch_dir`): Claude stores sessions per
   directory. The id is validated (`[A-Za-z0-9-]`) before reaching a shell.
+- `LaunchOptions` (`option_args`) add the chosen flags: Claude `--model`, `--effort`,
+  `--permission-mode`; Codex `-m`, `-c model_reasoning_effort=…`; Cursor `--model`; then `-- '<first
+  prompt>'`. Option values are names (`[A-Za-z0-9._:-[]/=]`, else refused) and every value is quoted
+  (`shell_quote`: single quotes on Unix; on Windows `cmd` cannot neutralise `"`, `%` or `!`, so text
+  with them is refused).
 - Warp target: writes a Tab Config `awr-<id>.toml` in `~/.local/share/warp-terminal/tab_configs/`
   (swept after 24 h) and opens `warp://tab_config/<stem>`. Warp URIs can't run commands; tab configs can.
   Its shell command is prefixed with the selected `AWR_LANG` because Warp does not inherit a PTY spec.

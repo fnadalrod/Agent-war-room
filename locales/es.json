@@ -38,6 +38,7 @@
   "desktop": {
     "external_terminal_no_input": "esta sesión vive en una terminal externa: no se puede escribir desde aquí, usa \"Ir a\"",
     "invalid_session_id": "id de sesión no válido: {id}",
+    "invalid_launch_option": "no se puede iniciar el agente con este valor: {value}",
     "unknown_terminal": "terminal desconocido: {id}",
     "warp_tab_name": "War Room · {label}",
     "unsupported_desktop": "escritorio no soportado: \"Ir a\" funciona en KDE Plasma, macOS y Windows",
@@ -98,7 +99,8 @@
       "medium": "medio",
       "high": "alto",
       "xhigh": "muy alto",
-      "max": "máximo"
+      "max": "máximo",
+      "minimal": "mínimo"
     },
     "stalled": {
       "label": "¿Atascada? {minutes} min",
@@ -397,6 +399,33 @@
       "help": "Mostrar u ocultar esta ayuda",
       "key_enter": "Intro",
       "key_esc": "Esc"
+    },
+    "launch": {
+      "button": "Nueva sesión",
+      "button_title": "Inicia un agente en un repositorio o carpeta, con su modelo y esfuerzo",
+      "title": "Nueva sesión",
+      "folder": "Carpeta",
+      "folder_placeholder": "Ruta del repositorio o carpeta",
+      "agent": "Agente",
+      "model": "Modelo",
+      "model_default": "El del agente",
+      "effort": "Esfuerzo",
+      "effort_default": "Por defecto",
+      "mode": "Permisos",
+      "mode_default": "Preguntar como siempre",
+      "mode_plan": "Planificar primero",
+      "mode_accept_edits": "Aceptar ediciones",
+      "mode_auto": "Automático",
+      "mode_bypass": "Saltar todas las comprobaciones (cuidado)",
+      "where": "Abrir en",
+      "in_app": "Terminal de la app",
+      "in_warp": "Pestaña de Warp",
+      "prompt": "Primer prompt",
+      "prompt_placeholder": "Opcional: ¿qué debe hacer? (Ctrl+Intro lo inicia)",
+      "start": "Iniciar",
+      "cancel": "Cancelar",
+      "here": "Nueva sesión aquí…",
+      "more": "Más opciones…"
     }
   }
 }

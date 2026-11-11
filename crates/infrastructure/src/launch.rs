@@ -4,7 +4,7 @@ use crate::desktop::{open_url, tmux};
 use crate::locale;
 use crate::pty::{PtyManager, PtySpec};
 use awr_application::ports::{
-    AgentLauncher, LaunchOutcome, LaunchRequest, LaunchTarget, PortError, PortResult, SessionInput,
+    AgentLauncher, LaunchOptions, LaunchOutcome, LaunchRequest, LaunchTarget, PortError, PortResult, SessionInput,
 };
 use awr_domain::{ProviderKind, TerminalHost};
 use std::path::PathBuf;
@@ -136,14 +136,70 @@ fn agent_command(request: &LaunchRequest) -> PortResult<String> {
         // Only runs inside its own app.
         ProviderKind::Antigravity => return Err(PortError::Failed(locale::agent_not_launchable("Antigravity"))),
     };
-    match &request.resume {
-        None => Ok(program.into()),
+    let mut command = match &request.resume {
+        None => program.to_owned(),
         // The id ends up in a shell line: only its alphabet is allowed.
         Some(id) if !id.0.is_empty() && id.0.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') => {
-            Ok(format!("{resume} {}", id.0))
+            format!("{resume} {}", id.0)
         }
-        Some(id) => Err(PortError::Failed(locale::invalid_session_id(id))),
+        Some(id) => return Err(PortError::Failed(locale::invalid_session_id(id))),
+    };
+    for arg in option_args(request.provider, &request.options)? {
+        command.push(' ');
+        command.push_str(&arg);
     }
+    Ok(command)
+}
+
+/// The flags for the chosen model, effort, permission mode and first prompt, ready for a shell line.
+fn option_args(provider: ProviderKind, options: &LaunchOptions) -> PortResult<Vec<String>> {
+    let set = |v: &Option<String>| v.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(str::to_owned);
+    let mut args: Vec<String> = Vec::new();
+    let mut flag = |name: &str, value: Option<String>| -> PortResult<()> {
+        if let Some(value) = value {
+            // Names, not text: a model, an effort or a mode never needs spaces or shell syntax.
+            if !value.chars().all(|c| c.is_ascii_alphanumeric() || "._:-[]/=".contains(c)) {
+                return Err(PortError::Failed(locale::invalid_launch_option(&value)));
+            }
+            args.push(name.to_owned());
+            args.push(shell_quote(&value)?);
+        }
+        Ok(())
+    };
+    match provider {
+        ProviderKind::Claude => {
+            flag("--model", set(&options.model))?;
+            flag("--effort", set(&options.effort))?;
+            flag("--permission-mode", set(&options.permission_mode))?;
+        }
+        ProviderKind::Codex => {
+            flag("-m", set(&options.model))?;
+            flag("-c", set(&options.effort).map(|e| format!("model_reasoning_effort={e}")))?;
+        }
+        ProviderKind::Cursor => flag("--model", set(&options.model))?,
+        ProviderKind::Antigravity => {}
+    }
+    if let Some(prompt) = set(&options.prompt) {
+        // `--` so a prompt starting with a dash is never read as a flag.
+        args.push("--".into());
+        args.push(shell_quote(&prompt)?);
+    }
+    Ok(args)
+}
+
+/// One shell word, whatever it contains.
+#[cfg(not(windows))]
+fn shell_quote(text: &str) -> PortResult<String> {
+    Ok(format!("'{}'", text.replace('\'', r"'\''")))
+}
+
+/// `cmd` has no quoting that neutralises `%` or `"`: text with them is refused rather than mangled.
+#[cfg(windows)]
+fn shell_quote(text: &str) -> PortResult<String> {
+    if text.chars().any(|c| matches!(c, '"' | '%' | '!' | '\n' | '\r')) {
+        return Err(PortError::Failed(locale::invalid_launch_option(text)));
+    }
+    Ok(format!("\"{text}\""))
 }
 
 fn agent_environment() -> Vec<(String, String)> {
@@ -221,7 +277,34 @@ mod tests {
             resume: resume.map(|r| SessionId(r.into())),
             target,
             label: "Fix the login".into(),
+            options: LaunchOptions::default(),
         }
+    }
+
+    #[test]
+    fn the_chosen_model_effort_and_first_prompt_become_quoted_flags() {
+        let options = LaunchOptions {
+            model: Some("opus".into()),
+            effort: Some("high".into()),
+            permission_mode: Some("plan".into()),
+            prompt: Some("fix it's $HOME `now`".into()),
+        };
+        let claude = LaunchRequest { options: options.clone(), ..request(None, LaunchTarget::App) };
+        #[cfg(not(windows))]
+        assert_eq!(
+            agent_command(&claude).unwrap(),
+            r#"claude --model 'opus' --effort 'high' --permission-mode 'plan' -- 'fix it'\''s $HOME `now`'"#
+        );
+        let codex = LaunchRequest {
+            provider: ProviderKind::Codex,
+            options: LaunchOptions { prompt: None, permission_mode: Some("plan".into()), ..options.clone() },
+            ..request(None, LaunchTarget::App)
+        };
+        assert_eq!(agent_command(&codex).unwrap().replace('"', "'"), "codex -m 'opus' -c 'model_reasoning_effort=high'");
+        let blank = LaunchOptions { model: Some("  ".into()), ..LaunchOptions::default() };
+        assert_eq!(agent_command(&LaunchRequest { options: blank, ..request(None, LaunchTarget::App) }).unwrap(), "claude");
+        let evil = LaunchOptions { model: Some("opus; rm -rf ~".into()), ..LaunchOptions::default() };
+        assert!(agent_command(&LaunchRequest { options: evil, ..request(None, LaunchTarget::App) }).is_err());
     }
 
     #[test]

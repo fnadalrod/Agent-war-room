@@ -11,6 +11,7 @@ import {
   type WarRoomView,
 } from "../domain/attention";
 import { copy } from "../domain/copy";
+import type { LaunchOptions } from "../domain/launch";
 import type {
   FilterStorage,
   IntegrationGateway,
@@ -49,6 +50,8 @@ export type WarRoomState = {
   detail: OpenDetail | null;
   terminal: OpenTerminal | null;
   reading: OpenReader | null;
+  /** The "new session" dialog, open on a folder (null: no folder chosen yet). */
+  launching: { cwd: string | null } | null;
   /** One per supported agent; empty until loaded. */
   integrations: IntegrationStatus[];
   autostart: boolean | null;
@@ -63,7 +66,7 @@ const TOAST_MS = 3500;
 
 /** Framework-free store: the UI subscribes with `useSyncExternalStore`. */
 export class WarRoomStore {
-  private state: WarRoomState = { view: null, filter: NO_FILTER, detail: null, terminal: null, reading: null, integrations: [], autostart: null, autoApprove: null, error: null, toast: null, busy: false };
+  private state: WarRoomState = { view: null, filter: NO_FILTER, detail: null, terminal: null, reading: null, launching: null, integrations: [], autostart: null, autoApprove: null, error: null, toast: null, busy: false };
   private readonly listeners = new Set<() => void>();
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly rooms: WarRoomGateway;
@@ -194,11 +197,20 @@ export class WarRoomStore {
     }
   }
 
-  launch(provider: string, cwd: string, label: string, target: LaunchTarget) {
-    void this.rooms.launch(provider, cwd, target).then(
+  launch(provider: string, cwd: string, label: string, target: LaunchTarget, options?: LaunchOptions) {
+    void this.rooms.launch(provider, cwd, target, options).then(
       (launched) => this.afterLaunch(launched, label),
       (e) => this.notify({ text: String(e), tone: "warn" }),
     );
+  }
+
+  /** Opens the "new session" dialog, on a folder if given. */
+  openLauncher(cwd: string | null = null) {
+    this.set({ launching: { cwd } });
+  }
+
+  closeLauncher() {
+    this.set({ launching: null });
   }
 
   resume(s: SessionView, target: LaunchTarget) {

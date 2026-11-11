@@ -1,7 +1,7 @@
 use crate::locale;
 use crate::ports::{
     AgentLauncher, AgentProvider, Clock, EventStore, FocusOutcome, FocusTarget, GitHistory, HookFacts, HookResponder,
-    HookResponse, LaunchOutcome, LaunchRequest, LaunchTarget, Notice, Notifier, PortError, PortResult, ProcessProbe,
+    HookResponse, LaunchOptions, LaunchOutcome, LaunchRequest, LaunchTarget, Notice, Notifier, PortError, PortResult, ProcessProbe,
     QuestionPrompt, RepoResolver, SessionInput, SkillCatalog, TranscriptReader, TranscriptSummary, Usage,
     ViewPublisher, WindowNavigator,
 };
@@ -463,9 +463,15 @@ impl WarRoomService {
     }
 
     /// Opens a new agent in a folder (usually a room's worktree).
-    pub fn launch(&self, provider: ProviderKind, cwd: String, target: LaunchTarget) -> PortResult<LaunchOutcome> {
+    pub fn launch(
+        &self,
+        provider: ProviderKind,
+        cwd: String,
+        target: LaunchTarget,
+        options: LaunchOptions,
+    ) -> PortResult<LaunchOutcome> {
         let label = folder_name(&cwd);
-        self.ports.launcher.launch(&LaunchRequest { provider, cwd, resume: None, target, label })
+        self.ports.launcher.launch(&LaunchRequest { provider, cwd, resume: None, target, label, options })
     }
 
     /// Resumes a closed session (`claude --resume`, `codex resume`) in its original folder.
@@ -487,6 +493,7 @@ impl WarRoomService {
                 resume: Some(id.clone()),
                 target,
                 label,
+                options: LaunchOptions::default(),
             }
         };
         self.ports.launcher.launch(&request)

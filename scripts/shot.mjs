@@ -5,7 +5,7 @@
 // Builds nothing: run `npm run build` first if the source changed (npm run shot does it for you).
 // Writes classic.png (full page), detail.png, reader.png, changes.png, diff.png, subagent.png, filtered.png,
 // agents.png, settings.png, shortcuts.png, question.png, pixel.png, pixel-later.png, pixel-menu.png,
-// lobby.png and auto-approve.png to <out-dir>.
+// lobby.png, auto-approve.png and launch.png to <out-dir>.
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
@@ -108,6 +108,11 @@ try {
   await page.locator(".segmented button").nth(0).click();
   await page.locator(".drinking-bird").click();
   await shot("auto-approve", true);
+  // The "new session" dialog, opened from the header.
+  await page.locator(".topbar-tools > button.new-session").click();
+  await page.locator(".launch-dialog").waitFor();
+  await shot("launch");
+  await page.keyboard.press("Escape");
   await browser.close();
 } finally {
   stop();

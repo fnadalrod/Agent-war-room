@@ -1,3 +1,4 @@
+import type { LaunchOptions } from "../domain/launch";
 import type {
   Filter,
   IntegrationStatus,
@@ -35,7 +36,7 @@ export interface WarRoomGateway {
   setAutoApprove(enabled: boolean): Promise<boolean>;
   sendInput(id: string, text: string): Promise<void>;
   /** `provider`: which agent to run (`claude`, `codex`…). */
-  launch(provider: string, cwd: string, target: LaunchTarget): Promise<Launched>;
+  launch(provider: string, cwd: string, target: LaunchTarget, options?: LaunchOptions): Promise<Launched>;
   resume(id: string, target: LaunchTarget): Promise<Launched>;
   /** Preview: card + recent conversation, or the complete transcript on explicit request. */
   detail(id: string, fullHistory?: boolean): Promise<SessionDetail>;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WarRoomStore } from "../../application/warRoomStore";
-import { agentName, deskName, money, providerName, tokenCount, unpriced, usageLabel, type WarRoomView } from "../../domain/attention";
+import { agentName, deskName, money, providerName, roomHome, tokenCount, unpriced, usageLabel, type WarRoomView } from "../../domain/attention";
 import { copy } from "../../domain/copy";
 import { usePreference } from "../useStore";
 import { DeskMenu } from "./DeskMenu";
@@ -16,6 +16,7 @@ import {
   doorwayAtPoint,
   fitOffice,
   fitViewport,
+  zoneAtPoint,
 } from "./office";
 import { lobbyCount, paintOffice, subagentOf } from "./paint";
 import { type Actor, goals, step } from "./sim";
@@ -184,11 +185,12 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  const at = (e: React.MouseEvent) => {
+  const pointOf = (e: React.MouseEvent) => {
     const r = e.currentTarget.getBoundingClientRect();
-    const p = { x: ((e.clientX - r.left - 1) / (r.width - 2)) * office.width, y: band.y * TILE + ((e.clientY - r.top - 1) / (r.height - 2)) * band.h * TILE };
-    return sceneHit(office, room, actors.current, p);
+    return { x: ((e.clientX - r.left - 1) / (r.width - 2)) * office.width, y: band.y * TILE + ((e.clientY - r.top - 1) / (r.height - 2)) * band.h * TILE };
   };
+  const at = (e: React.MouseEvent) => sceneHit(office, room, actors.current, pointOf(e));
+  const zoneAt = (e: React.MouseEvent) => (room === "war" ? zoneAtPoint(office, pointOf(e)) : null);
   const switchRoom = (to: RoomName) => {
     setRoom(to);
     setHovered(null);
@@ -221,7 +223,17 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
             onMouseLeave={() => setHovered(null)}
             onContextMenu={(e) => {
               const found = at(e);
-              if (found?.kind !== "session") return setMenu(null);
+              if (found?.kind !== "session") {
+                setMenu(null);
+                // On a repo's deck, away from any console: start a new session in that repo.
+                const zone = found ? null : zoneAt(e);
+                const home = zone && roomHome(zone.room);
+                if (home) {
+                  e.preventDefault();
+                  store.openLauncher(home);
+                }
+                return;
+              }
               e.preventDefault();
               setHovered(null);
               const r = e.currentTarget.getBoundingClientRect();

@@ -54,6 +54,7 @@ export const copy = {
     high: t("effort.high"),
     xhigh: t("effort.xhigh"),
     max: t("effort.max"),
+    minimal: t("effort.minimal"),
   } as Record<string, string>,
 
   stalled: {
@@ -187,6 +188,36 @@ export const copy = {
     launchTitle: (cwd: string) => t("room.launch_title", { cwd }),
     launchInApp: (agent: string) => t("room.launch_in_app", { agent }),
     launchInWarp: (agent: string) => t("room.launch_in_warp", { agent }),
+  },
+
+  launch: {
+    button: t("launch.button"),
+    buttonTitle: t("launch.button_title"),
+    title: t("launch.title"),
+    folder: t("launch.folder"),
+    folderPlaceholder: t("launch.folder_placeholder"),
+    agent: t("launch.agent"),
+    model: t("launch.model"),
+    modelDefault: t("launch.model_default"),
+    effort: t("launch.effort"),
+    effortDefault: t("launch.effort_default"),
+    mode: t("launch.mode"),
+    modeDefault: t("launch.mode_default"),
+    modes: {
+      plan: t("launch.mode_plan"),
+      acceptEdits: t("launch.mode_accept_edits"),
+      auto: t("launch.mode_auto"),
+      bypassPermissions: t("launch.mode_bypass"),
+    } as Record<string, string>,
+    where: t("launch.where"),
+    inApp: t("launch.in_app"),
+    inWarp: t("launch.in_warp"),
+    prompt: t("launch.prompt"),
+    promptPlaceholder: t("launch.prompt_placeholder"),
+    start: t("launch.start"),
+    cancel: t("launch.cancel"),
+    here: t("launch.here"),
+    more: t("launch.more"),
   },
 
   skill: {

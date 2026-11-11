@@ -308,6 +308,20 @@ pub struct LaunchRequest {
     pub target: LaunchTarget,
     /// Name for the tab or terminal.
     pub label: String,
+    /// Model, effort and first prompt chosen for it (empty: the agent's own defaults).
+    pub options: LaunchOptions,
+}
+
+/// What you pick when starting a session. Every field is optional; an agent ignores what it has no
+/// flag for (Cursor has no effort, only Claude has permission modes).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(default)]
+pub struct LaunchOptions {
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub permission_mode: Option<String>,
+    /// The first prompt, sent as the agent starts.
+    pub prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

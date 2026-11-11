@@ -335,6 +335,11 @@ export function deskAtPoint(office: Office, p: Point): Desk | null {
   return null;
 }
 
+/** The repo zone (its deck, label row included) under a pixel. */
+export function zoneAtPoint(office: Office, p: Point): Zone | null {
+  return office.zones.find((z) => inside(p, { x: z.rect.x * TILE, y: z.rect.y * TILE, w: z.rect.w * TILE, h: z.rect.h * TILE })) ?? null;
+}
+
 /** The zone whose cabinet of closed sessions is under a pixel. */
 export function cabinetAtPoint(office: Office, p: Point): Zone | null {
   for (const zone of office.zones) {
