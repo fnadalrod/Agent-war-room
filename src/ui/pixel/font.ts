@@ -54,7 +54,12 @@ const GLYPHS: Record<string, number[]> = {
   "'": [0b010, 0b010, 0, 0, 0],
   "·": [0, 0, 0b010, 0, 0],
   $: [0b011, 0b110, 0b010, 0b011, 0b110],
+  /** An hourglass: a session that looks stuck (a "?" would read as a question). */
+  "⧗": [0b111, 0b101, 0b010, 0b101, 0b111],
 };
+
+/** The glyph for a session that looks stuck. */
+export const HOURGLASS = "⧗";
 
 export const GLYPH_W = 3;
 export const GLYPH_H = 5;

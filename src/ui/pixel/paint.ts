@@ -2,7 +2,7 @@
 import type { AttentionView, SessionView, SubagentView } from "../../domain/attention";
 import { contextLevel, contextRatio, deskName } from "../../domain/attention";
 import { copy } from "../../domain/copy";
-import { drawText, fit, textWidth } from "./font";
+import { drawText, fit, HOURGLASS, textWidth } from "./font";
 import { type Desk, type Office, type Prop, type Rect, type Zone, TILE, WALL_ROWS, WAR_WALL_ROWS, feetOf } from "./office";
 import { type Actor, hash, subagentKey } from "./sim";
 import { body, drawSprite, lounging, palette, seated, waving } from "./sprites";
@@ -240,7 +240,7 @@ export function boardEntries(office: Office): Array<{ mark: string; color: strin
     ({ mark, color, text: `${repo} · ${s.title ?? deskName(s)}`.toUpperCase() });
   return [
     ...sessions.filter(({ s }) => s.attention === "needs_you").map(line("!", COLOR.needs_you)),
-    ...sessions.filter(({ s }) => stalled(s)).map(line("?", STALLED)),
+    ...sessions.filter(({ s }) => stalled(s)).map(line(HOURGLASS, STALLED)),
     ...sessions.filter(({ s }) => s.attention === "finished").map(line(copy.pixel.finishedBubble, COLOR.finished)),
   ];
 }
@@ -587,7 +587,7 @@ function monitor(ctx: CanvasRenderingContext2D, x: number, y: number, s: Session
   rect(ctx, sx, sy, 14, 9, stalled(s) ? "#3f2a05" : bg);
   const seed = hash(s.id);
   if (stalled(s)) {
-    drawText(ctx, "?", sx + 5, sy + 2, frame % 10 < 7 ? STALLED : "#78500a");
+    drawText(ctx, HOURGLASS, sx + 5, sy + 2, frame % 10 < 7 ? STALLED : "#78500a");
   } else if (s.attention === "working") {
     for (let i = 0; i < 4; i++) {
       const indent = 1 + (i % 2) * 2;
@@ -882,7 +882,7 @@ function bubble(ctx: CanvasRenderingContext2D, actor: Actor, s: SessionView, fra
   let color = "#1b1523";
   if (s.muted) [text, color] = ["ZZ", "#64748b"];
   else if (s.attention === "needs_you") [text, color] = ["!", COLOR.needs_you];
-  else if (stalled(s)) [text, color] = ["?", STALLED];
+  else if (stalled(s)) [text, color] = [HOURGLASS, STALLED];
   else if (s.attention === "finished" && !s.archived) [text, color] = [copy.pixel.finishedBubble, "#0284c7"];
   // Chatting in the lounge: now and then one of the pair says something.
   else if (talking && (frame + (actor.dir === "left" ? 20 : 0)) % 40 < 12) {

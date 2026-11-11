@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fit, normalize, textWidth } from "./font";
+import { fit, HOURGLASS, normalize, textWidth } from "./font";
 
 describe("3×5 font", () => {
   it("uppercases, strips accents and marks what it cannot draw", () => {
@@ -15,6 +15,7 @@ describe("3×5 font", () => {
     expect(textWidth("Cafe\u0301")).toBe(textWidth("CAFE"));
     expect(textWidth("Straße")).toBe(textWidth("STRASSE"));
     expect(normalize("🚀")).toBe("?");
+    expect(normalize(HOURGLASS), "stuck is an hourglass, not a question").toBe(HOURGLASS);
     expect(textWidth("🚀")).toBe(3);
   });
 
