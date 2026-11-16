@@ -391,6 +391,40 @@ function initialRooms(): RoomView[] {
   ];
 }
 
+/**
+ * `?crowd=N` adds N more sessions spread over made-up repos (volume tests of the layouts: how the
+ * rooms look with many agents). Seeded, so a refresh gives the same crowd.
+ */
+function crowd(count: number): RoomView[] {
+  const repos = ["atlas", "beacon", "cobalt", "delta-api", "ember", "fjord", "granite", "helix", "iris-web", "juniper"];
+  const tasks = ["Refactor auth", "Bump deps", "Flaky e2e", "Add metrics", "Dark mode", "Cache layer", "Fix typos", "Port to Rust"];
+  const moods: AttentionView[] = ["working", "working", "working", "idle", "finished", "needs_you", "working", "idle"];
+  const providers = ["claude", "claude", "codex", "cursor", "claude", "antigravity"];
+  const rooms = new Map<string, RoomView>();
+  for (let i = 0; i < count; i++) {
+    // Uneven repos: a few big ones and a tail of small ones.
+    const name = repos[Math.floor(Math.sqrt((i * 7919) % (repos.length * repos.length)))];
+    const attention = moods[(i * 5) % moods.length];
+    const room = rooms.get(name) ?? { repo_id: `/code/${name}/.git`, repo_name: name, attention, sessions: [] };
+    rooms.set(name, room);
+    room.sessions.push(
+      session({
+        id: `crowd-${i}-${name}`,
+        attention,
+        provider: providers[i % providers.length],
+        status_label: attention === "needs_you" ? STATUS.asksPermission : attention === "finished" ? STATUS.finished : attention === "idle" ? STATUS.yourTurn : STATUS.thinking,
+        title: tasks[i % tasks.length],
+        worktree_path: `/code/${name}`,
+        can_approve: attention === "needs_you",
+        started_at: startedAgo(200 - i),
+        usage: usage(((i * 37) % 90) * 1_000_000, ((i * 13) % 40) + 0.5),
+        subagents: i % 4 === 0 ? [agent(`crowd-${i}-a`, "Explore", "Map the code", "Grep")] : [],
+      }),
+    );
+  }
+  return [...rooms.values()];
+}
+
 const DEMO_DIFF = `commit 3f9c2ab71e0d4c55a2e1b9f0c7d6e5a4b3c2d1e0
 Author:     Alex <f@example.com>
 Date:       Sun Sep 28 01:12:00 2026 +0200
@@ -435,7 +469,8 @@ function project(rooms: RoomView[], autoApproved = 0): WarRoomView {
 }
 
 export function createDemo(): { rooms: WarRoomGateway; integration: IntegrationGateway; terminals: TerminalGateway } {
-  let rooms = initialRooms();
+  const extra = Number(new URLSearchParams(globalThis.location?.search ?? "").get("crowd") ?? 0);
+  let rooms = [...initialRooms(), ...crowd(Math.max(0, Math.min(200, extra || 0)))];
   let autoApproved = 0;
   const listeners = new Set<(v: WarRoomView) => void>();
   const emit = () => listeners.forEach((l) => l(project(rooms, autoApproved)));

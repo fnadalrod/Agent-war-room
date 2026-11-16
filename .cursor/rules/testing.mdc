@@ -38,3 +38,4 @@ alwaysApply: false
 |---|---|
 | run or write a real-Claude e2e, or drive a TUI in a PTY | `testing-e2e.md` |
 | need screenshots of a state the demo doesn't have | extend `src/infrastructure/demoGateway.ts`, then `npm run shot` |
+| check a layout under volume (many repos and agents) | open the demo with `?crowd=N` (N more seeded sessions, up to 200) |
