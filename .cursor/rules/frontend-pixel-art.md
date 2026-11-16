@@ -2,8 +2,8 @@
 
 > Leaf of `frontend.mdc`. Read it before touching `src/ui/pixel/`.
 
-A top-down mission control in the spirit of pixel-agents: a screen wall at the front, armored command decks
-per repo with a bank of consoles (one per session), operators with headsets who walk between their
+A top-down mission control in the spirit of pixel-agents: a screen wall at the front, tiers of consoles curving round it
+(one per session, each repo a section of a tier, dark ones waiting for new sessions), operators with headsets who walk between their
 console and the lobby next door. Classic and pixel views show the same state; the pixel one adds movement.
 
 - **War room and divided lobby.** `layoutOffice` stacks the war room (`bands.war`) and, under its bottom
@@ -31,22 +31,30 @@ console and the lobby next door. Classic and pixel views show the same state; th
   blows the art up. Integer rects only; no smoothing. Names under the chairs use a finer font pixel
   (`nameDot`: two CSS pixels, so half the art's size at scale 4) to fit twice the letters, on up to two
   lines (`wrap` in `font.ts`: between words or after a hyphen, then truncated with a dot).
-- **`office.ts` is pure and tested**: 16 px tiles, a taller `WAR_WALL_ROWS` command wall and `WALL_ROWS` lobby wall, zones in a stable
-  order (repos by name, desks by session start: never the core's urgency order, or agents would swap
-  consoles whenever one needs you) spread over the floor: `arrange` picks how many evenly filled shelves
-  give each deck a share of the floor about 1.5 times as wide as the deck (one long row on a wide, short
-  floor; several on a squarer one). The shelves share one grid of columns (the n-th deck of every
-  shelf in the same column, centred in it), and the spare rows and columns go evenly between them. Each desk cell is three tiles wide and three tall (always: subagents never stretch a deck), and a deck
-  has consoles in pairs (`spares`: a powered-off console with its chair) so a new session sits at a free
-  one instead of reshaping the floor. Repositories
-  without any live, unarchived session have no module once `LINGER_MS` (15 min) have passed since
+- **`office.ts` is pure and tested**: 16 px tiles, a taller `WAR_WALL_ROWS` command wall and `WALL_ROWS` lobby wall.
+  The war room has **tiers** (`tiers`): rows of consoles `RING_GAP` rows apart, each a gentle arc
+  whose ends rise towards the screen (`office.arena`: the middle, `half`, `rise` and each tier's row;
+  `ringY` gives a tier's row at a column). Along a tier the 3×3 cells touch (never overlap), mirrored
+  about a seat under the middle of the screen, with free columns at the sides as aisles; any a person
+  could not walk to is dropped. Every console is laid out before anyone sits. **Each repo is a run of
+  neighbouring consoles on a tier** (`packRings`): repos by name fill the tiers from the screen out,
+  one free place (empty floor) between two repos, each tier's runs centred; a repo that does not fit a
+  tier's tail starts the next tier, one longer than a whole tier carries on into the next. What is
+  left is `office.dark` (powered off until a session lights one). The war room grows only when its
+  tiers cannot seat every repo. Check layouts under volume with the demo's `?crowd=N`. Desks go by session start (never the core's
+  urgency order, or agents would swap consoles whenever one needs you); consoles come in pairs
+  (`spares`: a powered-off console with a standby light in the repo's colour) so a new session sits at a
+  free one instead of pushing the next repo along. `Zone.segments` are a repo's cells per tier, from the
+  screen out (hit tests, joined pads, its glow and sign); `Zone.rect` is only their bounding box. Each desk cell is three tiles wide and three tall
+  (always: subagents never stretch it). Repositories
+  without any live, unarchived session have no consoles once `LINGER_MS` (15 min) have passed since
   their last one closed (`now` given to `layoutOffice`; history remains in the Closed tab and the classic view). A repo with more than
   `FOLD_AFTER` sessions keeps consoles only for live ones; closed ones go into a cabinet ("+N",
-  click → classic view filtered to that repo). The lobby has repeated seating nooks on either side of a central aisle: sofas,
+  click → classic view filtered to that repo) standing in one more console place. The lobby has repeated seating nooks on either side of a central aisle: sofas,
   coffee tables, plants/lamps and refreshment, reading or arcade corners. Furniture (including sofas) blocks
   transit; sofa tiles remain reachable as goals. Chatting pairs occupy separate rows at the bottom,
-  and capacity grows until every idle principal and finished teammate has a spot. Door at the top left, `walkable` grid and 4-way BFS `findPath`. Chairs are not walkable
-  (only a goal), so nobody walks through a seated agent. Each desk has two fixed `slots` for its
+  and capacity grows until every idle principal and finished teammate has a spot. Door at the top left, `walkable` grid and 4-way BFS `findPath`. Every console's desk row and chair
+  block, lit or not; a chair is only a goal, so nobody walks through a seated agent. Each desk has two fixed `slots` for its
   running subagents, either side of the chair (the aisle stays clear for the name); however many
   there are, each running one is also a light on the console's front (`squadRack` in `paint.ts`; past what
   the console holds, a "+N"), the hover tip counts them and the desk menu lists them all (up to five, then
@@ -67,10 +75,20 @@ console and the lobby next door. Classic and pixel views show the same state; th
   Claude orange, Codex white, Cursor charcoal, Antigravity blue; hair and skin from `hash(id)`.
 - **`paint.ts`**: dark panel floor with a faint grid; the screen wall is one wide board listing what
   waits for you in order (`boardEntries`: ! needs you pulsing, hourglass stuck, OK finished; repo · title, "+N"
-  when it overflows, ALL QUIET when empty) — no counters or clocks, the header already has them), chamfered decks following the occupied console rows (short final rows make a stepped
-  outline), with recessed floor sockets, entry ramps, sector lighting and a sign ("REPO n": the full name in the finer `nameDot` letters, using the aisle up to the next deck; red while a session there needs you), then everything standing sorted by its feet `y` (console →
+  when it overflows, ALL QUIET when empty) — no counters or clocks, the header already has them),
+  flanked where the wall is wide enough by two wordless screens: a `radar` (a turning sweep, a blip
+  per console in its agent's colour, lit as the sweep passes, blinking when it needs you) and a
+  `statusRack` (a heartbeat that quickens with working agents, a bar per repo, a light per session).
+  Then the floor (`arenaFloor`: the screen's light pool, a glow in its colour under each repo's run,
+  a dotted track behind each tier with a light running along it), an armored pad under every
+  console edged in its repo's colour (grey when dark; neighbours of the same repo on a tier join into
+  one platform), then everything standing sorted by its feet `y` (console →
   operator → chair back, sofa back → agent → sofa front), then bubbles ("!", an hourglass for stuck — never "?", which reads as a question —, OK, ZZ, "..." when
-  chatting) and selection corners. **Usage is drawn, not written**: context fill on each monitor's
+  chatting) and selection corners, names and repo signs (`sign`, one per repo: "REPO n" in the finer `nameDot`
+  letters, centred over its run on its innermost tier, above the highest console under it so the
+  tier ahead's names stay clear; red while a session there needs you). **A console boots** the first time its session is
+  painted (`litAt`, kept by the scene): a white flash, a boot bar and a ring of light leaving its pad for
+  `BOOT_FRAMES`; on opening the room every console boots at once. **Usage is drawn, not written**: context fill on each monitor's
   bottom bezel (amber, then blinking red before compaction), tokens as cyan bars and cost as amber
   bars on the console (log scale, `paperStack`/`coinStack`). Running subagents show a glyph of what
   they do (`toolGlyph`: $ command, R read, E edit, S search, W web, A delegate). The lobby uses staggered wood boards, woven rugs under each nook, warm floor lamps and skyline

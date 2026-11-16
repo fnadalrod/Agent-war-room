@@ -10,7 +10,7 @@ jump straight back into the right session.
 
 </div>
 
-![Pixel-art War Room: each coding agent works at its repository console under a mission-control screen wall](docs/screenshots/pixel.png)
+![Pixel-art War Room: tiers of consoles curving round a mission-control screen wall, one per coding agent](docs/screenshots/pixel.png)
 
 Running several coding agents in parallel quickly turns attention—not compute—into the bottleneck.
 Agent War Room gives every session a screen, groups it under its repository and lights it up only
@@ -169,9 +169,10 @@ one may be overwriting the other's work. A worktree per session avoids it. (Clau
 
 ### The pixel-art War Room
 
-The same state as a mission control. Each repo is a console ring with its sessions seated around it;
+The same state as a mission control: tiers of consoles curving round the screen wall, each repo a
+section of a tier under its sign. Consoles wait dark and boot up as new sessions connect;
 an agent raises its hand when it needs you, and the screen wall lists what is waiting for you:
-who needs you, who looks stuck and who finished. Idle agents walk through the door into the **lobby**, split into a team room and a
+who needs you, who looks stuck and who finished, between a radar of the room and a status rack. Idle agents walk through the door into the **lobby**, split into a team room and a
 principals club, where they rest and chat until their next turn. Its **Closed** tab remembers every session that ended (a closed terminal, a reboot) and resumes it
 where it left off, with its model and effort. Click an agent to open its preview;
 in a busy repo, the cabinet of closed sessions opens the classic view filtered to that repo.
@@ -215,7 +216,7 @@ the correct terminal first.
 
 - **Launch and resume.** Start an agent in a repo, or resume a closed session, in a built-in terminal
   or in a Warp tab (see [Terminals and IDEs](#terminals-and-ides)). **New session** (the header's
-  "+", a repo's "More options…", or a right click on a repo's deck in the War Room) starts one in any
+  "+", a repo's "More options…", or a right click on a repo's console in the War Room) starts one in any
   folder with the model, effort, permission mode (Claude) and first prompt you choose; it remembers
   your last choices per agent.
 - **Dismiss** (archive) a session even if it is still open: it stops notifying and leaves the room. It
@@ -226,7 +227,7 @@ the correct terminal first.
   control where each agent walks to its console when it works, raises its hand when it needs you and
   goes down to the lobby when it is idle; its shirt says which agent it is (Claude orange, Codex
   white, Cursor charcoal, Antigravity blue). Usage is drawn: context fill on each monitor, token and
-  cost bars on each console, a red sign on the repo's deck while one of its sessions needs you; running subagents show
+  cost bars on each console, a red sign over the repo's consoles while one of its sessions needs you; running subagents show
   what they are doing. Busy repos fold their closed sessions into a cabinet. Switch from the header.
 
 On Linux, desktop notifications come with buttons: **View**, **Go to**, **Approve** and **Reply**.

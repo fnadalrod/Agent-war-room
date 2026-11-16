@@ -80,6 +80,8 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
   const hovered = hoveredAt?.kind === "session" ? hoveredAt.hit : null;
   const hoveredZone = hoveredAt?.kind === "cabinet" ? hoveredAt.zone : null;
   const actors = useRef(new Map<string, Actor>());
+  // When each session's console lit up, so it boots once rather than on every relayout.
+  const litAt = useRef(new Map<string, number>());
   const [room, setRoom] = usePreference<RoomName>("awr.pixelRoom", "war", ROOMS);
   // The list of closed sessions, over the room (the canvas keeps its size and nobody is re-seated).
   const [showClosed, setShowClosed] = useState(false);
@@ -167,6 +169,7 @@ export function WarRoomScene({ view, store, showArchived, selectedId, selectedAg
         hoveredCabinet: cabinet,
         hoveredDoor: door,
         actors: actors.current,
+        litAt: litAt.current,
       });
     };
     raf = requestAnimationFrame(tick);

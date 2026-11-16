@@ -3,7 +3,7 @@ import type { AttentionView, SessionView, SubagentView } from "../../domain/atte
 import { contextLevel, contextRatio, deskName } from "../../domain/attention";
 import { copy } from "../../domain/copy";
 import { drawText, fit, HOURGLASS, textWidth, wrap } from "./font";
-import { type Desk, type Office, type Prop, type Rect, type Zone, TILE, WALL_ROWS, WAR_WALL_ROWS, feetOf } from "./office";
+import { type Desk, type Office, type Prop, type Rect, type Zone, TILE, WALL_ROWS, WAR_WALL_ROWS, feetOf, ringY } from "./office";
 import { type Actor, hash, subagentKey } from "./sim";
 import { body, drawSprite, lounging, palette, seated, waving } from "./sprites";
 
@@ -49,7 +49,15 @@ export type PaintState = {
   /** The doorway between the rooms is under the cursor. */
   hoveredDoor: boolean;
   actors: Map<string, Actor>;
+  /**
+   * The frame each session's console lit up at, kept by the scene across frames: a console
+   * boots for a moment when its session arrives. Filled here; without it nothing boots.
+   */
+  litAt?: Map<string, number>;
 };
+
+/** Frames (of `PaintState.frame`) a console takes to boot when its session arrives. */
+const BOOT_FRAMES = 14;
 
 function rect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, color: string) {
   ctx.fillStyle = color;
@@ -96,7 +104,19 @@ export function paintOffice(ctx: CanvasRenderingContext2D, office: Office, st: P
   warRoomBottom(ctx, office, st);
   loungeRug(ctx, office);
   lobbyWall(ctx, office, st);
-  for (const zone of office.zones) rug(ctx, zone, TIERS[hash(zone.room.repo_id) % TIERS.length], st.scale);
+  arenaFloor(ctx, office, st);
+  for (const cell of office.dark) pad(ctx, cell, null, false, false, false);
+  for (const zone of office.zones) {
+    const accent = TIERS[hash(zone.room.repo_id) % TIERS.length];
+    // One continuous platform per run: the pads of a repo's neighbouring consoles join.
+    for (const cells of zone.segments) {
+      cells.forEach((cell, i) => {
+        const joins = (other?: Rect) => !!other && Math.abs(other.y - cell.y) <= TILE;
+        const lit = zone.desks.some((d) => d.cell.x === cell.x && d.cell.y === cell.y);
+        pad(ctx, cell, accent, lit, joins(cells[i - 1]), joins(cells[i + 1]));
+      });
+    }
+  }
 
   // Everything that stands on the floor, back to front.
   const drawables: Array<{ y: number; draw: () => void }> = [];
@@ -108,9 +128,11 @@ export function paintOffice(ctx: CanvasRenderingContext2D, office: Office, st: P
     }
   }
   for (const zone of office.zones) {
-    for (const spare of zone.spares) drawables.push({ y: spare.y + 8 + TILE - 2, draw: () => spareConsole(ctx, spare) });
+    const accent = TIERS[hash(zone.room.repo_id) % TIERS.length];
+    for (const spare of zone.spares) drawables.push({ y: spare.y + 8 + TILE - 2, draw: () => spareConsole(ctx, spare, accent, st.frame) });
     if (zone.cabinet) drawables.push({ y: zone.cabinet.y * TILE + TILE - 1, draw: () => cabinet(ctx, zone, st) });
   }
+  for (const cell of office.dark) drawables.push({ y: cell.y + 8 + TILE - 2, draw: () => spareConsole(ctx, cell, null, st.frame) });
   for (const prop of office.props) {
     const top = prop.y * TILE;
     withAlpha(ctx, 0.24, () => rect(ctx, prop.x * TILE + 2, top + 10, prop.kind === "sofa" ? 32 : 15, 5, "#100f1d"));
@@ -130,8 +152,10 @@ export function paintOffice(ctx: CanvasRenderingContext2D, office: Office, st: P
   drawables.sort((a, b) => a.y - b.y);
   for (const d of drawables) d.draw();
 
-  // Names over whoever stands in the aisle, so a subagent never hides whose console it is.
+  // Names over whoever stands in the aisle, so a subagent never hides whose console it is, and
+  // each repo's sign over its consoles.
   for (const zone of office.zones) for (const d of zone.desks) nameplate(ctx, d, st.scale);
+  for (const zone of office.zones) sign(ctx, office, zone, st.scale);
 
   // On top of everything: what each agent is saying, and selection marks.
   const seats = new Map(office.zones.flatMap((z) => z.desks.map((d) => [d.session.id, feetOf(d.seat)] as const)));
@@ -177,13 +201,6 @@ function floor(ctx: CanvasRenderingContext2D, office: Office) {
     rect(ctx, 0, WAR_WALL_ROWS * TILE, 4, office.height, "#000");
     rect(ctx, office.width - 4, WAR_WALL_ROWS * TILE, 4, office.height, "#000");
   });
-  // Recessed service channels link the command decks to the wall.
-  for (const zone of office.zones) {
-    const x = zone.rect.x * TILE + 7;
-    const y = zone.rect.y * TILE;
-    rect(ctx, x, WAR_WALL_ROWS * TILE, 3, y - WAR_WALL_ROWS * TILE, "#070d19");
-    withAlpha(ctx, 0.3, () => rect(ctx, x + 1, WAR_WALL_ROWS * TILE, 1, y - WAR_WALL_ROWS * TILE, TIERS[hash(zone.room.repo_id) % TIERS.length]));
-  }
   // Structural ribs at the edges, clear of the usable floor tiles.
   for (let y = WAR_WALL_ROWS * TILE + 10; y < (office.bands.war.h - 1) * TILE - 10; y += 40) {
     for (const x of [2, office.width - 10]) {
@@ -204,12 +221,29 @@ function wall(ctx: CanvasRenderingContext2D, office: Office, st: PaintState) {
   rect(ctx, 4, 3, office.width - 8, 2, UI.metalTop);
   for (let x = 8; x < office.width - 8; x += 16) rect(ctx, x, 3, 6, 1, UI.metalEdge);
 
-  // The screen wall: one wide board with what waits for you (the header already has the counters).
-  const main = Math.min(400, Math.floor(office.width * 0.62));
+  // The screen wall: one wide board with what waits for you (the header already has the counters),
+  // flanked, where the wall is wide enough, by a radar of the room and a status rack.
+  const wing = office.width >= 380 ? Math.min(110, Math.floor(office.width * 0.17)) : 0;
+  const main = Math.min(400, Math.floor(office.width * (wing ? 0.5 : 0.62)));
   const mainX = Math.max((office.door.x + 1) * TILE + 10, Math.floor((office.width - main) / 2));
   const boardW = Math.min(main, office.width - mainX - 10);
   armor(ctx, mainX - 5, 7, boardW + 10, h - 15, 5, UI.metalEdge);
   mainScreen(ctx, office, mainX, 11, boardW, h - 25, st);
+  if (wing) {
+    // The entrance takes the left of the wall: the radar keeps clear of it.
+    const leftWing = Math.min(wing, mainX - 14 - ((office.door.x + 1) * TILE + 6));
+    const sideH = h - 33;
+    if (leftWing >= 40) {
+      armor(ctx, mainX - 11 - leftWing, 13, leftWing + 6, sideH + 6, 3, UI.metalEdge);
+      radar(ctx, office, mainX - 8 - leftWing, 16, leftWing, sideH, st.frame);
+    }
+    const rightX = mainX + boardW + 11;
+    const rightWing = Math.min(wing, office.width - 12 - rightX);
+    if (rightWing >= 40) {
+      armor(ctx, rightX - 3, 13, rightWing + 6, sideH + 6, 3, UI.metalEdge);
+      statusRack(ctx, office, rightX, 16, rightWing, sideH, st.frame);
+    }
+  }
   // A continuous equipment plinth anchors the display wall.
   for (let x = 40; x < office.width - 16; x += 24) {
     rect(ctx, x, h - 12, 21, 7, UI.metalTop);
@@ -270,6 +304,102 @@ function mainScreen(ctx: CanvasRenderingContext2D, office: Office, x: number, y:
     drawText(ctx, more, x + 5, y + 13 + shown.length * 7, UI.cyanDim);
   }
   withAlpha(ctx, 0.12, () => rect(ctx, x - 6, y + h + 2, w + 12, 3, UI.cyan));
+}
+
+/** Every desk on the floor, with its repo's colour (for the side screens). */
+function floorDesks(office: Office) {
+  return office.zones.flatMap((z) => z.desks.map((d) => ({ d, accent: TIERS[hash(z.room.repo_id) % TIERS.length] })));
+}
+
+const signal = (s: SessionView) => (stalled(s) ? STALLED : COLOR[s.attention]);
+
+/**
+ * Left wing: a radar of the room. Its sweep turns; every console is a blip (left to right round the
+ * dish, the tiers from the middle out), lit as the sweep passes and in its agent's colour: what
+ * needs you blinks.
+ */
+function radar(ctx: CanvasRenderingContext2D, office: Office, x: number, y: number, w: number, h: number, frame: number) {
+  screenFrame(ctx, x, y, w, h);
+  const cx = x + Math.floor(w / 2);
+  const cy = y + Math.floor(h / 2);
+  const ry = Math.floor(h / 2) - 3;
+  const rx = Math.min(Math.floor(w / 2) - 4, Math.round(ry * 1.6));
+  const plot = (angle: number, k: number, color: string) => rect(ctx, cx + Math.round(Math.sin(angle) * rx * k), cy - Math.round(Math.cos(angle) * ry * k), 1, 1, color);
+  withAlpha(ctx, 0.5, () => {
+    for (const k of [1, 0.66, 0.33]) for (let a = 0; a < Math.PI * 2; a += 0.12) plot(a, k, UI.cyanDim);
+    rect(ctx, cx - rx, cy, rx * 2 + 1, 1, "#0b3a4a");
+    rect(ctx, cx, cy - ry, 1, ry * 2 + 1, "#0b3a4a");
+  });
+  // The sweep, with a fading wake behind it.
+  const sweep = ((frame % 60) / 60) * Math.PI * 2;
+  for (let trail = 0; trail < 8; trail++) {
+    const a = sweep - trail * 0.07;
+    withAlpha(ctx, 0.75 - trail * 0.09, () => {
+      for (let k = 0.08; k <= 1; k += 0.05) plot(a, k, trail ? UI.cyanDim : "#67e8f9");
+    });
+  }
+  const { center, half, rings } = office.arena;
+  for (const { d } of floorDesks(office)) {
+    // Left to right round the dish, the tiers from the middle out.
+    const angle = ((d.seat.x - center.x) / Math.max(1, half)) * Math.PI * 0.9;
+    const tier = rings.findIndex((y) => y >= d.seat.y);
+    const k = 0.3 + 0.7 * ((tier < 0 ? rings.length - 1 : tier) + 1) / Math.max(1, rings.length);
+    // How long since the sweep passed it: lit just after, fading over a turn.
+    const since = (((sweep - angle) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+    const s = d.session;
+    const urgent = s.attention === "needs_you" && !s.muted;
+    const glow = urgent ? (frame % 10 < 5 ? 1 : 0.35) : Math.max(0.3, 1 - since / 3);
+    const bx = cx + Math.round(Math.sin(angle) * rx * k);
+    const by = cy - Math.round(Math.cos(angle) * ry * k);
+    withAlpha(ctx, glow, () => {
+      rect(ctx, bx - 1, by, 3, 1, signal(s));
+      rect(ctx, bx, by - 1, 1, 3, signal(s));
+    });
+    if (since < 0.5) rect(ctx, bx, by, 1, 1, "#ecfeff");
+  }
+}
+
+/**
+ * Right wing: a status rack. A trace that runs faster the more agents work, a bar per repo
+ * (its colour, as tall as its sessions, flickering while they work) and a light per session.
+ */
+function statusRack(ctx: CanvasRenderingContext2D, office: Office, x: number, y: number, w: number, h: number, frame: number) {
+  screenFrame(ctx, x, y, w, h);
+  const desks = floorDesks(office);
+  const working = desks.filter(({ d }) => d.session.attention === "working").length;
+  // The trace: a heartbeat across the top.
+  const mid = y + 6;
+  for (let i = 0; i < w - 6; i++) {
+    const t = i + frame * (1 + Math.min(4, working));
+    const beat = t % 34;
+    const dy = working ? (beat === 10 ? -4 : beat === 11 ? 3 : beat === 12 ? -2 : 0) : 0;
+    withAlpha(ctx, 0.35 + 0.65 * (i / (w - 6)), () => rect(ctx, x + 3 + i, mid + dy, 1, 1, working ? COLOR.working : UI.cyanDim));
+  }
+  rect(ctx, x + 3, y + 12, w - 6, 1, "#12324a");
+  // A bar per repo.
+  const zones = office.zones.filter((z) => z.desks.length);
+  const most = Math.max(1, ...zones.map((z) => z.desks.length));
+  const lightsTop = y + h - 6;
+  const barsTop = y + 15;
+  const barsH = lightsTop - barsTop - 3;
+  const barW = Math.max(2, Math.min(8, Math.floor((w - 8) / Math.max(1, zones.length)) - 2));
+  zones.slice(0, Math.floor((w - 6) / (barW + 2))).forEach((z, i) => {
+    const accent = TIERS[hash(z.room.repo_id) % TIERS.length];
+    const busy = z.desks.filter((d) => d.session.attention === "working").length;
+    const flicker = busy ? Math.floor(rand(i * 13 + Math.floor(frame / 3)) * 3) : 0;
+    const bh = Math.max(2, Math.min(barsH, Math.round((z.desks.length / most) * (barsH - 2)) + flicker));
+    const bx = x + 4 + i * (barW + 2);
+    withAlpha(ctx, 0.25, () => rect(ctx, bx, barsTop, barW, barsH, accent));
+    rect(ctx, bx, barsTop + barsH - bh, barW, bh, accent);
+    rect(ctx, bx, barsTop + barsH - bh, barW, 1, "#ecfeff");
+  });
+  // A light per session, in its agent's colour; what needs you blinks.
+  const perRow = Math.max(1, Math.floor((w - 6) / 4));
+  desks.slice(0, perRow).forEach(({ d }, i) => {
+    const s = d.session;
+    const off = s.attention === "needs_you" && !s.muted && frame % 10 >= 5;
+    rect(ctx, x + 4 + i * 4, lightsTop, 2, 2, off ? "#3f1414" : signal(s));
+  });
 }
 
 function door(ctx: CanvasRenderingContext2D, x: number, wallBottom: number, frame: number) {
@@ -357,73 +487,103 @@ function lobbyWall(ctx: CanvasRenderingContext2D, office: Office, st: PaintState
   if (st.hoveredDoor) frameRect(ctx, dx - 4, top + h - 32, TILE + 8, 34, "#ffffffaa");
 }
 
-/** Each repo is a bank of armored command decks, shaped by its occupied console rows. */
-function rug(ctx: CanvasRenderingContext2D, zone: Zone, accent: string, scale: number) {
-  const r: Rect = zone.rect;
-  // Its consoles, the free ones included, row by row.
-  const rows = new Map<number, Rect[]>();
-  for (const cell of [...zone.desks.map((d) => d.cell), ...zone.spares].sort((a, b) => a.x - b.x)) {
-    const row = rows.get(cell.y) ?? [];
-    row.push(cell);
-    rows.set(cell.y, row);
+/**
+ * The war room's floor: the screen's light falling on the middle, a glow under each repo's
+ * consoles and a light track along each tier.
+ */
+function arenaFloor(ctx: CanvasRenderingContext2D, office: Office, st: PaintState) {
+  const cx = office.arena.center.x * TILE + TILE / 2;
+  const top = WAR_WALL_ROWS * TILE + 2;
+  const bottom = (office.bands.war.h - 1) * TILE - 2;
+  const dot = (x: number, y: number, color: string) => {
+    if (y >= top && y < bottom && x >= 4 && x < office.width - 4) rect(ctx, x, y, 1, 1, color);
+  };
+  // A pool of light under the screen, widening as it falls.
+  for (let i = 0; i < 8; i++) {
+    const y = top + i * 6;
+    const half = 40 + i * 10;
+    withAlpha(ctx, 0.05 - i * 0.005, () => rect(ctx, cx - half, y, half * 2, 6, UI.cyan));
   }
-  for (const cells of rows.values()) {
-    const first = cells[0];
-    const last = cells[cells.length - 1];
-    const x = first.x - 12;
-    const y = first.y - 4;
-    const w = last.x + last.w + 2 - x;
-    // Deep enough for a two-line name above the front fascia.
-    const h = first.h + 6;
-    // Stepped armor, a recessed deck and an exposed front fascia.
-    armor(ctx, x + 2, y + 5, w, h, 8, "#050914");
-    armor(ctx, x, y + 2, w, h, 8, "#283950");
-    armor(ctx, x, y, w, h - 3, 8, "#40546b");
-    armor(ctx, x + 2, y + 2, w - 4, h - 7, 7, "#1a2a3e");
-    armor(ctx, x + 5, y + 5, w - 10, h - 13, 5, "#122033");
-    // Short strips follow the cut corners; the centre remains a clear entry ramp.
-    const centre = Math.floor(x + w / 2);
-    rect(ctx, x + 9, y + h - 4, Math.max(0, centre - x - 17), 1, accent);
-    rect(ctx, centre + 8, y + h - 4, Math.max(0, x + w - centre - 17), 1, accent);
-    for (let step = 0; step < 3; step++) {
-      rect(ctx, centre - 7 - step, y + h - 6 + step * 2, 14 + step * 2, 1, "#58677a");
-    }
-    for (const cell of cells) {
-      // Floor sockets under each operator's chair; subtle enough to preserve name readability.
-      const feet = { x: cell.x + cell.w / 2, y: cell.y + 6 + TILE + 13 };
-      rect(ctx, feet.x - 8, feet.y - 3, 16, 2, "#0b1526");
-      rect(ctx, cell.x + 3, y + h - 11, 5, 1, "#354a61");
-      rect(ctx, cell.x + cell.w - 6, y + h - 11, 3, 1, "#354a61");
-    }
-    // Flush side panels: bolts, vents and the sector's colour strip.
-    rect(ctx, x + 3, y + 12, 4, h - 30, "#0a1423");
-    rect(ctx, x + 4, y + 14, 1, 9, accent);
-    for (let vy = y + 27; vy < y + h - 16; vy += 3) rect(ctx, x + 4, vy, 2, 1, "#455a70");
-    for (const bx of [x + 8, x + w - 9]) {
-      rect(ctx, bx, y + 4, 2, 1, "#9aafbd");
-      rect(ctx, bx, y + h - 9, 2, 1, "#9aafbd");
+  // Under each repo's run of consoles, a glow in its colour: the group reads before the names do.
+  for (const zone of office.zones) {
+    const accent = TIERS[hash(zone.room.repo_id) % TIERS.length];
+    for (const cells of zone.segments) {
+      cells.forEach((c, i) => {
+        const x0 = i ? c.x : c.x - 3;
+        const x1 = i < cells.length - 1 ? c.x + c.w : c.x + c.w + 3;
+        withAlpha(ctx, 0.1, () => rect(ctx, x0, c.y + 1, x1 - x0, c.h + 2, accent));
+      });
     }
   }
-  // Cabinet-only repositories still have a small equipment landing.
-  if (!rows.size) armor(ctx, r.x * TILE + 3, r.y * TILE + 5, r.w * TILE - 6, r.h * TILE - 9, 7, "#1a2a3e");
-  const x = r.x * TILE + 5;
-  const y = r.y * TILE - 5;
-  // The sign: the repo's name in full where it fits (finer letters on big scales), and how many
-  // sessions it has; red while one of them needs you. Usage is drawn on the consoles, not written.
+  // Each tier's track runs along the aisle behind its chairs; a light runs along it.
+  const arena = office.arena;
+  const left = 2 * TILE;
+  const right = office.width - 2 * TILE;
+  arena.rings.forEach((_, ring) => {
+    const span = right - left;
+    const runner = (st.frame * 3 + ring * 60) % (span + 40);
+    for (let x = left; x < right; x++) {
+      const y = Math.round((ringY(arena, ring, x / TILE - 0.5) + 1.45) * TILE + TILE - 3);
+      const near = Math.abs(x - left - runner);
+      if (near < 14) withAlpha(ctx, 0.7 - near * 0.045, () => dot(x, y, UI.cyan));
+      else if (x % 3 === 0) withAlpha(ctx, 0.3, () => dot(x, y, UI.cyanDim));
+    }
+  });
+}
+
+/**
+ * The armored pad a console stands on, edged in its repo's colour (grey when nobody has it). It
+ * reaches its neighbour on a side that `joins`, so a repo's run reads as one platform and a gap
+ * parts it from the next repo.
+ */
+function pad(ctx: CanvasRenderingContext2D, cell: Rect, accent: string | null, lit: boolean, joinLeft: boolean, joinRight: boolean) {
+  const left = joinLeft ? 0 : 3;
+  const right = joinRight ? 0 : 3;
+  const x = cell.x + left;
+  const y = cell.y + 3;
+  const w = cell.w - left - right;
+  const h = cell.h - 4;
+  const cut = joinLeft || joinRight ? 2 : 5;
+  armor(ctx, x + 1, y + 3, w, h, cut, "#050914");
+  armor(ctx, x, y, w, h, cut, accent ? "#3a4d66" : "#232f42");
+  armor(ctx, x + (joinLeft ? 0 : 2), y + 2, w - (joinLeft ? 0 : 2) - (joinRight ? 0 : 2), h - 4, cut, "#16243a");
+  armor(ctx, x + (joinLeft ? 0 : 4), y + 4, w - (joinLeft ? 0 : 4) - (joinRight ? 0 : 4), h - 9, cut, "#111d30");
+  // The repo's colour along the front edge, unbroken along the run; dimmer under a spare.
+  if (accent) withAlpha(ctx, lit ? 0.8 : 0.4, () => rect(ctx, x + (joinLeft ? 0 : 6), y + h - 3, w - (joinLeft ? 0 : 6) - (joinRight ? 0 : 6), 1, accent));
+  // Floor socket under the chair.
+  rect(ctx, cell.x + Math.floor(cell.w / 2) - 7, y + TILE + 18, 14, 2, "#0b1526");
+}
+
+/**
+ * A repo's sign over its consoles: centred over its run on the innermost tier it takes, above the
+ * highest console under it (the tier ahead's names stay clear: tiers are `RING_GAP` rows apart). The
+ * full name where it fits (finer letters on big scales) and how many sessions it has; red while
+ * one needs you.
+ */
+function sign(ctx: CanvasRenderingContext2D, office: Office, zone: Zone, scale: number) {
+  const run = zone.segments[0];
+  if (!run?.length) return;
+  const left = run[0].x;
+  const right = run[run.length - 1].x + run[run.length - 1].w;
+  const accent = TIERS[hash(zone.room.repo_id) % TIERS.length];
   const px = nameDot(scale);
   const urgent = zone.desks.some((d) => d.session.attention === "needs_you" && !d.session.muted && !d.session.archived);
   const color = urgent ? COLOR.needs_you : accent;
   const count = ` ${zone.desks.length + zone.folded.length}`;
-  // It may use the aisle up to the next deck (a tile), never reach that deck's own sign.
-  const room = (r.w + 1) * TILE - 30;
+  const room = Math.max(right - left, 2 * run[0].w) - 16;
   const name = fit(zone.room.repo_name.toUpperCase(), room - textWidth(count, px), px);
-  const width = Math.round(textWidth(name + count, px)) + 16;
-  armor(ctx, x, y, width, 11, 3, urgent ? COLOR.needs_you : "#3a4b61");
-  armor(ctx, x + 1, y + 1, width - 2, 9, 2, "#080f1d");
-  rect(ctx, x + 3, y + 3, 2, 5, color);
-  const ty = y + 3 + (5 - 5 * px) / 2;
-  drawText(ctx, name, x + 9, ty, color, px);
-  drawText(ctx, count, x + 9 + textWidth(name, px), ty, UI.cyanDim, px);
+  const width = Math.round(textWidth(name + count, px)) + 14;
+  const middle = Math.round((left + right) / 2);
+  const x = Math.max(4, Math.min(office.width - 4 - width, middle - Math.floor(width / 2)));
+  // Over the consoles right under it: on a curve the run's far end may sit a row higher.
+  const under = run.filter((c) => c.x < x + width && x < c.x + c.w);
+  const y = Math.min(...(under.length ? under : run).map((c) => c.y)) - 11;
+  armor(ctx, x, y, width, 10, 3, urgent ? COLOR.needs_you : "#3a4b61");
+  armor(ctx, x + 1, y + 1, width - 2, 8, 2, "#080f1d");
+  rect(ctx, x + 3, y + 3, 2, 4, color);
+  const ty = y + 2 + (5 - 5 * px) / 2;
+  drawText(ctx, name, x + 8, ty, color, px);
+  drawText(ctx, count, x + 8 + textWidth(name, px), ty, UI.cyanDim, px);
 }
 
 function loungeRug(ctx: CanvasRenderingContext2D, office: Office) {
@@ -505,18 +665,22 @@ function loungeRug(ctx: CanvasRenderingContext2D, office: Office) {
 
 // ---------- Furniture ----------
 
-/** A console: one per seat, cell-wide, so a row of them reads as one continuous bank. */
-/** A free console, powered off: where the repo's next session will sit. */
-function spareConsole(ctx: CanvasRenderingContext2D, r: Rect) {
+/**
+ * A console nobody sits at, powered off: a repo's spare (where its next session will sit, with a
+ * standby light in the repo's colour) or a dark one, waiting for a repo.
+ */
+function spareConsole(ctx: CanvasRenderingContext2D, r: Rect, accent: string | null, frame: number) {
   const { x, w } = r;
   const top = r.y + 8;
-  withAlpha(ctx, 0.55, () => {
+  withAlpha(ctx, accent ? 0.6 : 0.45, () => {
     armor(ctx, x + 1, top - 1, w - 2, 16, 3, UI.metalDark);
     armor(ctx, x + 2, top + 3, w - 4, 9, 2, "#1a2536");
     armor(ctx, x + Math.floor(w / 2) - 8, top - 9, 16, 11, 1, "#101927");
     rect(ctx, x + Math.floor(w / 2) - 7, top - 8, 14, 8, "#05080f");
     withAlpha(ctx, 0.3, () => rect(ctx, x + 1, top + 10, w - 2, 1, UI.cyanDim));
   });
+  // Standby: a slow breathing light, so a reserved console reads as ready rather than broken.
+  if (accent) withAlpha(ctx, 0.35 + 0.35 * Math.abs(Math.sin((frame + r.x) / 9)), () => rect(ctx, x + Math.floor(w / 2) - 1, top - 5, 2, 2, accent));
   chair(ctx, x + Math.floor(w / 2), top + TILE + 11);
 }
 
@@ -543,7 +707,9 @@ function desk(ctx: CanvasRenderingContext2D, d: Desk, st: PaintState) {
         rect(ctx, x + 4 + i * 3, top + 1, 2, 1, on ? ["#34d399", "#22d3ee", "#fbbf24", "#f87171"][i] : "#1f2937");
       }
     }
-    monitor(ctx, x + Math.floor(w / 2) - 8, top - 9, s, st.frame);
+    const age = bootAge(s.id, st);
+    if (age < BOOT_FRAMES) boot(ctx, d, age);
+    else monitor(ctx, x + Math.floor(w / 2) - 8, top - 9, s, st.frame);
     // Angled auxiliary displays flank the central status monitor.
     for (const sx of [x + 3, x + w - 11]) {
       armor(ctx, sx, top - 5, 8, 6, 1, "#101927");
@@ -564,6 +730,32 @@ function desk(ctx: CanvasRenderingContext2D, d: Desk, st: PaintState) {
       rect(ctx, x + w - 14 + i * 2, top + 8 - i, 1, 1 + i, i < cost ? "#fbbf24" : "#1a2438");
     }
   });
+}
+
+/** Frames since this session's console lit up (it lights up the first time it is painted). */
+function bootAge(id: string, st: PaintState): number {
+  if (!st.litAt) return BOOT_FRAMES;
+  if (!st.litAt.has(id)) st.litAt.set(id, st.frame);
+  return st.frame - st.litAt.get(id)!;
+}
+
+/** A console powering on: the screen flashes, a boot bar fills, and light spreads over its pad. */
+function boot(ctx: CanvasRenderingContext2D, d: Desk, age: number) {
+  const { x, w } = d.cell;
+  const mx = x + Math.floor(w / 2) - 8;
+  const my = d.desk.y - 9;
+  rect(ctx, mx, my, 16, 11, "#0b101c");
+  rect(ctx, mx, my, 16, 1, UI.metalEdge);
+  if (age < 3) rect(ctx, mx + 1, my + 1, 14, 9, ["#ffffff", "#bff4ff", "#3fc6e0"][age]);
+  else {
+    rect(ctx, mx + 1, my + 1, 14, 9, "#06202c");
+    rect(ctx, mx + 2, my + 6, 12, 2, "#0b3646");
+    rect(ctx, mx + 2, my + 6, Math.round((12 * (age - 3)) / (BOOT_FRAMES - 4)), 2, UI.cyan);
+    drawText(ctx, ">", mx + 2, my + 1, "#7dd3fc");
+  }
+  // A ring of light leaving the console, fading as it grows.
+  const grow = age * 2;
+  withAlpha(ctx, Math.max(0, 0.7 - age * 0.05), () => frameRect(ctx, x - grow / 2 + 2, d.cell.y + 2 - grow / 2, w - 4 + grow, d.cell.h - 2 + grow, UI.cyan));
 }
 
 /** 1–5 sheets: under 1M tokens, 10M, 30M, 100M, more. */

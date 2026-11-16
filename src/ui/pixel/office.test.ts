@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { aRoom, aSession, aSubagent, aView } from "../../test/fixtures";
 import type { SessionView } from "../../domain/attention";
-import { cabinetAtPoint, deskAtPoint, doorwayAtPoint, FOLD_AFTER, LINGER_MS, feetOf, findPath, fitOffice, fitViewport, layoutOffice, pixelScale, TILE, WALL_ROWS, WAR_WALL_ROWS } from "./office";
+import { cabinetAtPoint, deskAtPoint, doorwayAtPoint, FOLD_AFTER, LINGER_MS, feetOf, findPath, fitOffice, fitViewport, layoutOffice, packRings, pixelScale, TILE, WALL_ROWS, WAR_WALL_ROWS } from "./office";
 import { type Actor, goals, step, subagentKey } from "./sim";
 import { lobbyCount } from "./paint";
 
@@ -31,7 +31,9 @@ describe("layoutOffice", () => {
         expect(office.walkable[d.seat.y - 1][d.seat.x], "the desk itself blocks").toBe(false);
       }
     }
-    expect(office.zones[1].rect.x).toBeGreaterThan(office.zones[0].rect.x + office.zones[0].rect.w);
+    // Consecutive consoles: "a" has two, "b" its one and a spare.
+    expect(office.zones.map((z) => z.segments.flat().length)).toEqual([2, 2]);
+    expect(office.zones[1].spares).toHaveLength(1);
   });
 
   it("seats agents in a stable order, not by urgency, so nobody changes console", () => {
@@ -60,12 +62,13 @@ describe("layoutOffice", () => {
     }
   });
 
-  it("wraps big repos into rows and zones into shelves, and leaves a lounge below", () => {
+  it("grows the war room until its tiers hold every console, and leaves a lounge below", () => {
     const office = layoutOffice(aView([aRoom("big", sessions("g", 9)), aRoom("other", sessions("o", 2))]), 320, false);
     const [big, other] = office.zones;
-    expect(new Set(big.desks.map((d) => d.seat.y)).size).toBeGreaterThan(1);
-    expect(other.rect.y).toBeGreaterThan(big.rect.y);
-    expect(office.lounge.y).toBeGreaterThanOrEqual(other.rect.y + other.rect.h);
+    expect(big.desks).toHaveLength(9);
+    expect(other.desks).toHaveLength(2);
+    expect(office.arena.rings.length).toBeGreaterThan(1);
+    expect(office.lounge.y).toBeGreaterThanOrEqual(office.bands.war.h);
     expect(office.spots.length).toBeGreaterThan(2);
     expect(office.height).toBe(office.rows * TILE);
   });
@@ -179,30 +182,82 @@ describe("layoutOffice", () => {
     expect(doorwayAtPoint(office, "war", { x: doorway.x + 3 * TILE, y: doorway.y })).toBe(false);
   });
 
-  it("spreads the decks over the floor in balanced rows, not in one strip", () => {
-    const view = aView(["a", "b", "c", "d", "e"].map((n) => aRoom(n, sessions(n, 2))));
-    const tall = layoutOffice(view, 1400, false, 26 * TILE);
-    const rowsOf = (o: typeof tall) => [...new Set(o.zones.map((z) => z.rect.y))];
-    expect(rowsOf(tall).length).toBeGreaterThan(1);
-    const perRow = rowsOf(tall).map((y) => tall.zones.filter((z) => z.rect.y === y).length);
-    expect(Math.max(...perRow) - Math.min(...perRow), "balanced rows").toBeLessThanOrEqual(1);
-    // A wide, short floor keeps them in one row.
-    expect(rowsOf(layoutOffice(view, 1400, false, 14 * TILE))).toHaveLength(1);
-    for (const d of tall.zones.flatMap((z) => z.desks)) expect(findPath(tall, tall.door, d.seat).length).toBeGreaterThan(0);
-    expect(findPath(tall, tall.door, tall.lobbyDoor).length).toBeGreaterThan(0);
+  it("sets the consoles on tiers curving round the screen wall, touching along each tier", () => {
+    const view = aView(["a", "b", "c"].map((n) => aRoom(n, sessions(n, 3))));
+    const office = layoutOffice(view, 520, false, 20 * TILE);
+    const cells = [...office.dark, ...office.zones.flatMap((z) => z.segments.flat())];
+    const seats = cells.map((c) => ({ x: c.x / TILE + 1, y: (c.y + 6) / TILE + 1 }));
+    expect(office.arena.rings.length).toBeGreaterThan(1);
+    // Each tier's ends are nearer the wall than its middle, mirrored about the middle.
+    const tier = seats.filter((s) => Math.abs(s.y - office.arena.rings[0]) <= office.arena.rise).sort((p, q) => p.x - q.x);
+    const middle = tier.reduce((best, s) => (Math.abs(s.x - office.arena.center.x) < Math.abs(best.x - office.arena.center.x) ? s : best));
+    expect(tier[0].y).toBeLessThan(middle.y);
+    expect(tier[tier.length - 1].y).toBe(tier[0].y);
+    // Neighbours on a tier touch: three columns apart (six across the free place between two
+    // repos), at most a row up or down.
+    tier.slice(1).forEach((s, i) => {
+      expect([3, 6]).toContain(s.x - tier[i].x);
+      expect(Math.abs(s.y - tier[i].y)).toBeLessThanOrEqual(1);
+    });
+    // No two consoles overlap, and everyone can reach every chair.
+    for (const [i, p] of seats.entries()) {
+      for (const q of seats.slice(i + 1)) expect(Math.max(Math.abs(p.x - q.x), Math.abs(p.y - q.y))).toBeGreaterThanOrEqual(3);
+    }
+    for (const s of seats) expect(findPath(office, office.door, s).length).toBeGreaterThan(0);
+    expect(findPath(office, office.door, office.lobbyDoor).length).toBeGreaterThan(0);
   });
 
-  it("centres the decks in a tall war room instead of leaving its lower half empty", () => {
-    const view = aView([aRoom("a", sessions("a", 2))]);
-    const short = layoutOffice(view, 480, false);
-    const tall = layoutOffice(view, 480, false, 40 * TILE);
-    const [zs, zt] = [short.zones[0].rect, tall.zones[0].rect];
-    const above = zt.y - WAR_WALL_ROWS;
-    const below = tall.bands.war.h - 1 - (zt.y + zt.h);
-    expect(zt.y).toBeGreaterThan(zs.y);
-    expect(Math.abs(above - below)).toBeLessThanOrEqual(2);
-    for (const d of tall.zones[0].desks) expect(findPath(tall, tall.door, d.seat).length).toBeGreaterThan(0);
+  it.each([[200, 11], [320, 18], [520, 20], [700, 30], [1400, 14]])("every console of a %ipx-wide, %i-row room is reachable and inside the floor", (width, rows) => {
+    const office = layoutOffice(aView([aRoom("a", sessions("a", 5)), aRoom("b", sessions("b", 4))]), width, false, rows * TILE);
+    expect(office.zones.flatMap((z) => z.desks)).toHaveLength(9);
+    for (const cell of [...office.dark, ...office.zones.flatMap((z) => z.segments.flat())]) {
+      const seat = { x: cell.x / TILE + 1, y: (cell.y + 6) / TILE + 1 };
+      expect(seat.y - 1).toBeGreaterThan(WAR_WALL_ROWS);
+      expect(seat.y + 1).toBeLessThan(office.bands.war.h - 1);
+      expect(seat.x - 1).toBeGreaterThan(0);
+      expect(seat.x + 1).toBeLessThan(office.cols - 1);
+      expect(findPath(office, office.door, seat).length).toBeGreaterThan(0);
+    }
   });
+
+  it("lays out dark consoles ahead, and a new repo lights some without growing the room", () => {
+    const one = layoutOffice(aView([aRoom("a", sessions("a", 2))]), 520, false, 20 * TILE);
+    const two = layoutOffice(aView([aRoom("a", sessions("a", 2)), aRoom("b", sessions("b", 1))]), 520, false, 20 * TILE);
+    expect(one.dark.length).toBeGreaterThan(2);
+    expect(two.dark.length).toBeLessThanOrEqual(one.dark.length - 2);
+    expect(two.bands.war.h, "the room keeps its size").toBe(one.bands.war.h);
+  });
+
+  it("seats each repo as a run of neighbouring consoles on a ring, a free place apart, centred", () => {
+    const ring = (n: number, y: number) => Array.from({ length: n }, (_, i) => ({ x: 3 * i, y }));
+    // Two repos share the first ring with a gap; the third does not fit its tail and starts the next.
+    const packed = packRings([ring(8, 0), ring(10, 5)], [2, 3, 4])!;
+    const xs = (z: number) => packed.runs[z].map((p) => `${p.ring}:${p.seat.x / 3}`);
+    expect(xs(0)).toEqual(["0:1", "0:2"]);
+    expect(xs(1)).toEqual(["0:4", "0:5", "0:6"]);
+    expect(xs(2)).toEqual(["1:3", "1:4", "1:5", "1:6"]);
+    // The gap at place 3 stays empty floor; the rest are dark.
+    expect(packed.dark.map((p) => `${p.ring}:${p.seat.x / 3}`)).toEqual(["0:0", "0:7", "1:0", "1:1", "1:2", "1:7", "1:8", "1:9"]);
+    // A repo longer than a ring carries on into the next; too many for every ring: null.
+    expect(packRings([ring(3, 0), ring(4, 5)], [6])!.runs[0]).toHaveLength(6);
+    expect(packRings([ring(3, 0)], [2, 2])).toBeNull();
+  });
+
+  it.each([[480, 12, 20], [480, 30, 60], [360, 30, 40], [640, 25, 120]])(
+    "seats a crowd at %ipx wide, %i rows, %i sessions: every desk, apart, reachable",
+    (width, rows, count) => {
+      const repos = Array.from({ length: 9 }, (_, r) => r);
+      const view = aView(repos.map((r) => aRoom(`r${r}`, sessions(`r${r}-`, Math.ceil(count / repos.length) - (r % 3)))));
+      const office = layoutOffice(view, width, false, rows * TILE);
+      const desks = office.zones.flatMap((z) => z.desks);
+      expect(desks).toHaveLength(view.rooms.reduce((n, r) => n + r.sessions.length, 0));
+      const cells = [...office.dark, ...office.zones.flatMap((z) => z.segments.flat())];
+      for (const [i, p] of cells.entries()) {
+        for (const q of cells.slice(i + 1)) expect(Math.max(Math.abs(p.x - q.x), Math.abs(p.y - q.y))).toBeGreaterThanOrEqual(3 * TILE);
+      }
+      for (const d of desks) expect(findPath(office, office.door, d.seat).length).toBeGreaterThan(0);
+    },
+  );
 
   it("picks a comfortable scale", () => {
     expect([pixelScale(600), pixelScale(1200), pixelScale(2000)]).toEqual([2, 3, 4]);

@@ -10,8 +10,10 @@ export const WAR_WALL_ROWS = 5;
 /** A desk cell: desk row, seat row, aisle row; three tiles wide. */
 const CELL_W = 3;
 const CELL_H = 3;
-/** Label row on top of each zone. */
-const ZONE_LABEL_ROWS = 1;
+/** Rows between tiers of consoles: a cell, the names under it and the aisle with the next tier's signs. */
+const RING_GAP = 5;
+/** The shortest war room: its wall, one tier and the bottom wall. */
+const MIN_WAR_ROWS = WAR_WALL_ROWS + 6;
 /** One row of seating nooks, circulation and a margin; a taller lobby fits more rows of nooks. */
 const LOUNGE_ROWS = 7;
 /** How long a repo keeps its deck after its last session closed. */
@@ -36,7 +38,10 @@ export type Desk = {
 
 export type Zone = {
   room: RoomView;
+  /** Bounding box of its consoles (tiles); they follow a tier's curve, so it may take in others' too. */
   rect: Rect;
+  /** Its consoles' cells (pixels), one run per tier it takes (from the screen out), left to right. */
+  segments: Rect[][];
   desks: Desk[];
   /** Cells of free consoles (pixels, like `Desk.cell`): a spare, so a new session does not reshape the deck. */
   spares: Rect[];
@@ -66,6 +71,10 @@ export type Office = {
   lobbyDoor: Point;
   aggregate: AttentionView;
   zones: Zone[];
+  /** Cells of the consoles nobody has: dark until a session lights one. */
+  dark: Rect[];
+  /** The tiers the consoles stand on. */
+  arena: Arena;
   lounge: Rect;
   props: Prop[];
   spots: Spot[];
@@ -78,15 +87,16 @@ export type Office = {
 };
 
 /**
- * Lays out the office for `width` logical pixels: the war room (repo zones packed in shelves under
- * the wall, in a stable order: repos by name, desks by when their session started) and, through a door in its bottom wall, the
- * lobby with the crew lounge. Each fills at least `minHeight`. `now` (ms) keeps a repo whose last session
- * closed less than `LINGER_MS` ago on the floor.
+ * Lays out the office for `width` logical pixels: the war room (tiers of consoles curving round
+ * the screen wall; each repo a run of neighbouring consoles along a tier, in a stable order: repos
+ * by name, desks by when their session started) and, through a door in its bottom wall, the lobby with the crew lounge.
+ * Each fills at least `minHeight`. `now` (ms) keeps a repo whose last session closed less than
+ * `LINGER_MS` ago on the floor.
  */
 export function layoutOffice(view: WarRoomView, width: number, showArchived: boolean, minHeight = 0, now = 0): Office {
-  const cols = Math.max(CELL_W + 2, Math.floor(width / TILE));
-  const maxCells = Math.max(1, Math.floor((cols - 2 - 1) / CELL_W));
-  const zones: Zone[] = [];
+  const cols = Math.max(4 * CELL_W, Math.floor(width / TILE));
+  type Plan = { room: RoomView; sessions: SessionView[]; folded: SessionView[]; consoles: number };
+  const plans: Plan[] = [];
 
   let idle = 0;
   // The core sorts by urgency, which changes all the time; a seat must not, or agents would get up
@@ -104,32 +114,51 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
     const sessions = crowded ? visible.filter((s) => !folded.includes(s)) : visible;
     idle += sessions.filter((s) => !s.archived && s.attention !== "offline")
       .reduce((n, s) => n + Number(s.attention === "idle") + s.subagents.filter((a) => !a.running).length, 0);
-    // Fixed cell height (subagents stand at fixed spots, they never stretch a deck) and consoles in
-    // pairs: a new session sits at the free one instead of widening the deck and pushing the others.
-    const consoles = Math.max(2, Math.ceil(sessions.length / 2) * 2);
-    const perRow = Math.max(1, Math.min(consoles, maxCells));
-    const rowsOfCells = Math.ceil(consoles / perRow);
-    const w = Math.max(perRow * CELL_W + 1, 5);
-    const h = ZONE_LABEL_ROWS + Math.max(1, rowsOfCells * CELL_H);
-    // Built at the origin; `arrange` moves it to its place on the floor.
-    const cellAt = (i: number) => ({ cx: 1 + (i % perRow) * CELL_W, cy: ZONE_LABEL_ROWS + Math.floor(i / perRow) * CELL_H });
-    const desks = sessions.map((session, i) => {
-      const { cx, cy } = cellAt(i);
-      return deskAt(session, cx, cy);
-    });
-    const spares = Array.from({ length: consoles - sessions.length }, (_, k) => {
-      const { cx, cy } = cellAt(sessions.length + k);
-      return { x: cx * TILE, y: cy * TILE - 6, w: CELL_W * TILE, h: CELL_H * TILE + 6 };
-    });
-    zones.push({ room, rect: { x: 0, y: 0, w, h }, desks, spares, folded, cabinet: folded.length ? { x: w - 2, y: 0 } : null });
+    // Consoles in pairs: a new session sits at the free one instead of pushing the next repo along.
+    // The cabinet of closed sessions takes the place of one more.
+    const consoles = Math.max(2, Math.ceil(sessions.length / 2) * 2) + (folded.length ? 1 : 0);
+    plans.push({ room, sessions, folded, consoles });
   }
 
+  // The war room's tiers: rows of consoles curving round the screen wall, laid out before anyone
+  // sits, dark until a session takes one. It grows only when its tiers cannot seat every repo.
+  const sizes = plans.map((p) => p.consoles);
+  const needed = sizes.reduce((n, k) => n + k + 1, 0);
   const minRows = Math.floor(minHeight / TILE);
-  // Floor between the screen wall (plus a row) and the bottom wall (plus a free row by the doorway).
-  const top = WAR_WALL_ROWS + 1;
-  const floorRows = Math.max(0, minRows - top - 2);
-  const shelves = arrange(zones, cols - 2, floorRows);
-  const contentRows = (zones.length ? top + shelves.reduce((n, sh) => n + sh.h, 0) + shelves.length - 1 : top + CELL_H) + 1;
+  let warRows = Math.max(minRows, MIN_WAR_ROWS);
+  let arena = tiers(cols, warRows);
+  let packed = packRings(arena.seats, sizes);
+  // Far from enough seats, grow by more than a row at a time (a tier holds a third of the width).
+  for (let tries = 0; !packed && tries < 200; tries++) {
+    const short = Math.max(0, needed - arena.all.length);
+    warRows += Math.max(1, Math.floor((short / Math.max(1, cols / CELL_W)) * RING_GAP));
+    arena = tiers(cols, warRows);
+    packed = packRings(arena.seats, sizes);
+  }
+  const runs = packed ?? { runs: sizes.map(() => []), dark: arena.seats.flatMap((ring, i) => ring.map((seat) => ({ seat, ring: i }))) };
+
+  const zones: Zone[] = plans.map(({ room, sessions, folded }, z) => {
+    const run = runs.runs[z];
+    if (!run.length) return { room, rect: { x: 0, y: 0, w: 0, h: 0 }, desks: [], spares: [], folded, segments: [], cabinet: null };
+    const desks = sessions.slice(0, run.length).map((session, i) => deskAt(session, run[i].seat.x - 1, run[i].seat.y - 1));
+    const kept = folded.length ? run.slice(0, -1) : run;
+    const spares = kept.slice(sessions.length).map(({ seat }) => cellOf(seat));
+    const cabinetSeat = folded.length ? run[run.length - 1].seat : null;
+    const segments = [...new Set(run.map((r) => r.ring))].sort((a, b) => a - b).map((ring) =>
+      run.filter((r) => r.ring === ring).map((r) => r.seat).sort((a, b) => a.x - b.x).map(cellOf));
+    const xs = run.map((r) => r.seat.x);
+    const ys = run.map((r) => r.seat.y);
+    const rect = {
+      x: Math.min(...xs) - 1,
+      y: Math.min(...ys) - 1,
+      w: Math.max(...xs) - Math.min(...xs) + CELL_W,
+      h: Math.max(...ys) - Math.min(...ys) + CELL_H,
+    };
+    return { room, rect, desks, spares, folded, segments, cabinet: cabinetSeat && { x: cabinetSeat.x, y: cabinetSeat.y - 1 } };
+  });
+  const dark = runs.dark.map(({ seat }) => cellOf(seat));
+  const lit = [...runs.runs.flat(), ...runs.dark].map((r) => r.seat);
+
   // The lounge grows a mingling row at a time until every idle agent has a place.
   const sideBySide = cols >= 18;
   const roomWidth = sideBySide ? Math.floor((cols - 3) / 2) : cols - 2;
@@ -137,28 +166,7 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
   const mingleRows = Math.max(1, Math.ceil(idle / Math.max(1, perMingleRow)));
   const loungeRows = (LOUNGE_ROWS + mingleRows + 2) * (sideBySide ? 1 : 2) + 1;
   // The war room ends in a wall row; the lobby starts under it with its own wall.
-  const war = { y: 0, h: Math.max(contentRows + 1, minRows) };
-  // Spread the shelves over the floor: the spare rows go evenly above, between and below them.
-  const spareRows = war.h - (contentRows + 1);
-  const rowGap = Math.floor(Math.max(0, spareRows) / (shelves.length + 1));
-  // One grid for every shelf: the n-th deck of each shelf is in the same column (as wide as its
-  // widest deck), so the floor reads as rows and columns rather than a staircase.
-  const columns: number[] = [];
-  for (const shelf of shelves) shelf.zones.forEach((z, i) => (columns[i] = Math.max(columns[i] ?? 0, z.rect.w)));
-  const fits = columns.reduce((n, w) => n + w, 0) + columns.length - 1 <= cols - 2;
-  let shelfY = top + rowGap;
-  for (const shelf of shelves) {
-    const widths = fits ? columns : shelf.zones.map((z) => z.rect.w);
-    const used = widths.reduce((n, w) => n + w, 0);
-    const colGap = Math.floor((cols - 2 - used) / (widths.length + 1));
-    let shelfX = 1 + colGap;
-    shelf.zones.forEach((zone, i) => {
-      // Each deck sits at the top of its shelf, centred in its column.
-      moveZone(zone, shelfX + Math.floor((widths[i] - zone.rect.w) / 2), shelfY);
-      shelfX += widths[i] + colGap;
-    });
-    shelfY += shelf.h + 1 + rowGap;
-  }
+  const war = { y: 0, h: warRows };
   // A free row under the lobby's wall, so the doorway always opens onto floor.
   const lobby = { y: war.h, h: Math.max(WALL_ROWS + 1 + loungeRows, minRows) };
   const rows = war.h + lobby.h;
@@ -166,26 +174,14 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
   const lounge = { x: 1, y: loungeTop, w: cols - 2, h: rows - 1 - loungeTop };
   const lobbyDoor = { x: Math.floor(cols / 2), y: war.h - 1 };
 
-  const floorOf = (band: RoomBand, r: number) => r >= band.y + (band === war ? WAR_WALL_ROWS : WALL_ROWS) && r < band.y + band.h - 1;
-  const walkable = Array.from({ length: rows }, (_, r) =>
-    Array.from({ length: cols }, (_, c) => {
-      // The doorway: through the war room's bottom wall and the lobby's wall.
-      if (c === lobbyDoor.x && r >= lobbyDoor.y && r < lobby.y + WALL_ROWS) return true;
-      return (r < war.h ? floorOf(war, r) : floorOf(lobby, r)) && c > 0 && c < cols - 1;
-    }),
-  );
+  const walkable = warFloor(cols, war.h, lobby);
   const block = (c: number, r: number) => {
     if (walkable[r]?.[c] !== undefined) walkable[r][c] = false;
   };
-  for (const zone of zones) {
-    for (const d of zone.desks) {
-      const deskRow = d.seat.y - 1;
-      for (let c = d.seat.x - 1; c <= d.seat.x + 1; c++) block(c, deskRow);
-      // A chair is a goal, never a corridor: nobody walks through a seated agent.
-      block(d.seat.x, d.seat.y);
-    }
-    if (zone.cabinet) block(zone.cabinet.x, zone.cabinet.y);
-  }
+  // Every console blocks, lit or not: its desk, and its chair (a goal, never a corridor: nobody
+  // walks through a seated agent).
+  for (const seat of lit) blockConsole(block, seat);
+  for (const zone of zones) if (zone.cabinet) block(zone.cabinet.x, zone.cabinet.y);
   const split = sideBySide ? lounge.x + Math.floor(lounge.w / 2) : lounge.y + Math.floor(lounge.h / 2);
   const teamRect = sideBySide
     ? { ...lounge, w: split - lounge.x }
@@ -221,6 +217,8 @@ export function layoutOffice(view: WarRoomView, width: number, showArchived: boo
     lobbyDoor,
     aggregate: view.aggregate,
     zones,
+    dark,
+    arena: { center: arena.center, half: arena.half, rise: arena.rise, rings: arena.rings },
     lounge,
     props,
     spots,
@@ -235,45 +233,134 @@ const byRepo = (a: RoomView, b: RoomView) => a.repo_name.localeCompare(b.repo_na
 /** Oldest first, so a new session takes the next free console instead of pushing others along. */
 const bySeat = (a: SessionView, b: SessionView) => a.started_at - b.started_at || a.id.localeCompare(b.id);
 
+/** The floor of both rooms, before any furniture: walls never, the doorway between them always. */
+function warFloor(cols: number, warRows: number, lobby: RoomBand): boolean[][] {
+  const doorX = Math.floor(cols / 2);
+  const floorOf = (top: number, bottom: number, r: number) => r >= top && r < bottom - 1;
+  return Array.from({ length: lobby.y + lobby.h }, (_, r) =>
+    Array.from({ length: cols }, (_, c) => {
+      // The doorway: through the war room's bottom wall and the lobby's wall.
+      if (c === doorX && r >= warRows - 1 && r < lobby.y + WALL_ROWS) return true;
+      const inside = r < warRows ? floorOf(WAR_WALL_ROWS, warRows, r) : floorOf(lobby.y + WALL_ROWS, lobby.y + lobby.h, r);
+      return inside && c > 0 && c < cols - 1;
+    }),
+  );
+}
+
+/** A console's desk (the row in front of its chair) and the chair itself. */
+function blockConsole(block: (c: number, r: number) => void, seat: Point) {
+  for (let c = seat.x - 1; c <= seat.x + 1; c++) block(c, seat.y - 1);
+  block(seat.x, seat.y);
+}
+
+export type Arena = {
+  /** The middle of the screen wall (tile): every tier faces it. */
+  center: Point;
+  /** Half the width the tiers span (tiles), and how much higher (rows) their ends are than their middle. */
+  half: number;
+  rise: number;
+  /** The row of each tier's middle seat, from the screen out. */
+  rings: number[];
+};
+
+/** The row of a tier's seat at column `x`: a gentle arc whose ends rise towards the screen. */
+export function ringY(arena: Arena, ring: number, x: number): number {
+  const k = (x - arena.center.x) / Math.max(1, arena.half);
+  return arena.rings[ring] - arena.rise * k * k;
+}
+
 /**
- * Groups the decks (in their stable order) into evenly filled shelves, as many as make each deck's
- * share of the floor about the shape of a deck: a wide, short floor gets one long row, a squarer one
- * several rows, so the decks spread over the room instead of lining up in one strip.
+ * The seats (chair tiles) of the war room's tiers, `cols` wide and `warRows` tall: rows of
+ * consoles that curve round the screen wall like a mission control's, as many as fit `RING_GAP`
+ * rows apart. Along a tier the 3×3 consoles touch (mirrored about the middle, free columns at the
+ * sides as aisles); any a person could not walk to is dropped.
  */
-function arrange(zones: Zone[], width: number, rows: number): { zones: Zone[]; h: number }[] {
-  const shelvesFor = (limit: number) => {
-    const out: { zones: Zone[]; h: number; w: number }[] = [];
-    for (const zone of zones) {
-      const last = out[out.length - 1];
-      if (last && last.w + 1 + zone.rect.w <= limit) {
-        last.zones.push(zone);
-        last.w += 1 + zone.rect.w;
-        last.h = Math.max(last.h, zone.rect.h);
-      } else out.push({ zones: [zone], h: zone.rect.h, w: zone.rect.w });
+function tiers(cols: number, warRows: number): Arena & { seats: Point[][]; all: Point[] } {
+  const mid = Math.floor(cols / 2);
+  // Cells from column 2 to cols − 3 (the outer columns are the side aisles), mirrored about a seat
+  // straight under the middle of the screen.
+  const reach = Math.max(0, Math.floor(Math.min(mid - 3, cols - 4 - mid) / CELL_W));
+  const xs = Array.from({ length: 2 * reach + 1 }, (_, i) => mid + (i - reach) * CELL_W);
+  const half = Math.max(1, Math.max(...xs.map((x) => Math.abs(x - mid))));
+  const rise = Math.min(2, Math.max(1, Math.floor(half / 6)));
+  // A free row under the wall, and the bottom wall with a free row above it (the doorway's).
+  const minY = WAR_WALL_ROWS + 2;
+  const maxY = warRows - 3;
+  const top = minY + rise;
+  const count = maxY >= top ? Math.floor((maxY - top) / RING_GAP) + 1 : 0;
+  const arena: Arena = { center: { x: mid, y: WAR_WALL_ROWS - 1 }, half, rise, rings: Array.from({ length: count }, (_, i) => top + i * RING_GAP) };
+  const rings = arena.rings.map((_, i) => xs.map((x) => ({ x, y: Math.round(ringY(arena, i, x)) })));
+
+  // Keep only consoles someone can walk to from the door, with every console in place.
+  const walkable = warFloor(cols, warRows, { y: warRows, h: 0 });
+  for (const seat of rings.flat()) blockConsole((c, r) => walkable[r] && (walkable[r][c] = false), seat);
+  const reached = new Set<string>();
+  const queue: Point[] = [{ x: 1, y: WAR_WALL_ROWS }];
+  reached.add(`1,${WAR_WALL_ROWS}`);
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const [dx, dy] of [[0, 1], [1, 0], [0, -1], [-1, 0]]) {
+      const next = { x: cur.x + dx, y: cur.y + dy };
+      if (walkable[next.y]?.[next.x] && !reached.has(`${next.x},${next.y}`)) {
+        reached.add(`${next.x},${next.y}`);
+        queue.push(next);
+      }
     }
-    return out;
-  };
-  const widest = Math.max(0, ...zones.map((z) => z.rect.w));
-  let best = shelvesFor(width);
-  if (rows <= 0 || zones.length < 2) return best;
-  // Each deck should get a share of the floor about one and a half times as wide as the deck's own
-  // shape: aisles between decks read better than tall empty bands above and below them, and a few
-  // well-spaced rows better than a stack of them pressed together.
-  const deckRatio = (1.5 * zones.reduce((n, z) => n + z.rect.w + 1, 0)) / zones.reduce((n, z) => n + z.rect.h + 1, 0);
-  let bestScore = Infinity;
-  for (let k = 1; k <= zones.length; k++) {
-    // The most even split into k shelves (in order): the narrowest limit that needs no more than k.
-    let limit = widest;
-    while (limit < width && shelvesFor(limit).length > k) limit++;
-    const shelves = shelvesFor(limit);
-    if (shelves.length !== k) continue;
-    if (shelves.reduce((n, sh) => n + sh.h, 0) + (k - 1) > rows) break;
-    const perShelf = Math.max(...shelves.map((sh) => sh.zones.length));
-    const share = width / perShelf / (rows / k);
-    const score = Math.abs(Math.log(share / deckRatio));
-    if (score < bestScore - 1e-9) [best, bestScore] = [shelves, score];
   }
-  return best;
+  const reachable = (s: Point) => [[1, 0], [-1, 0], [0, 1]].some(([dx, dy]) => reached.has(`${s.x + dx},${s.y + dy}`));
+  const seats = rings.map((ring) => ring.filter(reachable));
+  return { ...arena, seats, all: seats.flat() };
+}
+
+type Placed = { seat: Point; ring: number };
+
+/**
+ * Repos (how many consoles each takes, in order) along the tiers (`rings`, each its seats left to
+ * right) from the screen out: each a run of neighbouring consoles, one free place between two repos
+ * so each reads as a group, and each tier's runs centred on it. A repo that does not fit the rest of
+ * a tier starts the next one; one longer than a whole tier carries on into the next. The places left
+ * over are dark consoles (the free place between two repos stays empty floor). Null when the tiers
+ * cannot seat them all.
+ */
+export function packRings(rings: Point[][], sizes: number[]): { runs: Placed[][]; dark: Placed[] } | null {
+  // Per tier, what each place holds: a repo's index, or -1 for the gap between two repos.
+  const rows: number[][] = rings.map(() => []);
+  let r = 0;
+  for (let z = 0; z < sizes.length; z++) {
+    let left = sizes[z];
+    while (left > 0) {
+      if (r >= rings.length) return null;
+      const cap = rings[r].length;
+      const used = rows[r].length;
+      const room = cap - used - (used ? 1 : 0);
+      // Not on a tier's tail if a fresh tier would hold it whole.
+      if (room <= 0 || (room < left && left <= (rings[r + 1]?.length ?? 0) && used)) {
+        r++;
+        continue;
+      }
+      if (used) rows[r].push(-1);
+      const take = Math.min(room, left);
+      for (let k = 0; k < take; k++) rows[r].push(z);
+      left -= take;
+      if (left) r++;
+    }
+  }
+  const runs: Placed[][] = sizes.map(() => []);
+  const dark: Placed[] = [];
+  rings.forEach((ring, i) => {
+    const offset = Math.floor((ring.length - rows[i].length) / 2);
+    ring.forEach((seat, k) => {
+      const z = k >= offset && k < offset + rows[i].length ? rows[i][k - offset] : undefined;
+      if (z === undefined) dark.push({ seat, ring: i });
+      else if (z >= 0) runs[z].push({ seat, ring: i });
+    });
+  });
+  return { runs, dark };
+}
+
+/** The clickable cell of a console whose chair is at `seat` (pixels, like `Desk.cell`). */
+function cellOf(seat: Point): Rect {
+  return { x: (seat.x - 1) * TILE, y: (seat.y - 1) * TILE - 6, w: CELL_W * TILE, h: CELL_H * TILE + 6 };
 }
 
 function deskAt(session: SessionView, cx: number, cy: number): Desk {
@@ -288,23 +375,8 @@ function deskAt(session: SessionView, cx: number, cy: number): Desk {
       { x: cx, y: cy + 1 },
       { x: cx + 2, y: cy + 1 },
     ],
-    cell: { x: cx * TILE, y: cy * TILE - 6, w: CELL_W * TILE, h: CELL_H * TILE + 6 },
+    cell: cellOf(seat),
   };
-}
-
-function moveZone(zone: Zone, dc: number, dr: number) {
-  if (dc === 0 && dr === 0) return;
-  const px = (p: Point) => ({ x: p.x + dc, y: p.y + dr });
-  const rx = (r: Rect, unit: number) => ({ ...r, x: r.x + dc * unit, y: r.y + dr * unit });
-  zone.rect = rx(zone.rect, 1);
-  zone.spares = zone.spares.map((r) => rx(r, TILE));
-  if (zone.cabinet) zone.cabinet = px(zone.cabinet);
-  for (const d of zone.desks) {
-    d.seat = px(d.seat);
-    d.slots = d.slots.map(px);
-    d.desk = rx(d.desk, TILE);
-    d.cell = rx(d.cell, TILE);
-  }
 }
 
 /** Seating nooks on either side of a central aisle, with a table and a refreshment/book corner. */
@@ -398,9 +470,9 @@ export function deskAtPoint(office: Office, p: Point): Desk | null {
   return null;
 }
 
-/** The repo zone (its deck, label row included) under a pixel. */
+/** The repo whose console (lit or a spare, cabinet included) is under a pixel. */
 export function zoneAtPoint(office: Office, p: Point): Zone | null {
-  return office.zones.find((z) => inside(p, { x: z.rect.x * TILE, y: z.rect.y * TILE, w: z.rect.w * TILE, h: z.rect.h * TILE })) ?? null;
+  return office.zones.find((z) => z.segments.some((cells) => cells.some((c) => inside(p, c)))) ?? null;
 }
 
 /** The zone whose cabinet of closed sessions is under a pixel. */
