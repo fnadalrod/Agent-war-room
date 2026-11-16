@@ -295,10 +295,10 @@ mod tests {
             permission_mode: Some("plan".into()),
             prompt: Some("fix it's $HOME `now`".into()),
         };
-        let claude = LaunchRequest { options: options.clone(), ..request(None, LaunchTarget::App) };
+        // POSIX quoting; Windows quotes for its own shell.
         #[cfg(not(windows))]
         assert_eq!(
-            agent_command(&claude).unwrap(),
+            agent_command(&LaunchRequest { options: options.clone(), ..request(None, LaunchTarget::App) }).unwrap(),
             r#"claude --model 'opus' --effort 'high' --permission-mode 'plan' -- 'fix it'\''s $HOME `now`'"#
         );
         let codex = LaunchRequest {
@@ -306,12 +306,18 @@ mod tests {
             options: LaunchOptions { prompt: None, permission_mode: Some("plan".into()), ..options.clone() },
             ..request(None, LaunchTarget::App)
         };
-        assert_eq!(agent_command(&codex).unwrap().replace('"', "'"), "codex -m 'opus' -c 'model_reasoning_effort=high'");
+        assert_eq!(
+            agent_command(&codex).unwrap().replace('"', "'"),
+            "codex -m 'opus' -c 'model_reasoning_effort=high'"
+        );
         let lines = LaunchOptions { prompt: Some("one\ntwo".into()), ..LaunchOptions::default() };
         let warp = LaunchRequest { options: lines, ..request(None, LaunchTarget::Warp) };
         assert!(!agent_command(&warp).unwrap().contains('\n'), "Warp would type the newline as Enter");
         let blank = LaunchOptions { model: Some("  ".into()), ..LaunchOptions::default() };
-        assert_eq!(agent_command(&LaunchRequest { options: blank, ..request(None, LaunchTarget::App) }).unwrap(), "claude");
+        assert_eq!(
+            agent_command(&LaunchRequest { options: blank, ..request(None, LaunchTarget::App) }).unwrap(),
+            "claude"
+        );
         let evil = LaunchOptions { model: Some("opus; rm -rf ~".into()), ..LaunchOptions::default() };
         assert!(agent_command(&LaunchRequest { options: evil, ..request(None, LaunchTarget::App) }).is_err());
     }
